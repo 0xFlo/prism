@@ -1,0 +1,491 @@
+<Layouts.app
+  flash={@flash}
+  current_scope={@current_scope}
+  current_account={@current_account}
+  current_account_id={@current_account_id}
+  account_options={@account_options}
+>
+  <div class="mx-auto w-full max-w-7xl px-6 py-10">
+    <div class="flex flex-wrap items-end justify-between gap-6">
+      <div class="space-y-2">
+        <p class="text-sm font-medium uppercase tracking-widest text-slate-500">
+          Health Monitoring
+        </p>
+        <h1 class="text-4xl font-semibold text-slate-900">URL Status Checker</h1>
+        <p class="text-base text-slate-500">
+          Check HTTP status codes for all URLs and identify broken links or redirects.
+        </p>
+      </div>
+      <.link
+        navigate={~p"/dashboard"}
+        class="btn btn-ghost gap-2 text-slate-600 hover:text-slate-900"
+      >
+        <.icon name="hero-arrow-left" class="h-5 w-5" /> Back to dashboard
+      </.link>
+    </div>
+
+    <section class="mt-10 rounded-3xl border border-slate-200 bg-white/80 p-8 shadow-sm backdrop-blur">
+      <h2 class="text-xl font-semibold text-slate-900">Check URL Health</h2>
+      <p class="mt-2 text-sm text-slate-500">
+        Start a background check to validate HTTP status codes for your URLs.
+      </p>
+
+      <.form
+        for={@form}
+        id="url-health-check"
+        phx-submit="start_check"
+        class="mt-6 space-y-5"
+      >
+        <.input
+          field={@form[:filter]}
+          type="select"
+          label="URLs to check"
+          options={@filter_options}
+          class="select select-bordered w-full"
+          disabled={@progress.running?}
+        />
+
+        <div
+          :if={@global_stats.total_checked == 0 && @global_stats.unchecked == 0}
+          class="rounded-2xl border border-blue-200 bg-blue-50/80 p-4 text-sm text-blue-800"
+        >
+          <div class="flex items-start gap-3">
+            <.icon name="hero-information-circle" class="mt-0.5 h-5 w-5 shrink-0" />
+            <div class="space-y-2">
+              <p class="font-semibold">No URLs available for checking</p>
+              <p class="text-blue-700">
+                The HTTP status checker requires URLs to be synced from Google Search Console first.
+                Visit the
+                <.link navigate={~p"/dashboard/sync"} class="font-medium underline">
+                  Sync Status page
+                </.link>
+                to run a GSC sync and populate the database with URLs that have search traffic.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div
+          :if={@global_stats.unchecked > 0 && @global_stats.total_checked == 0}
+          class="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 text-sm text-emerald-800"
+        >
+          <div class="flex items-start gap-3">
+            <.icon name="hero-check-circle" class="mt-0.5 h-5 w-5 shrink-0" />
+            <div>
+              <p class="font-semibold">
+                {format_number(@global_stats.unchecked)} URLs ready for checking
+              </p>
+              <p class="mt-1 text-emerald-700">
+                Select a filter above and click "Start check" to begin validating HTTP status codes.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="submit"
+          class={[
+            "btn btn-primary w-full gap-2 text-base",
+            @progress.running? && "btn-disabled opacity-70"
+          ]}
+          phx-disable-with="Starting…"
+        >
+          <.icon
+            name={if @progress.running?, do: "hero-arrow-path", else: "hero-play"}
+            class={if @progress.running?, do: "h-5 w-5 animate-spin", else: "h-5 w-5"}
+          />
+          <span>
+            {if @progress.running?, do: "Check in progress", else: "Start check"}
+          </span>
+        </button>
+      </.form>
+    </section>
+
+    <div class="mt-8 grid grid-cols-1 gap-8 xl:grid-cols-[1.6fr,1fr]">
+      <section class={[
+        "rounded-3xl border border-slate-200 bg-white/80 p-8 shadow-sm backdrop-blur transition-all duration-300",
+        @progress.running? && "ring-2 ring-sky-200"
+      ]}>
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <span class={if @progress.running?, do: "badge badge-info", else: "badge badge-ghost"}>
+              {if @progress.running?, do: "In Progress", else: "Idle"}
+            </span>
+            <h2 class="mt-4 text-2xl font-semibold text-slate-900">Check Progress</h2>
+            <p class="mt-2 text-sm text-slate-500">
+              {if @progress.running? do
+                "Checking #{@progress.checked}/#{@progress.total_urls} URLs"
+              else
+                "No check in progress"
+              end}
+            </p>
+          </div>
+          <div class="space-y-3 text-right">
+            <div class="text-4xl font-semibold text-slate-900">
+              {Float.round(@progress.percent, 1)}%
+            </div>
+            <p class="text-xs uppercase tracking-wider text-slate-500">Completion</p>
+          </div>
+        </div>
+
+        <div class="mt-6 h-2 w-full overflow-hidden rounded-full bg-slate-200">
+          <div
+            class="h-full rounded-full bg-gradient-to-r from-sky-400 via-emerald-400 to-emerald-500 transition-all duration-500"
+            style={"width: #{min(@progress.percent, 100.0)}%"}
+          >
+          </div>
+        </div>
+
+        <dl class="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+          <div class="rounded-2xl bg-slate-50/80 p-4">
+            <dt class="text-xs font-semibold uppercase tracking-widest text-slate-500">
+              Total URLs
+            </dt>
+            <dd class="mt-2 text-2xl font-semibold text-slate-900">
+              {format_number(@progress.total_urls)}
+            </dd>
+          </div>
+          <div class="rounded-2xl bg-slate-50/80 p-4">
+            <dt class="text-xs font-semibold uppercase tracking-widest text-slate-500">
+              Checked
+            </dt>
+            <dd class="mt-2 text-2xl font-semibold text-slate-900">
+              {format_number(@progress.checked)}
+            </dd>
+          </div>
+          <div class="rounded-2xl bg-slate-50/80 p-4">
+            <dt class="text-xs font-semibold uppercase tracking-widest text-slate-500">
+              Duration
+            </dt>
+            <dd class="mt-2 text-2xl font-semibold text-slate-900">
+              {format_duration(@progress.duration_ms)}
+            </dd>
+          </div>
+          <div class="rounded-2xl bg-slate-50/80 p-4">
+            <dt class="text-xs font-semibold uppercase tracking-widest text-slate-500">
+              Speed
+            </dt>
+            <dd class="mt-2 text-2xl font-semibold text-slate-900">
+              {format_rate(@progress.rate)}
+            </dd>
+          </div>
+        </dl>
+
+        <div
+          :if={@progress.finished_at}
+          class="mt-6 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 text-sm text-emerald-700"
+        >
+          <div class="flex items-center gap-2">
+            <.icon name="hero-check-circle" class="h-5 w-5" />
+            <span>
+              Check completed &middot; <strong>{format_number(@progress.total_urls)}</strong>
+              URLs checked &middot; Finished in
+              <strong>{format_duration(@progress.duration_ms)}</strong>
+            </span>
+          </div>
+        </div>
+
+        <div class="mt-8 space-y-4">
+          <h3 class="text-sm font-semibold uppercase tracking-widest text-slate-500">
+            Started
+          </h3>
+          <p class="text-sm text-slate-600">
+            {format_datetime(@progress.started_at)}
+          </p>
+        </div>
+      </section>
+
+      <aside class="space-y-8">
+        <section class="rounded-3xl border border-slate-200 bg-white/80 p-8 shadow-sm backdrop-blur">
+          <h2 class="text-xl font-semibold text-slate-900">Check History</h2>
+          <div class="mt-4 space-y-3">
+            <div
+              :if={Enum.empty?(@history)}
+              class="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500"
+            >
+              No checks run yet
+            </div>
+            <div
+              :for={job <- @history}
+              :key={job.id}
+              class="rounded-2xl border border-slate-100 bg-white/60 p-4 transition hover:-translate-y-0.5 hover:shadow-md"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div class="flex-1 space-y-2">
+                  <div class="flex items-center gap-2">
+                    <span class="badge badge-success badge-sm">Completed</span>
+                  </div>
+                  <p class="text-sm font-medium text-slate-900">
+                    {format_number(job.total_urls)} URLs checked
+                  </p>
+                  <p class="text-xs text-slate-500">
+                    {format_datetime(job.started_at)}
+                  </p>
+                  <dl class="grid grid-cols-3 gap-2 text-xs">
+                    <div>
+                      <dt class="text-slate-500">2xx</dt>
+                      <dd class="font-medium text-emerald-600">
+                        {format_number(job.status_counts["2xx"])}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt class="text-slate-500">3xx</dt>
+                      <dd class="font-medium text-amber-600">
+                        {format_number(job.status_counts["3xx"])}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt class="text-slate-500">4xx/5xx</dt>
+                      <dd class="font-medium text-rose-600">
+                        {format_number(job.status_counts["4xx"] + job.status_counts["5xx"])}
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </div>
+
+    <section class="mt-8 rounded-3xl border border-slate-200 bg-white/80 p-8 shadow-sm backdrop-blur">
+      <h2 class="text-xl font-semibold text-slate-900">Filter Options</h2>
+      <div class="mt-4 grid grid-cols-1 gap-6 md:grid-cols-4">
+        <div class="rounded-2xl border border-sky-100 bg-sky-50/80 p-6">
+          <h3 class="text-sm font-semibold uppercase tracking-widest text-sky-600">
+            Stale (Default)
+          </h3>
+          <p class="mt-3 text-sm text-slate-600">
+            Checks URLs that haven't been checked or are older than 7 days. Recommended for regular maintenance.
+          </p>
+        </div>
+        <div class="rounded-2xl border border-emerald-100 bg-emerald-50/80 p-6">
+          <h3 class="text-sm font-semibold uppercase tracking-widest text-emerald-600">
+            All URLs
+          </h3>
+          <p class="mt-3 text-sm text-slate-600">
+            Checks every URL in the database regardless of last check date. Use for comprehensive audits.
+          </p>
+        </div>
+        <div class="rounded-2xl border border-amber-100 bg-amber-50/80 p-6">
+          <h3 class="text-sm font-semibold uppercase tracking-widest text-amber-600">
+            Broken Links
+          </h3>
+          <p class="mt-3 text-sm text-slate-600">
+            Re-checks only URLs with 4xx or 5xx status codes to verify if issues are fixed.
+          </p>
+        </div>
+        <div class="rounded-2xl border border-purple-100 bg-purple-50/80 p-6">
+          <h3 class="text-sm font-semibold uppercase tracking-widest text-purple-600">
+            Redirected
+          </h3>
+          <p class="mt-3 text-sm text-slate-600">
+            Checks URLs returning 3xx codes to ensure redirects are still active and valid.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="mt-8 rounded-3xl border border-slate-200 bg-white/80 p-8 shadow-sm backdrop-blur">
+      <h2 class="text-xl font-semibold text-slate-900">Site Health Overview</h2>
+      <p class="mt-2 text-sm text-slate-500">
+        Persistent status statistics across all URLs in your database
+      </p>
+
+      <dl class="mt-6 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+        <div class="rounded-2xl border border-slate-100 bg-slate-50/80 p-4">
+          <dt class="text-xs font-semibold uppercase tracking-widest text-slate-500">
+            Total Checked
+          </dt>
+          <dd class="mt-2 text-2xl font-semibold text-slate-900">
+            {format_number(@global_stats.total_checked)}
+          </dd>
+        </div>
+
+        <div class="rounded-2xl border border-emerald-100 bg-emerald-50/80 p-4">
+          <dt class="flex items-center gap-2">
+            <span class="badge badge-success badge-sm">2xx</span>
+            <span class="text-xs font-semibold uppercase tracking-widest text-emerald-600">
+              Healthy
+            </span>
+          </dt>
+          <dd class="mt-2 flex items-baseline gap-2">
+            <span class="text-2xl font-semibold text-slate-900">
+              {format_number(@global_stats.status_2xx)}
+            </span>
+            <span class="text-sm text-slate-500">
+              ({@global_stats.percent_2xx}%)
+            </span>
+          </dd>
+        </div>
+
+        <div class="rounded-2xl border border-amber-100 bg-amber-50/80 p-4">
+          <dt class="flex items-center gap-2">
+            <span class="badge badge-warning badge-sm">3xx</span>
+            <span class="text-xs font-semibold uppercase tracking-widest text-amber-600">
+              Redirects
+            </span>
+          </dt>
+          <dd class="mt-2 flex items-baseline gap-2">
+            <span class="text-2xl font-semibold text-slate-900">
+              {format_number(@global_stats.status_3xx)}
+            </span>
+            <span class="text-sm text-slate-500">
+              ({@global_stats.percent_3xx}%)
+            </span>
+          </dd>
+        </div>
+
+        <div class="rounded-2xl border border-rose-100 bg-rose-50/80 p-4">
+          <dt class="flex items-center gap-2">
+            <span class="badge badge-error badge-sm">4xx</span>
+            <span class="text-xs font-semibold uppercase tracking-widest text-rose-600">
+              Client Errors
+            </span>
+          </dt>
+          <dd class="mt-2 flex items-baseline gap-2">
+            <span class="text-2xl font-semibold text-slate-900">
+              {format_number(@global_stats.status_4xx)}
+            </span>
+            <span class="text-sm text-slate-500">
+              ({@global_stats.percent_4xx}%)
+            </span>
+          </dd>
+        </div>
+
+        <div class="rounded-2xl border border-rose-100 bg-rose-50/80 p-4">
+          <dt class="flex items-center gap-2">
+            <span class="badge badge-error badge-sm">5xx</span>
+            <span class="text-xs font-semibold uppercase tracking-widest text-rose-600">
+              Server Errors
+            </span>
+          </dt>
+          <dd class="mt-2 flex items-baseline gap-2">
+            <span class="text-2xl font-semibold text-slate-900">
+              {format_number(@global_stats.status_5xx)}
+            </span>
+            <span class="text-sm text-slate-500">
+              ({@global_stats.percent_5xx}%)
+            </span>
+          </dd>
+        </div>
+
+        <div class="rounded-2xl border border-slate-100 bg-slate-50/80 p-4">
+          <dt class="text-xs font-semibold uppercase tracking-widest text-slate-500">
+            Unchecked
+          </dt>
+          <dd class="mt-2 text-2xl font-semibold text-slate-900">
+            {format_number(@global_stats.unchecked)}
+          </dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="mt-8 rounded-3xl border border-slate-200 bg-white/80 p-8 shadow-sm backdrop-blur">
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 class="text-xl font-semibold text-slate-900">Problem URLs</h2>
+          <p class="mt-2 text-sm text-slate-500">
+            URLs with 3xx redirects, 4xx client errors, or 5xx server errors
+          </p>
+        </div>
+        <div class="flex gap-2">
+          <button
+            phx-click="filter_problems"
+            phx-value-status="all"
+            class={[
+              "btn btn-sm gap-2",
+              (@selected_status_filter == "all" && "btn-primary") || "btn-ghost"
+            ]}
+          >
+            All Issues
+          </button>
+          <button
+            phx-click="filter_problems"
+            phx-value-status="3xx"
+            class={[
+              "btn btn-sm gap-2",
+              (@selected_status_filter == "3xx" && "btn-warning") || "btn-ghost"
+            ]}
+          >
+            3xx Redirects
+          </button>
+          <button
+            phx-click="filter_problems"
+            phx-value-status="4xx"
+            class={[
+              "btn btn-sm gap-2",
+              (@selected_status_filter == "4xx" && "btn-error") || "btn-ghost"
+            ]}
+          >
+            4xx Errors
+          </button>
+          <button
+            phx-click="filter_problems"
+            phx-value-status="5xx"
+            class={[
+              "btn btn-sm gap-2",
+              (@selected_status_filter == "5xx" && "btn-error") || "btn-ghost"
+            ]}
+          >
+            5xx Errors
+          </button>
+        </div>
+      </div>
+
+      <div class="mt-6 overflow-x-auto">
+        <div
+          :if={Enum.empty?(@problem_urls)}
+          class="rounded-2xl border border-dashed border-slate-200 p-8 text-center"
+        >
+          <.icon name="hero-check-circle" class="mx-auto h-12 w-12 text-emerald-500" />
+          <p class="mt-3 text-sm font-medium text-slate-600">
+            No problem URLs found
+          </p>
+          <p class="mt-1 text-xs text-slate-500">
+            All checked URLs are returning successful status codes
+          </p>
+        </div>
+
+        <table :if={not Enum.empty?(@problem_urls)} class="table w-full">
+          <thead>
+            <tr>
+              <th class="text-left">URL</th>
+              <th class="text-center">Status</th>
+              <th class="text-right">Last Checked</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr :for={url <- @problem_urls} :key={url.url} class="hover">
+              <td class="max-w-md">
+                <a
+                  href={url.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="link link-hover text-sm font-mono truncate block"
+                >
+                  {url.url}
+                </a>
+              </td>
+              <td class="text-center">
+                <span class={status_code_badge_class(url.http_status)}>
+                  {url.http_status}
+                </span>
+              </td>
+              <td class="text-right text-sm text-slate-500">
+                {format_datetime(url.http_checked_at)}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div :if={length(@problem_urls) == 100} class="mt-4 text-center">
+        <p class="text-sm text-slate-500">
+          Showing most recent 100 problem URLs
+        </p>
+      </div>
+    </section>
+  </div>
+</Layouts.app>

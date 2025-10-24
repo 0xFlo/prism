@@ -1,0 +1,392 @@
+<Layouts.app
+  flash={@flash}
+  current_scope={@current_scope}
+  current_account={@current_account}
+  current_account_id={@current_account_id}
+  account_options={@account_options}
+>
+  <div class="mx-auto w-full max-w-6xl px-6 py-10">
+    <div class="flex flex-wrap items-end justify-between gap-6 border-b border-slate-200 pb-6">
+      <div class="space-y-3">
+        <p class="text-xs font-semibold uppercase tracking-[0.4em] text-slate-500">
+          URL Performance Insight
+        </p>
+        <div class="space-y-1">
+          <h1 class="text-4xl font-semibold text-slate-900">Deep dive</h1>
+          <p class="font-mono text-sm text-slate-500" title={@insights && @insights.url}>
+            {truncate_url((@insights && @insights.url) || "", 90)}
+          </p>
+          <%= if @insights && @insights.requested_url && @insights.requested_url != @insights.url do %>
+            <p class="flex flex-wrap items-center gap-2 text-xs text-amber-600">
+              <.icon name="hero-arrow-path" class="h-3.5 w-3.5" />
+              <span>
+                Requested: {truncate_url(@insights.requested_url, 70)}
+              </span>
+            </p>
+          <% end %>
+          <%= if @insights && @insights.url_group && length(@insights.url_group.urls) > 1 do %>
+            <div class="mt-2 flex flex-wrap items-center gap-2">
+              <span class="badge badge-outline badge-xs border-indigo-400 text-indigo-600">
+                Combining {length(@insights.url_group.urls)} URL versions
+              </span>
+              <%= for group_url <- @insights.url_group.urls do %>
+                <span class="badge badge-ghost badge-xs font-mono" title={group_url}>
+                  {truncate_url(group_url, 42)}
+                </span>
+              <% end %>
+            </div>
+          <% end %>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center gap-3">
+        <.link
+          navigate={~p"/dashboard"}
+          class="btn btn-ghost gap-2 text-slate-600 hover:text-slate-900"
+        >
+          <.icon name="hero-arrow-left" class="h-5 w-5" /> Back to dashboard
+        </.link>
+        <.link
+          href={
+            ~p"/dashboard/export?#{%{limit: 100, sort_by: "clicks", view_mode: "basic", needs_update: false}}"
+          }
+          class="btn btn-outline gap-2"
+        >
+          <.icon name="hero-arrow-down-tray" class="h-5 w-5" /> Export overview
+        </.link>
+      </div>
+    </div>
+
+    <%= if @insights && @insights.performance do %>
+      <% perf = @insights.performance %>
+      <div class="mt-8 space-y-4">
+        <div class="rounded-2xl border border-slate-200 bg-gradient-to-br from-blue-50 to-indigo-50 p-4 shadow-sm">
+          <div class="flex items-center gap-2 text-sm text-slate-700">
+            <.icon name="hero-calendar" class="h-4 w-4" />
+            <span class="font-medium">Date Range:</span>
+            <span class="font-mono">
+              {format_date(perf.date_range_start)} — {format_date(perf.date_range_end)}
+            </span>
+            <span class="ml-2 text-xs text-slate-500">
+              ({(@insights && @insights.range_summary) || "—"})
+            </span>
+            <%= if @insights && @insights.data_coverage_summary &&
+                  @insights.data_coverage_summary != "No data" do %>
+              <span class="ml-4 text-xs text-slate-500">
+                Data coverage: {@insights.data_coverage_summary}
+                <%= if @insights.data_range_start || @insights.data_range_end do %>
+                  · {format_date(@insights.data_range_start)} — {format_date(@insights.data_range_end)}
+                <% end %>
+              </span>
+            <% end %>
+          </div>
+        </div>
+
+        <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div class="rounded-2xl bg-gradient-to-br from-slate-900 to-slate-700 p-6 text-white shadow-lg">
+            <p class="text-sm uppercase tracking-wide text-white/60">Total clicks</p>
+            <p class="mt-3 text-3xl font-semibold">{format_number(perf.clicks)}</p>
+            <p class="mt-2 flex items-center gap-2 text-xs text-white/60">
+              <.icon name="hero-bolt" class="h-4 w-4" /> Primary engagement metric
+            </p>
+          </div>
+          <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <p class="text-sm font-semibold text-slate-500">Impressions</p>
+            <p class="mt-3 text-3xl font-semibold text-slate-900">
+              {format_number(perf.impressions)}
+            </p>
+            <p class="mt-1 text-xs text-slate-500">
+              How often the page appeared in Google search results
+            </p>
+          </div>
+          <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <p class="text-sm font-semibold text-slate-500">CTR</p>
+            <p class="mt-3 text-3xl font-semibold text-emerald-600">
+              {format_percentage(perf.ctr * 100)}
+            </p>
+            <p class="mt-1 text-xs text-slate-500">
+              Click-through rate across the selected range
+            </p>
+          </div>
+          <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <p class="text-sm font-semibold text-slate-500">Average position</p>
+            <p class="mt-3 text-3xl font-semibold text-sky-600">
+              {format_position(perf.position)}
+            </p>
+            <p class="mt-1 text-xs text-slate-500">Weighted by impressions</p>
+          </div>
+        </div>
+      </div>
+    <% else %>
+      <div class="mt-8 rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center shadow-sm">
+        <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+          <.icon name="hero-document-magnifying-glass" class="h-6 w-6" />
+        </div>
+        <h2 class="mt-4 text-xl font-semibold text-slate-900">No performance data yet</h2>
+        <p class="mt-2 text-sm text-slate-500">
+          This URL has not surfaced in Google Search Console for the selected date range.
+        </p>
+      </div>
+    <% end %>
+
+    <div class="mt-12 grid gap-8 lg:grid-cols-[1.7fr,1fr]">
+      <section class="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 class="text-xl font-semibold text-slate-900">Performance trend</h2>
+            <p class="text-sm text-slate-500">
+              Clicks and impressions over time. Switch aggregation cadence and limit the analysis window.
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <div class="join">
+              <button
+                type="button"
+                class={["join-item btn btn-sm", @view_mode == "daily" && "btn-active"]}
+                phx-click="change_view"
+                phx-value-view="daily"
+              >
+                Daily
+              </button>
+              <button
+                type="button"
+                class={["join-item btn btn-sm", @view_mode == "weekly" && "btn-active"]}
+                phx-click="change_view"
+                phx-value-view="weekly"
+              >
+                Weekly
+              </button>
+              <button
+                type="button"
+                class={["join-item btn btn-sm", @view_mode == "monthly" && "btn-active"]}
+                phx-click="change_view"
+                phx-value-view="monthly"
+              >
+                Monthly
+              </button>
+            </div>
+            <div class="join">
+              <button
+                type="button"
+                class={["join-item btn btn-sm", @period_days == 7 && "btn-active"]}
+                phx-click="change_period"
+                phx-value-period="7"
+              >
+                7d
+              </button>
+              <button
+                type="button"
+                class={["join-item btn btn-sm", @period_days == 30 && "btn-active"]}
+                phx-click="change_period"
+                phx-value-period="30"
+              >
+                30d
+              </button>
+              <button
+                type="button"
+                class={["join-item btn btn-sm", @period_days == 90 && "btn-active"]}
+                phx-click="change_period"
+                phx-value-period="90"
+              >
+                90d
+              </button>
+              <button
+                type="button"
+                class={["join-item btn btn-sm", @period_days == 180 && "btn-active"]}
+                phx-click="change_period"
+                phx-value-period="180"
+              >
+                180d
+              </button>
+              <button
+                type="button"
+                class={["join-item btn btn-sm", @period_days >= 10000 && "btn-active"]}
+                phx-click="change_period"
+                phx-value-period="all"
+              >
+                All
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-6">
+          <.performance_chart
+            id="urlPerformanceChart"
+            time_series={(@insights && @insights.time_series) || []}
+            time_series_json={(@insights && @insights.time_series_json) || "[]"}
+            x_label={(@insights && @insights.label) || "Date"}
+            events={(@insights && @insights.chart_events) || []}
+            events_json={(@insights && @insights.chart_events_json) || "[]"}
+          />
+        </div>
+      </section>
+
+      <aside class="space-y-6">
+        <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h3 class="text-base font-semibold text-slate-900">Dataset snapshot</h3>
+          <dl class="mt-4 space-y-3 text-sm text-slate-600">
+            <div class="flex items-center justify-between">
+              <dt>Last fetched</dt>
+              <dd>
+                {format_date((@insights && @insights.period_end) ||
+                  (@insights && @insights.performance && @insights.performance.fetched_at))}
+              </dd>
+            </div>
+            <div class="flex items-center justify-between">
+              <dt>Selected range</dt>
+              <dd>
+                {format_date(@insights && @insights.period_start)} — {format_date(@insights &&
+                  @insights.period_end)}
+              </dd>
+            </div>
+            <div class="flex items-center justify-between">
+              <dt>Data coverage</dt>
+              <dd>
+                {format_date(@insights && @insights.data_range_start)} — {format_date(@insights &&
+                  @insights.data_range_end)}
+              </dd>
+            </div>
+            <div class="flex items-center justify-between">
+              <dt>Latest aggregation</dt>
+              <dd>
+                {cond do
+                  @view_mode == "weekly" -> "Weekly"
+                  @view_mode == "monthly" -> "Monthly"
+                  true -> "Daily"
+                end}
+              </dd>
+            </div>
+            <div class="flex items-center justify-between">
+              <dt>Top queries tracked</dt>
+              <dd>{format_number(length((@insights && @insights.top_queries) || []))}</dd>
+            </div>
+            <%= if @insights && @insights.url_group do %>
+              <div class="flex items-center justify-between">
+                <dt>Tracked versions</dt>
+                <dd>{length(@insights.url_group.urls)}</dd>
+              </div>
+            <% end %>
+          </dl>
+        </div>
+
+        <%= if @insights && @insights.url_group && @insights.url_group.redirect_events != [] do %>
+          <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h3 class="text-base font-semibold text-slate-900">Redirect history</h3>
+            <ul class="mt-4 space-y-3 text-xs text-slate-600">
+              <%= for event <- @insights.url_group.redirect_events do %>
+                <li class="flex flex-col gap-1">
+                  <div class="flex items-center gap-2 text-slate-700">
+                    <.icon name="hero-flag" class="h-3.5 w-3.5 text-amber-500" />
+                    <span>
+                      {format_date(event.checked_at && DateTime.to_date(event.checked_at))} · {redirect_event_label(event)}
+                    </span>
+                  </div>
+                  <div class="ml-6 flex flex-col gap-1 font-mono">
+                    <span class="truncate" title={event.source_url}>
+                      {truncate_url(event.source_url || "", 80)}
+                    </span>
+                    <span class="truncate text-emerald-600" title={event.target_url}>
+                      → {truncate_url(event.target_url || "", 80)}
+                    </span>
+                  </div>
+                </li>
+              <% end %>
+            </ul>
+          </div>
+        <% end %>
+
+        <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h3 class="text-base font-semibold text-slate-900">Tips</h3>
+          <ul class="mt-4 space-y-3 text-sm text-slate-600">
+            <li class="flex gap-3">
+              <.icon name="hero-light-bulb" class="mt-0.5 h-4 w-4 text-amber-500" />
+              Slice by weekly view to smooth sudden outliers before making optimisation calls.
+            </li>
+            <li class="flex gap-3">
+              <.icon name="hero-arrow-trending-up" class="mt-0.5 h-4 w-4 text-emerald-500" />
+              Compare click trends against search impressions to spot ranking versus demand changes.
+            </li>
+            <li class="flex gap-3">
+              <.icon name="hero-rocket-launch" class="mt-0.5 h-4 w-4 text-sky-500" />
+              Keep this tab open during syncs—the dashboard streams updates in real time.
+            </li>
+          </ul>
+        </div>
+      </aside>
+    </div>
+
+    <section class="mt-12 rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 class="text-xl font-semibold text-slate-900">Top search queries</h2>
+          <p class="text-sm text-slate-500">
+            Sorted by clicks. Use this view to spot opportunities to reinforce copy or metadata.
+          </p>
+        </div>
+      </div>
+
+      <div class="mt-6">
+        <.query_table
+          queries={(@insights && @insights.top_queries) || []}
+          sort_by={@queries_sort_by}
+          sort_direction={@queries_sort_direction}
+        />
+      </div>
+    </section>
+
+    <%= if @insights && @insights.backlinks do %>
+      <section class="mt-12 rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div class="flex items-center gap-3">
+              <h2 class="text-xl font-semibold text-slate-900">Backlinks</h2>
+              <span class="badge badge-info badge-lg">
+                {format_number(@insights.backlink_count || 0)}
+              </span>
+            </div>
+            <p class="mt-1 text-sm text-slate-500">
+              Backlinks pointing to this URL from external sources
+            </p>
+          </div>
+        </div>
+
+        <div class="alert alert-warning mt-6 shadow-sm">
+          <.icon name="hero-exclamation-triangle" class="h-5 w-5" />
+          <div>
+            <h3 class="font-semibold">Manual External Data</h3>
+            <div class="text-sm">
+              Backlink data is imported from external sources (vendor reports, Ahrefs).
+              Run
+              <code class="rounded bg-base-300 px-1 font-mono text-xs">mix backlinks.import</code>
+              to refresh.
+            </div>
+          </div>
+        </div>
+
+        <%= if @insights.backlink_count > 0 do %>
+          <div class="mt-6">
+            <.backlinks_table
+              backlinks={@insights.backlinks}
+              sort_by={@backlinks_sort_by}
+              sort_direction={@backlinks_sort_direction}
+            />
+          </div>
+        <% else %>
+          <div class="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
+            <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-200 text-slate-400">
+              <.icon name="hero-link" class="h-6 w-6" />
+            </div>
+            <h3 class="mt-4 text-lg font-semibold text-slate-700">No backlinks found</h3>
+            <p class="mt-2 text-sm text-slate-500">
+              This URL has no imported backlinks yet. Run
+              <code class="rounded bg-slate-200 px-1 font-mono text-xs">
+                mix backlinks.import
+              </code>
+              to import data.
+            </p>
+          </div>
+        <% end %>
+      </section>
+    <% end %>
+  </div>
+</Layouts.app>

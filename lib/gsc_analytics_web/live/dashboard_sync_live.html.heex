@@ -1,0 +1,364 @@
+<Layouts.app
+  flash={@flash}
+  current_scope={@current_scope}
+  current_account={@current_account}
+  current_account_id={@current_account_id}
+  account_options={@account_options}
+>
+  <div class="mx-auto w-full max-w-7xl px-6 py-10">
+    <div class="flex flex-wrap items-end justify-between gap-6">
+      <div class="space-y-2">
+        <p class="text-sm font-medium uppercase tracking-widest text-slate-500">
+          Google Search Console
+        </p>
+        <h1 class="text-4xl font-semibold text-slate-900">Sync Status</h1>
+        <p class="text-base text-slate-500">
+          Monitor live ingestion progress and trigger fresh imports right from here.
+        </p>
+      </div>
+      <.link
+        navigate={~p"/dashboard"}
+        class="btn btn-ghost gap-2 text-slate-600 hover:text-slate-900"
+      >
+        <.icon name="hero-arrow-left" class="h-5 w-5" /> Back to dashboard
+      </.link>
+    </div>
+
+    <section class="mt-10 rounded-3xl border border-slate-200 bg-white/80 p-8 shadow-sm backdrop-blur">
+      <h2 class="text-xl font-semibold text-slate-900">Manual sync</h2>
+      <p class="mt-2 text-sm text-slate-500">
+        Sync runs in the background. The dashboard updates in real time while data arrives.
+      </p>
+      <div class="mt-4 rounded-2xl bg-slate-50/80 p-4 text-sm text-slate-600">
+        <div class="flex items-start gap-3">
+          <.icon name="hero-information-circle" class="mt-0.5 h-5 w-5 text-sky-500" />
+          <span>
+            GSC metrics are delayed by ~3 days. Choose a range that ends three days ago for the freshest complete data.
+          </span>
+        </div>
+      </div>
+
+      <.form
+        for={@form}
+        id="gsc-manual-sync"
+        phx-submit="start_sync"
+        class="mt-6 space-y-5"
+      >
+        <.input
+          field={@form[:days]}
+          type="select"
+          label="Number of days to sync"
+          options={@day_options}
+          class="select select-bordered w-full"
+          disabled={@progress.active?}
+        />
+        <button
+          type="submit"
+          class={[
+            "btn btn-primary w-full gap-2 text-base",
+            @progress.active? && "btn-disabled opacity-70"
+          ]}
+          phx-disable-with="Starting…"
+        >
+          <.icon
+            name="hero-arrow-path"
+            class={sync_button_icon_class(@progress)}
+          />
+          <span>
+            {case @progress.status do
+              :paused -> "Sync paused"
+              status when status in [:running, :cancelling] -> "Sync in progress"
+              _ -> "Start sync"
+            end}
+          </span>
+        </button>
+      </.form>
+    </section>
+
+    <div class="mt-8 grid grid-cols-1 gap-8 xl:grid-cols-[1.6fr,1fr]">
+      <section class={[
+        "rounded-3xl border border-slate-200 bg-white/80 p-8 shadow-sm backdrop-blur transition-all duration-300",
+        @progress.active? && "ring-2 ring-sky-200"
+      ]}>
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <% {badge_class, badge_label} = status_badge(@progress.status) %>
+            <span class={badge_class}>{badge_label}</span>
+            <h2 class="mt-4 text-2xl font-semibold text-slate-900">Live Sync Timeline</h2>
+            <p class="mt-2 text-sm text-slate-500">{progress_caption(@progress)}</p>
+          </div>
+          <div class="space-y-3 text-right">
+            <div class="text-4xl font-semibold text-slate-900">
+              {Float.round(@progress.percent, 1)}%
+            </div>
+            <p class="text-xs uppercase tracking-wider text-slate-500">Completion</p>
+            <div class="flex justify-end gap-2">
+              <button
+                :if={@progress.controls.can_pause?}
+                type="button"
+                class="btn btn-outline btn-sm gap-2"
+                phx-click="pause_sync"
+              >
+                <.icon name="hero-pause" class="h-4 w-4" /> Pause
+              </button>
+              <button
+                :if={@progress.controls.can_resume?}
+                type="button"
+                class="btn btn-outline btn-sm gap-2"
+                phx-click="resume_sync"
+              >
+                <.icon name="hero-play" class="h-4 w-4" /> Resume
+              </button>
+              <button
+                :if={@progress.controls.can_stop?}
+                type="button"
+                class="btn btn-outline btn-sm gap-2"
+                phx-click="stop_sync"
+              >
+                <.icon name="hero-stop" class="h-4 w-4" /> Stop
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-6 h-2 w-full overflow-hidden rounded-full bg-slate-200">
+          <div
+            class="h-full rounded-full bg-gradient-to-r from-sky-400 via-emerald-400 to-emerald-500 transition-all duration-500"
+            style={"width: #{min(@progress.percent, 100.0)}%"}
+          >
+          </div>
+        </div>
+
+        <dl class="mt-8 grid grid-cols-1 gap-6 md:grid-cols-3">
+          <div class="rounded-2xl bg-slate-50/80 p-4">
+            <dt class="text-xs font-semibold uppercase tracking-widest text-slate-500">
+              Date range
+            </dt>
+            <dd class="mt-2 text-sm text-slate-900">
+              {format_date_safe(@progress.metadata[:start_date])}
+              <span class="mx-1 text-slate-400">&mdash;</span>
+              {format_date_safe(@progress.metadata[:end_date])}
+            </dd>
+          </div>
+          <div class="rounded-2xl bg-slate-50/80 p-4">
+            <dt class="text-xs font-semibold uppercase tracking-widest text-slate-500">
+              Started
+            </dt>
+            <dd class="mt-2 text-sm text-slate-900">{format_timestamp(@progress.started_at)}</dd>
+          </div>
+          <div class="rounded-2xl bg-slate-50/80 p-4">
+            <dt class="text-xs font-semibold uppercase tracking-widest text-slate-500">
+              Processed days
+            </dt>
+            <dd class="mt-2 text-sm text-slate-900">
+              {@progress.completed_steps}/{max(@progress.total_steps, 1)}
+            </dd>
+          </div>
+        </dl>
+
+        <dl class="mt-6 grid grid-cols-1 gap-6 md:grid-cols-3">
+          <div class="rounded-2xl bg-slate-50/80 p-4">
+            <dt class="text-xs font-semibold uppercase tracking-widest text-slate-500">
+              Query rows processed
+            </dt>
+            <dd class="mt-2 text-2xl font-semibold text-slate-900">
+              {format_number(@progress.metrics[:total_rows])}
+            </dd>
+            <p class="mt-1 text-xs text-slate-500">Current sync run</p>
+          </div>
+          <div class="rounded-2xl bg-slate-50/80 p-4">
+            <dt class="text-xs font-semibold uppercase tracking-widest text-slate-500">
+              HTTP Batch Calls
+            </dt>
+            <dd class="mt-2 text-2xl font-semibold text-slate-900">
+              {format_number(@progress.metrics[:total_query_http_batches] || 0)}
+            </dd>
+            <p class="mt-1 text-xs text-slate-500">Query batches sent</p>
+          </div>
+          <div class="rounded-2xl bg-slate-50/80 p-4">
+            <dt class="text-xs font-semibold uppercase tracking-widest text-slate-500">
+              Query sub-requests
+            </dt>
+            <dd class="mt-2 text-2xl font-semibold text-slate-900">
+              {format_number(@progress.metrics[:total_query_sub_requests] || 0)}
+            </dd>
+            <p class="mt-1 text-xs text-slate-500">
+              In {format_number(@progress.metrics[:total_query_http_batches] || 0)} batch(es)
+            </p>
+          </div>
+          <div class="rounded-2xl bg-slate-50/80 p-4">
+            <dt class="text-xs font-semibold uppercase tracking-widest text-slate-500">
+              API calls (total)
+            </dt>
+            <dd class="mt-2 text-2xl font-semibold text-slate-900">
+              {format_number(@progress.metrics[:total_api_calls])}
+            </dd>
+            <p class="mt-1 text-xs text-slate-500">URL calls + HTTP batches</p>
+          </div>
+        </dl>
+
+        <div
+          :if={@progress.summary && @progress.status in [:completed, :completed_with_warnings]}
+          class="mt-6 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 text-sm text-emerald-700"
+        >
+          <div class="flex flex-wrap items-center gap-2">
+            <.icon name="hero-check-circle" class="h-5 w-5" />
+            <span>
+              Processed <strong>{@progress.summary[:days_processed] || 0}</strong>
+              day(s)
+              <span :if={(@progress.summary[:skipped_days] || 0) > 0}>
+                (#{@progress.summary[:skipped_days]} skipped)
+              </span>
+              &middot; {rows_phrase(@progress.summary[:total_rows]) ||
+                "0 query rows"}
+              <span :if={http_batch_phrase(@progress.summary[:total_query_http_batches])}>
+                &middot; {http_batch_phrase(@progress.summary[:total_query_http_batches])}
+              </span>
+              <span :if={query_sub_request_phrase(@progress.summary[:total_query_sub_requests])}>
+                &middot; {query_sub_request_phrase(@progress.summary[:total_query_sub_requests])}
+              </span>
+              <span :if={url_phrase(@progress.summary[:total_urls])}>
+                &middot; {url_phrase(@progress.summary[:total_urls])}
+              </span>
+              <span :if={api_call_phrase(@progress.summary[:api_calls])}>
+                &middot; {api_call_phrase(@progress.summary[:api_calls])}
+              </span>
+              &middot; Finished in
+              <strong>{format_duration(@progress.summary[:duration_ms])}</strong>
+            </span>
+          </div>
+        </div>
+
+        <div
+          :if={@progress.status == :failed && @progress.error}
+          class="mt-6 rounded-2xl border border-rose-200 bg-rose-50/80 p-4 text-sm text-rose-700"
+        >
+          <div class="flex items-start gap-3">
+            <.icon name="hero-exclamation-triangle" class="mt-0.5 h-5 w-5" />
+            <span>{@progress.error}</span>
+          </div>
+        </div>
+
+        <div class="mt-8 space-y-4">
+          <h3 class="text-sm font-semibold uppercase tracking-widest text-slate-500">
+            Recent activity
+          </h3>
+          <div class="space-y-3">
+            <div
+              :if={Enum.empty?(@progress.events)}
+              class="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500"
+            >
+              Waiting for sync updates
+            </div>
+            <div
+              :for={event <- @progress.events}
+              :key={event.key}
+              id={"event-#{event.key}"}
+              class="flex gap-4 rounded-2xl border border-slate-100 bg-white/60 p-5 backdrop-blur transition hover:-translate-y-0.5 hover:shadow-md"
+            >
+              <div class={["mt-1 h-3 w-3 rounded-full", event_marker_class(event.tone)]}></div>
+              <div class="flex-1 space-y-1">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <p class="text-sm font-medium text-slate-900">{event.label}</p>
+                  <span class="text-xs text-slate-400">{format_timestamp(event.timestamp)}</span>
+                </div>
+                <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                  <% badge_label = event_badge_label(event) %>
+                  <span :if={badge_label} class={event_tag_class(event.tone)}>{badge_label}</span>
+                  <span :if={rows_phrase(event.rows)}>
+                    {rows_phrase(event.rows)}
+                  </span>
+                  <span :if={query_batch_phrase(event.query_batches)}>
+                    {query_batch_phrase(event.query_batches)}
+                  </span>
+                  <span :if={url_request_phrase(event.url_requests)}>
+                    {url_request_phrase(event.url_requests)}
+                  </span>
+                  <span :if={url_phrase(event.urls)}>
+                    {url_phrase(event.urls)}
+                  </span>
+                  <span :if={api_call_phrase(event.api_calls)}>
+                    {api_call_phrase(event.api_calls)}
+                  </span>
+                  <span :if={event.duration_ms}>
+                    Took {format_duration(event.duration_ms)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="space-y-8">
+        <section class="rounded-3xl border border-slate-200 bg-white/80 p-8 shadow-sm backdrop-blur">
+          <h2 class="text-xl font-semibold text-slate-900">Latest dataset</h2>
+          <dl class="mt-4 space-y-4 text-sm">
+            <div class="flex items-center justify-between">
+              <dt class="text-slate-500">Last sync completed</dt>
+              <dd class="font-medium text-slate-900">
+                {format_date(@sync_info.last_sync)}
+              </dd>
+            </div>
+            <div class="flex items-center justify-between">
+              <dt class="text-slate-500">Recency</dt>
+              <dd class="font-medium text-slate-900">{days_ago(@sync_info.last_sync)}</dd>
+            </div>
+            <div class="flex items-center justify-between">
+              <dt class="text-slate-500">Range covered</dt>
+              <dd class="font-medium text-slate-900">
+                {format_date(@sync_info.earliest_date)}
+                <span class="mx-1 text-slate-400">&mdash;</span>
+                {format_date(@sync_info.latest_date)}
+              </dd>
+            </div>
+            <div class="flex items-center justify-between">
+              <dt class="text-slate-500">Days available</dt>
+              <dd class="font-medium text-slate-900">{@sync_info.days_available}</dd>
+            </div>
+            <div class="flex items-center justify-between">
+              <dt class="text-slate-500">Time series rows</dt>
+              <dd class="font-medium text-slate-900">
+                {format_number(@sync_info.total_records)}
+              </dd>
+            </div>
+          </dl>
+        </section>
+      </aside>
+    </div>
+
+    <section class="mt-8 rounded-3xl border border-slate-200 bg-white/80 p-8 shadow-sm backdrop-blur">
+      <h2 class="text-xl font-semibold text-slate-900">What to expect during sync</h2>
+      <div class="mt-4 grid grid-cols-1 gap-6 md:grid-cols-3">
+        <div class="rounded-2xl border border-sky-100 bg-sky-50/80 p-6">
+          <h3 class="text-sm font-semibold uppercase tracking-widest text-sky-600">Pipeline</h3>
+          <ul class="mt-3 space-y-2 text-sm text-slate-600">
+            <li>Fetch aggregated page metrics for each day in the range</li>
+            <li>Persist daily rows &amp; update URL-level performance summaries</li>
+            <li>Backfill top queries per URL for richer insights</li>
+          </ul>
+        </div>
+        <div class="rounded-2xl border border-emerald-100 bg-emerald-50/80 p-6">
+          <h3 class="text-sm font-semibold uppercase tracking-widest text-emerald-600">
+            Stability
+          </h3>
+          <ul class="mt-3 space-y-2 text-sm text-slate-600">
+            <li>Automatic rate limiting keeps API calls within quota</li>
+            <li>Retries kick in after transient GSC errors</li>
+            <li>Partial failures are surfaced instantly in the timeline</li>
+          </ul>
+        </div>
+        <div class="rounded-2xl border border-purple-100 bg-purple-50/80 p-6">
+          <h3 class="text-sm font-semibold uppercase tracking-widest text-purple-600">
+            Best practices
+          </h3>
+          <ul class="mt-3 space-y-2 text-sm text-slate-600">
+            <li>Schedule a daily 7-day sync to keep numbers fresh</li>
+            <li>Use 30–90 day ranges for onboarding or rebuilding history</li>
+            <li>Leave this page open to watch live progress as data lands</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </div>
+</Layouts.app>
