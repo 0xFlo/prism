@@ -75,180 +75,180 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
             </tr>
           <% else %>
             <tr :for={url <- @urls} :key={url.url} class="hover">
-            <!-- URL column -->
-            <td class={"#{if @view_mode == "all", do: "max-w-sm", else: "max-w-md"}"}>
-              <div class="tooltip tooltip-right" data-tip={url.url}>
-                <a
-                  href={~p"/dashboard/url?url=#{URI.encode(url.url)}"}
-                  class={"link link-primary font-mono #{if @view_mode == "all", do: "text-xs", else: "text-sm"}"}
-                >
-                  {truncate_url(url.url, if(@view_mode == "all", do: 40, else: 60))}
-                </a>
-              </div>
-              <%= if url.redirect_url do %>
-                <div class="text-xs text-gray-500 mt-1 font-mono flex items-center gap-1">
-                  <span>→</span>
-                  <span class="truncate" title={url.redirect_url}>
-                    {truncate_url(url.redirect_url, if(@view_mode == "all", do: 35, else: 50))}
-                  </span>
-                </div>
-              <% end %>
-            </td>
-            <!-- Type -->
-            <%= if column_visible?(:type, @view_mode) do %>
-              <td>
-                <%= if url.type do %>
-                  <span class="badge badge-ghost badge-sm">{url.type}</span>
-                <% else %>
-                  <span class="text-gray-400">—</span>
-                <% end %>
-              </td>
-            <% end %>
-            <!-- Category -->
-            <%= if column_visible?(:category, @view_mode) do %>
-              <td>
-                <%= if url.content_category do %>
-                  <span class={content_category_badge(url.content_category)}>
-                    {url.content_category}
-                  </span>
-                <% else %>
-                  <span class="text-gray-400">—</span>
-                <% end %>
-              </td>
-            <% end %>
-            <!-- Update Needed -->
-            <%= if column_visible?(:needs_update, @view_mode) do %>
-              <td class="text-center">
-                <%= if url.needs_update do %>
-                  <span class="badge badge-error badge-sm">Yes</span>
-                <% else %>
-                  <span class="badge badge-success badge-sm">No</span>
-                <% end %>
-              </td>
-            <% end %>
-            <!-- Update Reason -->
-            <%= if column_visible?(:update_reason, @view_mode) do %>
-              <td class="text-xs">
-                {url.update_reason || "—"}
-              </td>
-            <% end %>
-            <!-- Priority -->
-            <%= if column_visible?(:update_priority, @view_mode) do %>
-              <td>
-                <%= if url.update_priority do %>
-                  <span class={priority_badge(url.update_priority)}>
-                    {url.update_priority}
-                  </span>
-                <% else %>
-                  <span class="text-gray-400">—</span>
-                <% end %>
-              </td>
-            <% end %>
-            <!-- Lifetime Clicks -->
-            <td class="text-right font-semibold text-green-700">
-              {format_number(url.lifetime_clicks)}
-            </td>
-            <!-- Period Clicks -->
-            <td class="text-right font-semibold text-blue-700">
-              {format_number(url.period_clicks)}
-            </td>
-            <!-- Period Impressions (only in 'all' mode) -->
-            <%= if column_visible?(:period_impressions, @view_mode) do %>
-              <td class="text-right text-blue-600">
-                {format_number(url.period_impressions)}
-              </td>
-            <% end %>
-            <!-- Active Since (only in 'all' mode) -->
-            <%= if column_visible?(:first_seen_date, @view_mode) do %>
-              <td class="text-center text-sm text-gray-600">
-                <%= if url.first_seen_date do %>
-                  {Calendar.strftime(url.first_seen_date, "%b %Y")}
-                <% else %>
-                  <span class="text-gray-400">—</span>
-                <% end %>
-              </td>
-            <% end %>
-            <!-- Backlinks -->
-            <td class="text-right">
-              <div class="flex items-center justify-end gap-2">
-                <span class="font-medium">{format_number(url.backlink_count || 0)}</span>
-                <%= if url.backlink_count > 0 && stale_backlinks?(url.backlinks_last_imported) do %>
-                  <span
-                    class="badge badge-warning badge-xs tooltip"
-                    data-tip="Backlink data >90 days old"
+              <!-- URL column -->
+              <td class={"#{if @view_mode == "all", do: "max-w-sm", else: "max-w-md"}"}>
+                <div class="tooltip tooltip-right" data-tip={url.url}>
+                  <a
+                    href={~p"/dashboard/url?url=#{URI.encode(url.url)}"}
+                    class={"link link-primary font-mono #{if @view_mode == "all", do: "text-xs", else: "text-sm"}"}
                   >
-                    stale
-                  </span>
+                    {truncate_url(url.url, if(@view_mode == "all", do: 40, else: 60))}
+                  </a>
+                </div>
+                <%= if url.redirect_url do %>
+                  <div class="text-xs text-gray-500 mt-1 font-mono flex items-center gap-1">
+                    <span>→</span>
+                    <span class="truncate" title={url.redirect_url}>
+                      {truncate_url(url.redirect_url, if(@view_mode == "all", do: 35, else: 50))}
+                    </span>
+                  </div>
                 <% end %>
-              </div>
-            </td>
-            <!-- CTR -->
-            <td class="text-right">
-              <%= if url.lifetime_avg_ctr do %>
-                <span class={"badge #{if @view_mode == "all", do: "badge-sm", else: ""} #{get_badge_color(url.lifetime_avg_ctr * 100, :ctr)}"}>
-                  {format_percentage(url.lifetime_avg_ctr * 100)}
-                </span>
-              <% else %>
-                <span class="text-gray-400">—</span>
+              </td>
+              <!-- Type -->
+              <%= if column_visible?(:type, @view_mode) do %>
+                <td>
+                  <%= if url.type do %>
+                    <span class="badge badge-ghost badge-sm">{url.type}</span>
+                  <% else %>
+                    <span class="text-gray-400">—</span>
+                  <% end %>
+                </td>
               <% end %>
-            </td>
-            <!-- Avg Position -->
-            <td class="text-right">
-              <%= if url.lifetime_avg_position do %>
-                <span class={"badge #{if @view_mode == "all", do: "badge-sm", else: ""} #{get_badge_color(url.lifetime_avg_position, :position)}"}>
-                  {format_position(url.lifetime_avg_position)}
-                </span>
-              <% else %>
-                <span class="text-gray-400">—</span>
+              <!-- Category -->
+              <%= if column_visible?(:category, @view_mode) do %>
+                <td>
+                  <%= if url.content_category do %>
+                    <span class={content_category_badge(url.content_category)}>
+                      {url.content_category}
+                    </span>
+                  <% else %>
+                    <span class="text-gray-400">—</span>
+                  <% end %>
+                </td>
               <% end %>
-            </td>
-            <!-- HTTP Status -->
-            <%= if column_visible?(:http_status, @view_mode) do %>
-              <td class="text-center">
-                <%= if url.http_status do %>
-                  <span class={http_status_badge_class(url.http_status)}>
-                    {url.http_status}
+              <!-- Update Needed -->
+              <%= if column_visible?(:needs_update, @view_mode) do %>
+                <td class="text-center">
+                  <%= if url.needs_update do %>
+                    <span class="badge badge-error badge-sm">Yes</span>
+                  <% else %>
+                    <span class="badge badge-success badge-sm">No</span>
+                  <% end %>
+                </td>
+              <% end %>
+              <!-- Update Reason -->
+              <%= if column_visible?(:update_reason, @view_mode) do %>
+                <td class="text-xs">
+                  {url.update_reason || "—"}
+                </td>
+              <% end %>
+              <!-- Priority -->
+              <%= if column_visible?(:update_priority, @view_mode) do %>
+                <td>
+                  <%= if url.update_priority do %>
+                    <span class={priority_badge(url.update_priority)}>
+                      {url.update_priority}
+                    </span>
+                  <% else %>
+                    <span class="text-gray-400">—</span>
+                  <% end %>
+                </td>
+              <% end %>
+              <!-- Lifetime Clicks -->
+              <td class="text-right font-semibold text-green-700">
+                {format_number(url.lifetime_clicks)}
+              </td>
+              <!-- Period Clicks -->
+              <td class="text-right font-semibold text-blue-700">
+                {format_number(url.period_clicks)}
+              </td>
+              <!-- Period Impressions (only in 'all' mode) -->
+              <%= if column_visible?(:period_impressions, @view_mode) do %>
+                <td class="text-right text-blue-600">
+                  {format_number(url.period_impressions)}
+                </td>
+              <% end %>
+              <!-- Active Since (only in 'all' mode) -->
+              <%= if column_visible?(:first_seen_date, @view_mode) do %>
+                <td class="text-center text-sm text-gray-600">
+                  <%= if url.first_seen_date do %>
+                    {Calendar.strftime(url.first_seen_date, "%b %Y")}
+                  <% else %>
+                    <span class="text-gray-400">—</span>
+                  <% end %>
+                </td>
+              <% end %>
+              <!-- Backlinks -->
+              <td class="text-right">
+                <div class="flex items-center justify-end gap-2">
+                  <span class="font-medium">{format_number(url.backlink_count || 0)}</span>
+                  <%= if url.backlink_count > 0 && stale_backlinks?(url.backlinks_last_imported) do %>
+                    <span
+                      class="badge badge-warning badge-xs tooltip"
+                      data-tip="Backlink data >90 days old"
+                    >
+                      stale
+                    </span>
+                  <% end %>
+                </div>
+              </td>
+              <!-- CTR -->
+              <td class="text-right">
+                <%= if url.lifetime_avg_ctr do %>
+                  <span class={"badge #{if @view_mode == "all", do: "badge-sm", else: ""} #{get_badge_color(url.lifetime_avg_ctr * 100, :ctr)}"}>
+                    {format_percentage(url.lifetime_avg_ctr * 100)}
                   </span>
                 <% else %>
                   <span class="text-gray-400">—</span>
                 <% end %>
               </td>
-            <% end %>
-            <!-- WoW Growth -->
-            <%= if column_visible?(:wow_growth, @view_mode) do %>
+              <!-- Avg Position -->
               <td class="text-right">
-                <span class={"badge badge-sm #{get_badge_color(url.wow_growth_last4w || 0, :growth)}"}>
-                  <%= if url.wow_growth_last4w && url.wow_growth_last4w != 0 do %>
-                    {if url.wow_growth_last4w > 0, do: "+", else: ""}{Float.round(
-                      url.wow_growth_last4w,
-                      1
-                    )}%
-                  <% else %>
-                    —
-                  <% end %>
-                </span>
-              </td>
-            <% end %>
-            <!-- Status -->
-            <%= if column_visible?(:status, @view_mode) do %>
-              <td class="text-center">
-                <%= if url.data_available do %>
-                  <span class="badge badge-success">Active</span>
+                <%= if url.lifetime_avg_position do %>
+                  <span class={"badge #{if @view_mode == "all", do: "badge-sm", else: ""} #{get_badge_color(url.lifetime_avg_position, :position)}"}>
+                    {format_position(url.lifetime_avg_position)}
+                  </span>
                 <% else %>
-                  <span class="badge badge-ghost">No Data</span>
+                  <span class="text-gray-400">—</span>
                 <% end %>
               </td>
-            <% end %>
-            <!-- Actions -->
-            <td class="text-center">
-              <.link
-                navigate={~p"/dashboard/url?#{%{url: URI.encode(url.url)}}"}
-                class="btn btn-ghost btn-xs"
-              >
-                Details
-              </.link>
-            </td>
-          </tr>
+              <!-- HTTP Status -->
+              <%= if column_visible?(:http_status, @view_mode) do %>
+                <td class="text-center">
+                  <%= if url.http_status do %>
+                    <span class={http_status_badge_class(url.http_status)}>
+                      {url.http_status}
+                    </span>
+                  <% else %>
+                    <span class="text-gray-400">—</span>
+                  <% end %>
+                </td>
+              <% end %>
+              <!-- WoW Growth -->
+              <%= if column_visible?(:wow_growth, @view_mode) do %>
+                <td class="text-right">
+                  <span class={"badge badge-sm #{get_badge_color(url.wow_growth_last4w || 0, :growth)}"}>
+                    <%= if url.wow_growth_last4w && url.wow_growth_last4w != 0 do %>
+                      {if url.wow_growth_last4w > 0, do: "+", else: ""}{Float.round(
+                        url.wow_growth_last4w,
+                        1
+                      )}%
+                    <% else %>
+                      —
+                    <% end %>
+                  </span>
+                </td>
+              <% end %>
+              <!-- Status -->
+              <%= if column_visible?(:status, @view_mode) do %>
+                <td class="text-center">
+                  <%= if url.data_available do %>
+                    <span class="badge badge-success">Active</span>
+                  <% else %>
+                    <span class="badge badge-ghost">No Data</span>
+                  <% end %>
+                </td>
+              <% end %>
+              <!-- Actions -->
+              <td class="text-center">
+                <.link
+                  navigate={~p"/dashboard/url?#{%{url: URI.encode(url.url)}}"}
+                  class="btn btn-ghost btn-xs"
+                >
+                  Details
+                </.link>
+              </td>
+            </tr>
           <% end %>
         </tbody>
       </table>
@@ -643,5 +643,101 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
   defp calculate_visible_pages(current, total) do
     # In the middle: [1, ..., current-1, current, current+1, ..., last]
     [1, :ellipsis, current - 1, current, current + 1, :ellipsis, total]
+  end
+
+  @doc """
+  Renders a group of toggle buttons with active state styling.
+
+  ## Attributes
+  - `options` - List of maps with :value and :label keys
+  - `current_value` - The currently selected value
+  - `event_name` - The Phoenix event to trigger on click
+  - `value_key` - The parameter key name for the phx-value attribute
+
+  ## Example
+      <.toggle_button_group
+        options={[
+          %{value: "daily", label: "Daily"},
+          %{value: "weekly", label: "Weekly"}
+        ]}
+        current_value={@chart_view}
+        event_name="change_chart_view"
+        value_key="chart_view"
+      />
+  """
+  attr :options, :list, required: true
+  attr :current_value, :any, required: true
+  attr :event_name, :string, required: true
+  attr :value_key, :string, required: true
+
+  def toggle_button_group(assigns) do
+    # Build dynamic phx-value attributes for each option
+    assigns =
+      assign(assigns, :options_with_attrs, fn ->
+        Enum.map(assigns.options, fn option ->
+          Map.put(option, :phx_value_attr, %{assigns.value_key => option.value})
+        end)
+      end)
+
+    ~H"""
+    <div class="flex flex-wrap items-center gap-2 rounded-full bg-slate-100 p-1 text-xs font-semibold text-slate-600">
+      <button
+        :for={option <- @options_with_attrs.()}
+        type="button"
+        phx-click={@event_name}
+        {Map.new(option.phx_value_attr, fn {k, v} -> {"phx-value-#{k}", v} end)}
+        class={
+          "rounded-full px-3 py-1.5 transition " <>
+            if(to_string(@current_value) == option.value,
+              do: "bg-slate-900 text-white shadow",
+              else: "hover:text-slate-900"
+            )
+        }
+        aria-label={option.label}
+      >
+        {option.label}
+      </button>
+    </div>
+    """
+  end
+
+  @doc """
+  Renders a metric card with primary value and secondary stats.
+
+  ## Attributes
+  - `label` - The card title/label
+  - `value` - The primary metric value (clicks)
+  - `impressions` - Secondary metric (impressions count)
+  - `ctr` - Secondary metric (CTR percentage)
+  - `class` - Optional additional CSS classes
+
+  ## Example
+      <.metric_card
+        label="This month"
+        value={@stats.current_month.total_clicks}
+        impressions={@stats.current_month.total_impressions}
+        ctr={@stats.current_month.avg_ctr}
+      />
+  """
+  attr :label, :string, required: true
+  attr :value, :integer, required: true
+  attr :impressions, :integer, required: true
+  attr :ctr, :float, required: true
+  attr :class, :string, default: ""
+
+  def metric_card(assigns) do
+    ~H"""
+    <div class={"rounded-2xl border border-white/20 bg-white/10 px-5 py-4 #{@class}"}>
+      <p class="text-xs uppercase tracking-[0.3em] text-slate-200">
+        {@label}
+      </p>
+      <p class="mt-2 text-3xl font-semibold text-white">
+        {format_number(@value)}
+      </p>
+      <p class="mt-2 text-sm text-slate-200">
+        {format_number(@impressions)} impressions | {format_percentage(@ctr)} CTR
+      </p>
+    </div>
+    """
   end
 end

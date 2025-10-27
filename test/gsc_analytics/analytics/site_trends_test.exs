@@ -16,7 +16,13 @@ defmodule GscAnalytics.Analytics.SiteTrendsTest do
     today = Date.utc_today()
 
     Enum.each(0..4, fn offset ->
-      insert_time_series(@account_id, Date.add(today, -offset), 10 + offset, 100 + offset * 5, 3.0)
+      insert_time_series(
+        @account_id,
+        Date.add(today, -offset),
+        10 + offset,
+        100 + offset * 5,
+        3.0
+      )
     end)
 
     # Noise from another account should be ignored
@@ -40,6 +46,7 @@ defmodule GscAnalytics.Analytics.SiteTrendsTest do
 
     assert label == "Week Starting"
     assert Enum.all?(series, fn %{date: date} -> Date.day_of_week(date) == 1 end)
+
     assert Enum.all?(series, fn %{period_end: period_end} -> Date.day_of_week(period_end) == 7 end)
   end
 

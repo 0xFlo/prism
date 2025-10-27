@@ -183,9 +183,7 @@ defmodule GscAnalytics.DataSources.GSC.Support.Authenticator do
         {:noreply, new_state}
 
       {new_state, {:error, reason}} ->
-        Logger.error(
-          "Failed to refresh GSC token for account #{account_id}: #{inspect(reason)}"
-        )
+        Logger.error("Failed to refresh GSC token for account #{account_id}: #{inspect(reason)}")
 
         {:noreply, new_state}
     end
@@ -283,9 +281,7 @@ defmodule GscAnalytics.DataSources.GSC.Support.Authenticator do
           retry_in_seconds: 30
         })
 
-        Logger.error(
-          "Failed to obtain GSC token for account #{account_id}: #{inspect(reason)}"
-        )
+        Logger.error("Failed to obtain GSC token for account #{account_id}: #{inspect(reason)}")
 
         state =
           state
@@ -318,14 +314,15 @@ defmodule GscAnalytics.DataSources.GSC.Support.Authenticator do
 
   defp put_account(state, account_id, updates) do
     update_in(state, [:accounts, account_id], fn existing ->
-      (existing || %{
-         credentials: nil,
-         token: nil,
-         expires_at: nil,
-         refresh_timer: nil,
-         retry_timers: %{},
-         last_error: nil
-       })
+      (existing ||
+         %{
+           credentials: nil,
+           token: nil,
+           expires_at: nil,
+           refresh_timer: nil,
+           retry_timers: %{},
+           last_error: nil
+         })
       |> Map.merge(updates)
     end)
   end
@@ -371,7 +368,7 @@ defmodule GscAnalytics.DataSources.GSC.Support.Authenticator do
 
       {timer, rest} ->
         Process.cancel_timer(timer)
-    put_account(state, account_id, %{retry_timers: rest})
+        put_account(state, account_id, %{retry_timers: rest})
     end
   end
 

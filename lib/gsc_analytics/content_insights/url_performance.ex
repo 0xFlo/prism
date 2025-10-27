@@ -146,18 +146,41 @@ defmodule GscAnalytics.ContentInsights.UrlPerformance do
 
     order_by_clause =
       case sort_by do
-        "lifetime_clicks" -> [{direction, dynamic([ls], ls.lifetime_clicks)}]
-        "lifetime_impressions" -> [{direction, dynamic([ls], ls.lifetime_impressions)}]
-        "lifetime_ctr" -> [{direction, dynamic([ls], ls.avg_ctr)}]
-        "lifetime_position" -> [{direction, dynamic([ls], ls.avg_position)}]
-        "period_clicks" -> [{direction, dynamic([ls, pm], coalesce(pm.period_clicks, 0))}]
-        "period_impressions" -> [{direction, dynamic([ls, pm], coalesce(pm.period_impressions, 0))}]
-        "period_ctr" -> [{direction, dynamic([ls, pm], coalesce(pm.period_ctr, 0.0))}]
-        "period_position" -> [{direction, dynamic([ls, pm], coalesce(pm.period_position, 0.0))}]
-        "backlinks" -> [{direction, dynamic([ls, pm, bl], coalesce(bl.backlink_count, 0))}]
-        "http_status" -> [{direction, dynamic([ls, pm, bl, p], coalesce(p.http_status, 999))}]
-        "first_seen_date" -> [{direction, dynamic([ls], ls.first_seen_date)}]
-        _ -> [{direction, dynamic([ls], ls.lifetime_clicks)}]
+        "lifetime_clicks" ->
+          [{direction, dynamic([ls], ls.lifetime_clicks)}]
+
+        "lifetime_impressions" ->
+          [{direction, dynamic([ls], ls.lifetime_impressions)}]
+
+        "lifetime_ctr" ->
+          [{direction, dynamic([ls], ls.avg_ctr)}]
+
+        "lifetime_position" ->
+          [{direction, dynamic([ls], ls.avg_position)}]
+
+        "period_clicks" ->
+          [{direction, dynamic([ls, pm], coalesce(pm.period_clicks, 0))}]
+
+        "period_impressions" ->
+          [{direction, dynamic([ls, pm], coalesce(pm.period_impressions, 0))}]
+
+        "period_ctr" ->
+          [{direction, dynamic([ls, pm], coalesce(pm.period_ctr, 0.0))}]
+
+        "period_position" ->
+          [{direction, dynamic([ls, pm], coalesce(pm.period_position, 0.0))}]
+
+        "backlinks" ->
+          [{direction, dynamic([ls, pm, bl], coalesce(bl.backlink_count, 0))}]
+
+        "http_status" ->
+          [{direction, dynamic([ls, pm, bl, p], coalesce(p.http_status, 999))}]
+
+        "first_seen_date" ->
+          [{direction, dynamic([ls], ls.first_seen_date)}]
+
+        _ ->
+          [{direction, dynamic([ls], ls.lifetime_clicks)}]
       end
 
     from row in query, order_by: ^order_by_clause

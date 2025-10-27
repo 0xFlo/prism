@@ -72,22 +72,20 @@ config :logger, :default_formatter,
 config :phoenix, :json_library, JSON
 
 # Configure Google Search Console accounts
-config :gsc_analytics, :gsc_accounts,
-  %{
-    1 => %{
-      name: "Primary (Scrapfly)",
-      service_account_file: Path.expand("../priv/production-284316-43f352dd1cda.json", __DIR__),
-      default_property: "sc-domain:scrapfly.io",
-      enabled?: true
-    },
-    2 => %{
-      name: "Alba Analytics",
-      service_account_file:
-        Path.expand("../priv/alba-analytics-475918-0087cc476b9a.json", __DIR__),
-      default_property: System.get_env("GSC_ACCOUNT_2_PROPERTY"),
-      enabled?: true
-    }
+config :gsc_analytics, :gsc_accounts, %{
+  1 => %{
+    name: "Primary (Scrapfly)",
+    service_account_file: Path.expand("../priv/production-284316-43f352dd1cda.json", __DIR__),
+    default_property: "sc-domain:scrapfly.io",
+    enabled?: true
+  },
+  2 => %{
+    name: "Alba Analytics",
+    service_account_file: Path.expand("../priv/alba-analytics-475918-0087cc476b9a.json", __DIR__),
+    default_property: System.get_env("GSC_ACCOUNT_2_PROPERTY"),
+    enabled?: true
   }
+}
 
 # Configure sync behaviour
 config :gsc_analytics, GscAnalytics.GSC.Sync,

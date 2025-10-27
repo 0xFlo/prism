@@ -27,7 +27,10 @@ defmodule GscAnalytics.DataSources.GSC.Support.RateLimiter do
           :ok
 
         {:deny, _limit} ->
-          Logger.warning("Rate limited for #{site} (account #{account_id}), retry in #{@window_ms}ms")
+          Logger.warning(
+            "Rate limited for #{site} (account #{account_id}), retry in #{@window_ms}ms"
+          )
+
           {:error, :rate_limited, @window_ms}
       end
     end

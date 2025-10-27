@@ -33,7 +33,6 @@ defmodule GscAnalytics.DataSources.GSC.AccountsHelper do
   def list_available_properties(account_id) do
     with {:ok, account} <- Accounts.fetch_account(account_id),
          {:ok, sites} <- Client.list_sites(account_id) do
-
       IO.puts("\nAccount: #{account.name} (ID: #{account.id})")
       IO.puts("Configured property: #{account.default_property || "(none configured)"}")
       IO.puts("\nAvailable GSC properties:")
@@ -100,11 +99,13 @@ defmodule GscAnalytics.DataSources.GSC.AccountsHelper do
   def check_property_access(account_id, property_url) do
     with {:ok, account} <- Accounts.fetch_account(account_id),
          {:ok, sites} <- Client.list_sites(account_id) do
-
       site = Enum.find(sites, fn s -> s.site_url == property_url end)
 
       if site do
-        IO.puts("✓ Account #{account.id} has access to #{property_url} (#{site.permission_level})")
+        IO.puts(
+          "✓ Account #{account.id} has access to #{property_url} (#{site.permission_level})"
+        )
+
         {:ok, true}
       else
         IO.puts("✗ Account #{account.id} does NOT have access to #{property_url}")
@@ -134,25 +135,32 @@ defmodule GscAnalytics.DataSources.GSC.AccountsHelper do
   def suggest_property(account_id) do
     with {:ok, account} <- Accounts.fetch_account(account_id),
          {:ok, sites} <- Client.list_sites(account_id) do
-
       if Enum.empty?(sites) do
         IO.puts("\nNo properties available for Account #{account.id}")
-        IO.puts("Please ensure the service account (#{account.service_account_file}) has access to GSC properties.")
+
+        IO.puts(
+          "Please ensure the service account (#{account.service_account_file}) has access to GSC properties."
+        )
+
         {:ok, []}
       else
         IO.puts("\nSuggested properties for Account #{account.id}:")
 
         # Prefer domain properties over URL properties
-        domain_props = Enum.filter(sites, fn s -> String.starts_with?(s.site_url, "sc-domain:") end)
+        domain_props =
+          Enum.filter(sites, fn s -> String.starts_with?(s.site_url, "sc-domain:") end)
+
         url_props = Enum.filter(sites, fn s -> String.starts_with?(s.site_url, "http") end)
 
         suggestions =
           (domain_props ++ url_props)
           |> Enum.with_index(1)
           |> Enum.map(fn {site, index} ->
-            type = if String.starts_with?(site.site_url, "sc-domain:"),
-                   do: "domain property - recommended",
-                   else: "URL property"
+            type =
+              if String.starts_with?(site.site_url, "sc-domain:"),
+                do: "domain property - recommended",
+                else: "URL property"
+
             IO.puts("#{index}. #{site.site_url} (#{type})")
             site.site_url
           end)
@@ -190,16 +198,20 @@ defmodule GscAnalytics.DataSources.GSC.AccountsHelper do
       end)
       |> Enum.uniq_by(& &1.site_url)
 
-    domain_props = Enum.filter(all_sites, fn s -> String.starts_with?(s.site_url, "sc-domain:") end)
+    domain_props =
+      Enum.filter(all_sites, fn s -> String.starts_with?(s.site_url, "sc-domain:") end)
+
     url_props = Enum.filter(all_sites, fn s -> String.starts_with?(s.site_url, "http") end)
 
     IO.puts("\nDomain Properties (#{length(domain_props)}):")
+
     Enum.each(domain_props, fn site ->
       domain = String.replace_prefix(site.site_url, "sc-domain:", "")
       IO.puts("  • #{domain} (#{site.permission_level})")
     end)
 
     IO.puts("\nURL Properties (#{length(url_props)}):")
+
     Enum.each(url_props, fn site ->
       uri = URI.parse(site.site_url)
       IO.puts("  • #{uri.host}#{uri.path} (#{site.permission_level})")

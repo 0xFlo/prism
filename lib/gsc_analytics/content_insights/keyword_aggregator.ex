@@ -78,7 +78,8 @@ defmodule GscAnalytics.ContentInsights.KeywordAggregator do
     total_count = count_keywords(account_id, period_start, search)
 
     # Then, fetch the paginated keywords with full aggregation
-    keywords = fetch_keywords(account_id, period_start, search, sort_by, sort_direction, page, limit)
+    keywords =
+      fetch_keywords(account_id, period_start, search, sort_by, sort_direction, page, limit)
 
     end_time = System.monotonic_time()
     duration = System.convert_time_unit(end_time - start_time, :native, :millisecond)
@@ -141,15 +142,20 @@ defmodule GscAnalytics.ContentInsights.KeywordAggregator do
           clicks: sum(fragment("(?->>'clicks')::int", q)),
           impressions: sum(fragment("(?->>'impressions')::int", q)),
           # Weighted average position
-          position: fragment(
-            "SUM((?->>'position')::float * (?->>'impressions')::int) / NULLIF(SUM((?->>'impressions')::int), 0)",
-            q, q, q
-          ),
+          position:
+            fragment(
+              "SUM((?->>'position')::float * (?->>'impressions')::int) / NULLIF(SUM((?->>'impressions')::int), 0)",
+              q,
+              q,
+              q
+            ),
           # CTR from aggregated values
-          ctr: fragment(
-            "SUM((?->>'clicks')::int)::float / NULLIF(SUM((?->>'impressions')::int), 0)",
-            q, q
-          ),
+          ctr:
+            fragment(
+              "SUM((?->>'clicks')::int)::float / NULLIF(SUM((?->>'impressions')::int), 0)",
+              q,
+              q
+            ),
           # Count distinct URLs
           url_count: fragment("COUNT(DISTINCT ?)", ts.url)
         }
@@ -175,15 +181,45 @@ defmodule GscAnalytics.ContentInsights.KeywordAggregator do
   end
 
   defp apply_sort(query, sort_by, direction) do
-    sort_expr = case sort_by do
-      "query" -> dynamic([ts, q], fragment("?->>'query'", q))
-      "clicks" -> dynamic([ts, q], fragment("SUM((?->>'clicks')::int)", q))
-      "impressions" -> dynamic([ts, q], fragment("SUM((?->>'impressions')::int)", q))
-      "ctr" -> dynamic([ts, q], fragment("SUM((?->>'clicks')::int)::float / NULLIF(SUM((?->>'impressions')::int), 0)", q, q))
-      "position" -> dynamic([ts, q], fragment("SUM((?->>'position')::float * (?->>'impressions')::int) / NULLIF(SUM((?->>'impressions')::int), 0)", q, q, q))
-      "url_count" -> dynamic([ts, q], fragment("COUNT(DISTINCT ?)", ts.url))
-      _ -> dynamic([ts, q], fragment("SUM((?->>'clicks')::int)", q))  # Default to clicks
-    end
+    sort_expr =
+      case sort_by do
+        "query" ->
+          dynamic([ts, q], fragment("?->>'query'", q))
+
+        "clicks" ->
+          dynamic([ts, q], fragment("SUM((?->>'clicks')::int)", q))
+
+        "impressions" ->
+          dynamic([ts, q], fragment("SUM((?->>'impressions')::int)", q))
+
+        "ctr" ->
+          dynamic(
+            [ts, q],
+            fragment(
+              "SUM((?->>'clicks')::int)::float / NULLIF(SUM((?->>'impressions')::int), 0)",
+              q,
+              q
+            )
+          )
+
+        "position" ->
+          dynamic(
+            [ts, q],
+            fragment(
+              "SUM((?->>'position')::float * (?->>'impressions')::int) / NULLIF(SUM((?->>'impressions')::int), 0)",
+              q,
+              q,
+              q
+            )
+          )
+
+        "url_count" ->
+          dynamic([ts, q], fragment("COUNT(DISTINCT ?)", ts.url))
+
+        # Default to clicks
+        _ ->
+          dynamic([ts, q], fragment("SUM((?->>'clicks')::int)", q))
+      end
 
     # Interpolate dynamic expression at root level
     if direction == :asc do

@@ -132,6 +132,7 @@ defmodule GscAnalyticsWeb.DashboardLivePerformanceTest do
           end
 
         total_clicks = Enum.reduce(daily_rows, 0, fn %{clicks: c}, acc -> acc + c end)
+
         total_impressions =
           Enum.reduce(daily_rows, 0, fn %{impressions: imp}, acc -> acc + imp end)
 

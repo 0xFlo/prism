@@ -238,13 +238,13 @@ defmodule GscAnalytics.DataSources.GSC.Support.AuthenticatorIntegrationTest do
       # Should have retry messages if token fetch failed
       # (since we're not mocking the actual OAuth2 endpoint)
       assert Enum.any?(messages, fn
-        {:retry, :fetch_token, 1} -> true
-        _ -> false
-      end) or
-      Enum.any?(messages, fn
-        {:refresh_token, 1} -> true
-        _ -> false
-      end)
+               {:retry, :fetch_token, 1} -> true
+               _ -> false
+             end) or
+               Enum.any?(messages, fn
+                 {:refresh_token, 1} -> true
+                 _ -> false
+               end)
 
       # Cleanup
       GenServer.stop(pid, :normal)
@@ -312,9 +312,9 @@ defmodule GscAnalytics.DataSources.GSC.Support.AuthenticatorIntegrationTest do
       {:messages, messages} = Process.info(pid, :messages)
 
       assert Enum.any?(messages, fn
-        {:retry, :load_credentials, 1} -> true
-        _ -> false
-      end)
+               {:retry, :load_credentials, 1} -> true
+               _ -> false
+             end)
 
       GenServer.stop(pid, :normal)
     end
@@ -336,10 +336,11 @@ defmodule GscAnalytics.DataSources.GSC.Support.AuthenticatorIntegrationTest do
       Process.sleep(200)
 
       {:messages, messages} = Process.info(pid, :messages)
+
       assert Enum.any?(messages, fn
-        {:retry, :fetch_token, 1} -> true
-        _ -> false
-      end)
+               {:retry, :fetch_token, 1} -> true
+               _ -> false
+             end)
 
       GenServer.stop(pid, :normal)
     end

@@ -68,7 +68,7 @@ defmodule GscAnalyticsWeb.Layouts do
                 >
                   <%= for {label, id} <- @account_options do %>
                     <option value={id} selected={id == @current_account_id}>
-                      <%= label %>
+                      {label}
                     </option>
                   <% end %>
                 </select>
@@ -76,7 +76,7 @@ defmodule GscAnalyticsWeb.Layouts do
             <% else %>
               <%= if @current_account do %>
                 <span class="badge badge-outline badge-sm px-3 py-2 text-xs font-medium">
-                  <%= @current_account.name %>
+                  {@current_account.name}
                 </span>
               <% end %>
             <% end %>

@@ -37,12 +37,14 @@ defmodule GscAnalytics.DataSources.GSC.Core.ClientTest do
       case Client.list_sites(1) do
         {:ok, sites} ->
           IO.puts("\nAccount 1 (Scrapfly) has access to #{length(sites)} properties:")
+
           Enum.each(sites, fn site ->
             IO.puts("  - #{site.site_url} (#{site.permission_level})")
           end)
 
           # Verify we have at least the configured property
           configured_site = "sc-domain:scrapfly.io"
+
           assert Enum.any?(sites, fn site -> site.site_url == configured_site end),
                  "Should have access to #{configured_site}"
 
@@ -54,6 +56,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.ClientTest do
       case Client.list_sites(2) do
         {:ok, sites} ->
           IO.puts("\nAccount 2 has access to #{length(sites)} properties:")
+
           Enum.each(sites, fn site ->
             IO.puts("  - #{site.site_url} (#{site.permission_level})")
           end)

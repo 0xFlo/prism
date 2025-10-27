@@ -135,8 +135,11 @@ defmodule GscAnalytics.ContentInsights.UrlInsights do
 
     {selection_start, selection_end} =
       case {Map.get(opts, :selection_start), Map.get(opts, :selection_end)} do
-        {nil, nil} -> {data_range_start, data_range_end}
-        {start, finish} -> normalize_date_range(start || data_range_start, finish || data_range_end)
+        {nil, nil} ->
+          {data_range_start, data_range_end}
+
+        {start, finish} ->
+          normalize_date_range(start || data_range_start, finish || data_range_end)
       end
 
     fetched_at =
@@ -228,8 +231,12 @@ defmodule GscAnalytics.ContentInsights.UrlInsights do
 
       summary =
         case view_mode do
-          "weekly" -> pluralize(length(time_series), "week")
-          "monthly" -> pluralize(length(time_series), "month")
+          "weekly" ->
+            pluralize(length(time_series), "week")
+
+          "monthly" ->
+            pluralize(length(time_series), "month")
+
           _ ->
             days =
               range_end
@@ -408,6 +415,7 @@ defmodule GscAnalytics.ContentInsights.UrlInsights do
   defp extract_comparison_date(%{period_end: %Date{} = period_end}), do: period_end
   defp extract_comparison_date(%{date: %Date{} = date}), do: date
   defp extract_comparison_date(%{period_end: nil, date: nil}), do: nil
+
   defp extract_comparison_date(%{period_end: period_end}) when is_binary(period_end) do
     Date.from_iso8601!(period_end)
   rescue

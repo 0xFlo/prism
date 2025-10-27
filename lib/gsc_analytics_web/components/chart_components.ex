@@ -18,6 +18,7 @@ defmodule GscAnalyticsWeb.ChartComponents do
   attr :events, :list, default: []
   attr :time_series_json, :string, default: nil
   attr :events_json, :string, default: nil
+  attr :show_impressions, :boolean, default: true
 
   def performance_chart(assigns) do
     ~H"""
@@ -29,6 +30,7 @@ defmodule GscAnalyticsWeb.ChartComponents do
         data-x-label={@x_label}
         data-time-series={encoded_time_series(@time_series, @time_series_json)}
         data-events={encoded_events(@events, @events_json)}
+        data-show-impressions={if @show_impressions, do: "true", else: "false"}
         class="relative h-96"
       >
         <canvas id={@id} class="absolute inset-0 w-full h-full"></canvas>

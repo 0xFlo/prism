@@ -5,69 +5,13 @@
   current_account_id={@current_account_id}
   account_options={@account_options}
 >
-  <% period_label =
-    case @period_days do
-      7 -> "Last 7 days"
-      30 -> "Last 30 days"
-      90 -> "Last 90 days"
-      180 -> "Last 6 months"
-      10000 -> "All time"
-      value when is_integer(value) -> "#{value} days"
-      value -> "#{value}"
-    end %>
-  <% chart_view_label =
-    case @chart_view do
-      "weekly" -> "Weekly trend"
-      "monthly" -> "Monthly trend"
-      _ -> "Daily trend"
-    end %>
-  <% mom_change = @stats.month_over_month_change || 0 %>
-  <% mom_indicator_class =
-    cond do
-      mom_change > 0 -> "border-emerald-400/40 bg-emerald-500/10 text-emerald-200"
-      mom_change < 0 -> "border-rose-400/50 bg-rose-500/10 text-rose-200"
-      true -> "border-slate-200/40 bg-slate-200/10 text-slate-200"
-    end %>
-  <% mom_icon =
-    cond do
-      mom_change > 0 -> "hero-arrow-trending-up"
-      mom_change < 0 -> "hero-arrow-trending-down"
-      true -> "hero-arrows-right-left"
-    end %>
-  <% mom_delta_display =
-    cond do
-      mom_change > 0 -> "+#{Float.round(mom_change, 1)}%"
-      mom_change < 0 -> "#{Float.round(mom_change, 1)}%"
-      true -> "0%"
-    end %>
-  <% sort_label =
-    case @sort_by do
-      "lifetime_clicks" -> "Total Clicks (All Time)"
-      "period_clicks" -> "Clicks in Period"
-      "period_impressions" -> "Impressions in Period"
-      "lifetime_avg_ctr" -> "Average CTR"
-      "lifetime_avg_position" -> "Average Position"
-      _ -> "Rank"
-    end %>
-  <% sort_direction_label = if @sort_direction == "asc", do: "ascending", else: "descending" %>
-  <% earliest_all_time =
-    if @stats.all_time[:earliest_date] do
-      Calendar.strftime(@stats.all_time.earliest_date, "%b %Y")
-    else
-      nil
-    end %>
-  <% latest_all_time =
-    if @stats.all_time[:latest_date] do
-      Calendar.strftime(@stats.all_time.latest_date, "%b %d, %Y")
-    else
-      nil
-    end %>
-  <% days_with_data = @stats.all_time[:days_with_data] %>
   <div class="mx-auto max-w-7xl space-y-10 px-4 py-10 lg:space-y-12 lg:px-6">
     <section class="relative overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-50 shadow-2xl">
       <div class="pointer-events-none absolute inset-0 opacity-60">
-        <div class="absolute -top-24 -left-24 h-64 w-64 rounded-full bg-sky-500/40 blur-3xl"></div>
-        <div class="absolute bottom-[-6rem] right-[-4rem] h-80 w-80 rounded-full bg-indigo-500/40 blur-3xl"></div>
+        <div class="absolute -top-24 -left-24 h-64 w-64 rounded-full bg-sky-500/40 blur-3xl">
+        </div>
+        <div class="absolute bottom-[-6rem] right-[-4rem] h-80 w-80 rounded-full bg-indigo-500/40 blur-3xl">
+        </div>
       </div>
       <div class="relative z-10 flex flex-col gap-10 p-8 sm:p-10 lg:flex-row lg:items-start lg:justify-between lg:p-12">
         <div class="space-y-5">
@@ -83,288 +27,66 @@
           <div class="flex flex-wrap items-center gap-3 text-xs font-semibold uppercase tracking-wide text-slate-200 sm:text-sm">
             <span class="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 backdrop-blur">
               <.icon name="hero-clock" class="h-4 w-4" />
-              {period_label}
+              {@period_label}
             </span>
             <span class="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 backdrop-blur">
               <.icon name="hero-presentation-chart-line" class="h-4 w-4" />
-              {chart_view_label}
+              {@chart_view_label}
             </span>
-            <%= if @sync_running do %>
-              <span class="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 backdrop-blur">
-                <span class="loading loading-spinner loading-xs"></span>
-                Sync in progress
-              </span>
-            <% else %>
-              <span class="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 backdrop-blur">
-                <.icon name="hero-sparkles" class="h-4 w-4" />
-                Fresh data ready
-              </span>
-            <% end %>
           </div>
         </div>
         <div class="flex flex-col gap-6">
-          <div class={"inline-flex items-center gap-3 rounded-full border px-4 py-2 text-sm font-semibold #{mom_indicator_class}"}>
-            <.icon name={mom_icon} class="h-4 w-4" />
-            {mom_delta_display} vs last month
+          <div class={"inline-flex items-center gap-3 rounded-full border px-4 py-2 text-sm font-semibold #{@mom_indicator_class}"}>
+            <.icon name={@mom_icon} class="h-4 w-4" />
+            {@mom_delta_display} vs last month
           </div>
           <div class="flex flex-wrap gap-3">
             <.link navigate={~p"/dashboard/sync"} class="btn btn-primary btn-sm gap-2 sm:btn-md">
               <.icon
                 name="hero-arrow-path"
                 class={if @sync_running, do: "h-5 w-5 animate-spin", else: "h-5 w-5"}
-              />
-              Sync status
+              /> Sync status
             </.link>
             <.link
               navigate={~p"/dashboard/keywords"}
               class="btn btn-ghost btn-sm gap-2 border border-white/20 bg-white/10 text-slate-50 hover:bg-white/20 sm:btn-md"
             >
-              <.icon name="hero-magnifying-glass" class="h-5 w-5" />
-              Keyword explorer
+              <.icon name="hero-magnifying-glass" class="h-5 w-5" /> Keyword explorer
             </.link>
             <.link
               navigate={~p"/dashboard/crawler"}
               class="btn btn-ghost btn-sm gap-2 border border-white/20 bg-white/10 text-slate-50 hover:bg-white/20 sm:btn-md"
             >
-              <.icon name="hero-cog-6-tooth" class="h-5 w-5" />
-              Crawl insights
+              <.icon name="hero-cog-6-tooth" class="h-5 w-5" /> Crawl insights
             </.link>
           </div>
         </div>
       </div>
       <div class="relative z-10 border-t border-white/10 bg-white/5">
         <div class="grid gap-4 p-6 sm:grid-cols-3 sm:gap-6 sm:p-8">
-          <div class="rounded-2xl border border-white/20 bg-white/10 px-5 py-4">
-            <p class="text-xs uppercase tracking-[0.3em] text-slate-200">
-              This month clicks
-            </p>
-            <p class="mt-2 text-3xl font-semibold text-white">
-              {format_number(@stats.current_month.total_clicks)}
-            </p>
-            <p class="mt-2 text-sm text-slate-200">
-              {format_number(@stats.current_month.total_impressions)} impressions | {format_percentage(@stats.current_month.avg_ctr)} CTR
-            </p>
-          </div>
-          <div class="rounded-2xl border border-white/20 bg-white/10 px-5 py-4">
-            <p class="text-xs uppercase tracking-[0.3em] text-slate-200">
-              Topline coverage
-            </p>
-            <p class="mt-2 text-3xl font-semibold text-white">
-              {format_number(@stats.all_time.total_urls)}
-            </p>
-            <p class="mt-2 text-sm text-slate-200">
-              URLs tracked across {format_number(@stats.all_time.total_impressions)} lifetime impressions
-            </p>
-          </div>
-          <div class="rounded-2xl border border-white/20 bg-white/10 px-5 py-4">
-            <p class="text-xs uppercase tracking-[0.3em] text-slate-200">
-              Avg position
-            </p>
-            <p class="mt-2 text-3xl font-semibold text-white">
-              {format_position(@stats.current_month.avg_position)}
-            </p>
-            <p class="mt-2 text-sm text-slate-200">
-              {format_number(@stats.current_month.total_urls)} active URLs this period
-            </p>
-          </div>
+          <.metric_card
+            label="This month"
+            value={@stats.current_month.total_clicks}
+            impressions={@stats.current_month.total_impressions}
+            ctr={@stats.current_month.avg_ctr}
+          />
+          <.metric_card
+            label="Last month"
+            value={@stats.last_month.total_clicks}
+            impressions={@stats.last_month.total_impressions}
+            ctr={@stats.last_month.avg_ctr}
+          />
+          <.metric_card
+            label="All time"
+            value={@stats.all_time.total_clicks}
+            impressions={@stats.all_time.total_impressions}
+            ctr={@stats.all_time.avg_ctr}
+          />
         </div>
       </div>
     </section>
 
-    <section class="grid gap-6 lg:grid-cols-3">
-      <article class="rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-200/50">
-        <header class="flex items-start justify-between border-b border-slate-100 px-6 py-5">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
-              This Month
-            </p>
-            <p class="mt-1 text-sm text-slate-400">
-              {@stats.current_month.period_label}
-            </p>
-          </div>
-          <span class="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-600">
-            <.icon name="hero-bolt" class="h-4 w-4" />
-            Active
-          </span>
-        </header>
-        <div class="space-y-5 px-6 py-5">
-          <div>
-            <p class="text-sm text-slate-500">Clicks</p>
-            <p class="mt-1 text-3xl font-semibold text-slate-900">
-              {format_number(@stats.current_month.total_clicks)}
-            </p>
-          </div>
-          <dl class="grid gap-3 sm:grid-cols-2">
-            <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-              <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Impressions
-              </dt>
-              <dd class="text-lg font-semibold text-slate-900">
-                {format_number(@stats.current_month.total_impressions)}
-              </dd>
-            </div>
-            <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-              <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Avg CTR
-              </dt>
-              <dd class="text-lg font-semibold text-slate-900">
-                {format_percentage(@stats.current_month.avg_ctr)}
-              </dd>
-            </div>
-            <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-              <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Avg Position
-              </dt>
-              <dd class="text-lg font-semibold text-slate-900">
-                {format_position(@stats.current_month.avg_position)}
-              </dd>
-            </div>
-            <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-              <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">
-                URLs contributing
-              </dt>
-              <dd class="text-lg font-semibold text-slate-900">
-                {format_number(@stats.current_month.total_urls)}
-              </dd>
-            </div>
-          </dl>
-        </div>
-      </article>
-
-      <article class="rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-200/50">
-        <header class="flex items-start justify-between border-b border-slate-100 px-6 py-5">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
-              Last Month
-            </p>
-            <p class="mt-1 text-sm text-slate-400">
-              {@stats.last_month.period_label}
-            </p>
-          </div>
-          <span
-            class={"inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold #{if mom_change >= 0, do: "bg-emerald-50 text-emerald-600", else: "bg-rose-50 text-rose-600"}"}
-          >
-            <.icon
-              name={if mom_change >= 0, do: "hero-arrow-trending-up", else: "hero-arrow-trending-down"}
-              class="h-4 w-4"
-            />
-            {mom_delta_display}
-          </span>
-        </header>
-        <div class="space-y-5 px-6 py-5">
-          <div>
-            <p class="text-sm text-slate-500">Clicks</p>
-            <p class="mt-1 text-3xl font-semibold text-slate-900">
-              {format_number(@stats.last_month.total_clicks)}
-            </p>
-          </div>
-          <dl class="grid gap-3 sm:grid-cols-2">
-            <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-              <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Impressions
-              </dt>
-              <dd class="text-lg font-semibold text-slate-900">
-                {format_number(@stats.last_month.total_impressions)}
-              </dd>
-            </div>
-            <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-              <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Avg CTR
-              </dt>
-              <dd class="text-lg font-semibold text-slate-900">
-                {format_percentage(@stats.last_month.avg_ctr)}
-              </dd>
-            </div>
-            <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-              <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Avg Position
-              </dt>
-              <dd class="text-lg font-semibold text-slate-900">
-                {format_position(@stats.last_month.avg_position)}
-              </dd>
-            </div>
-            <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-              <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">
-                URLs contributing
-              </dt>
-              <dd class="text-lg font-semibold text-slate-900">
-                {format_number(@stats.last_month.total_urls)}
-              </dd>
-            </div>
-          </dl>
-        </div>
-      </article>
-
-      <article class="rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-200/50">
-        <header class="flex items-start justify-between border-b border-slate-100 px-6 py-5">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
-              All Time
-            </p>
-            <p class="mt-1 text-sm text-slate-400">
-              <%= if earliest_all_time && latest_all_time do %>
-                Since {earliest_all_time} | Latest data {latest_all_time}
-              <% else %>
-                Complete footprint
-              <% end %>
-            </p>
-          </div>
-          <span class="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-            <.icon name="hero-chart-bar-square" class="h-4 w-4" />
-            Lifetime
-          </span>
-        </header>
-        <div class="space-y-5 px-6 py-5">
-          <div>
-            <p class="text-sm text-slate-500">Lifetime clicks</p>
-            <p class="mt-1 text-3xl font-semibold text-slate-900">
-              {format_number(@stats.all_time.total_clicks)}
-            </p>
-          </div>
-          <dl class="grid gap-3 sm:grid-cols-2">
-            <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-              <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Impressions
-              </dt>
-              <dd class="text-lg font-semibold text-slate-900">
-                {format_number(@stats.all_time.total_impressions)}
-              </dd>
-            </div>
-            <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-              <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Avg CTR
-              </dt>
-              <dd class="text-lg font-semibold text-slate-900">
-                {format_percentage(@stats.all_time.avg_ctr)}
-              </dd>
-            </div>
-            <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-              <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Avg Position
-              </dt>
-              <dd class="text-lg font-semibold text-slate-900">
-                {format_position(@stats.all_time.avg_position)}
-              </dd>
-            </div>
-            <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-              <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">
-                URLs tracked
-              </dt>
-              <dd class="text-lg font-semibold text-slate-900">
-                {format_number(@stats.all_time.total_urls)}
-              </dd>
-            </div>
-          </dl>
-          <%= if days_with_data do %>
-            <p class="text-xs uppercase tracking-wide text-slate-400">
-              {format_number(days_with_data)} days of indexed history
-            </p>
-          <% end %>
-        </div>
-      </article>
-    </section>
-
-    <section class="grid gap-6 xl:grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)]">
+    <section>
       <div class="rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-200/50">
         <div class="flex flex-col gap-4 border-b border-slate-100 px-6 py-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -372,44 +94,47 @@
               Site performance trends
             </h2>
             <p class="text-sm text-slate-500">
-              Dual-axis chart tracking clicks and impressions to visualize {chart_view_label} momentum.
+              Dual-axis chart tracking clicks and impressions to visualize {@chart_view_label} momentum.
             </p>
-            <%= if earliest_all_time && latest_all_time do %>
+            <%= if @earliest_all_time && @latest_all_time do %>
               <p class="mt-2 text-xs uppercase tracking-wide text-slate-400">
-                {earliest_all_time} - {latest_all_time}
-                <%= if days_with_data do %>
-                  ({format_number(days_with_data)} days)
+                {@earliest_all_time} - {@latest_all_time}
+                <%= if @days_with_data do %>
+                  ({format_number(@days_with_data)} days)
                 <% end %>
               </p>
             <% end %>
           </div>
-          <div class="flex flex-wrap items-center gap-2 rounded-full bg-slate-100 p-1 text-xs font-semibold text-slate-600">
+          <div class="flex flex-wrap items-center gap-3">
+            <.toggle_button_group
+              options={[
+                %{value: "daily", label: "Daily"},
+                %{value: "weekly", label: "Weekly"},
+                %{value: "monthly", label: "Monthly"}
+              ]}
+              current_value={@chart_view}
+              event_name="change_chart_view"
+              value_key="chart_view"
+            />
             <button
               type="button"
-              phx-click="change_chart_view"
-              phx-value-chart_view="daily"
-              class={"rounded-full px-3 py-1.5 transition #{if @chart_view == "daily", do: "bg-slate-900 text-white shadow", else: "hover:text-slate-900"}"}
-              aria-label="Daily"
+              phx-click="toggle_impressions"
+              aria-pressed={@show_impressions}
+              class={[
+                "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+                if(@show_impressions,
+                  do: "border-transparent bg-emerald-500 text-white shadow",
+                  else: "border-emerald-200 bg-white text-emerald-600 hover:bg-emerald-50"
+                )
+              ]}
             >
-              Daily
-            </button>
-            <button
-              type="button"
-              phx-click="change_chart_view"
-              phx-value-chart_view="weekly"
-              class={"rounded-full px-3 py-1.5 transition #{if @chart_view == "weekly", do: "bg-slate-900 text-white shadow", else: "hover:text-slate-900"}"}
-              aria-label="Weekly"
-            >
-              Weekly
-            </button>
-            <button
-              type="button"
-              phx-click="change_chart_view"
-              phx-value-chart_view="monthly"
-              class={"rounded-full px-3 py-1.5 transition #{if @chart_view == "monthly", do: "bg-slate-900 text-white shadow", else: "hover:text-slate-900"}"}
-              aria-label="Monthly"
-            >
-              Monthly
+              <.icon
+                name={if @show_impressions, do: "hero-eye-slash", else: "hero-eye"}
+                class="h-4 w-4"
+              />
+              <span>
+                {if @show_impressions, do: "Hide Impressions", else: "Show Impressions"}
+              </span>
             </button>
           </div>
         </div>
@@ -419,101 +144,12 @@
               id="sitePerformanceChart"
               time_series={@site_trends}
               time_series_json={@site_trends_json}
+              show_impressions={@show_impressions}
               x_label={@chart_label}
             />
           </div>
         </div>
       </div>
-
-      <aside class="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 text-slate-100 shadow-xl">
-        <div class="space-y-6 p-6 sm:p-8">
-          <div>
-            <h3 class="text-lg font-semibold text-white">
-              Key signals
-            </h3>
-            <p class="mt-2 text-sm text-slate-300">
-              Quick takeaways to focus your next round of updates.
-            </p>
-          </div>
-          <ul class="space-y-4 text-sm text-slate-200">
-            <li class="flex gap-3">
-              <span
-                class={[
-                  "flex h-10 w-10 items-center justify-center rounded-full",
-                  if(mom_change >= 0,
-                    do: "bg-emerald-500/20 text-emerald-200",
-                    else: "bg-rose-500/20 text-rose-200"
-                  )
-                ]}
-              >
-                <.icon name={mom_icon} class="h-5 w-5" />
-              </span>
-              <div class="space-y-1">
-                <p class="font-semibold text-white">
-                  Traffic momentum
-                </p>
-                <p>
-                  <%= cond do
-                        mom_change > 0 ->
-                          "Up #{mom_delta_display} vs last month. Double down on winning pages while the trend holds."
-
-                        mom_change < 0 ->
-                          "Down #{String.trim_leading(mom_delta_display, "-")} vs last month. Review opportunities that slipped."
-
-                        true ->
-                          "Flat month over month. Experiment with refreshed topics or internal links to spark movement."
-                      end %>
-                </p>
-              </div>
-            </li>
-            <li class="flex gap-3">
-              <span class="flex h-10 w-10 items-center justify-center rounded-full bg-sky-500/20 text-sky-200">
-                <.icon name="hero-chart-bar-square" class="h-5 w-5" />
-              </span>
-              <div class="space-y-1">
-                <p class="font-semibold text-white">
-                  Portfolio coverage
-                </p>
-                <p>
-                  Showing {format_number(@total_count)} URLs sorted by {sort_label} ({sort_direction_label}). Use column headers to pivot focus instantly.
-                </p>
-              </div>
-            </li>
-            <li class="flex gap-3">
-              <span class="flex h-10 w-10 items-center justify-center rounded-full bg-amber-500/20 text-amber-200">
-                <.icon name="hero-light-bulb" class="h-5 w-5" />
-              </span>
-              <div class="space-y-1">
-                <p class="font-semibold text-white">
-                  Update strategy
-                </p>
-                <p>
-                  <%= if @needs_update_filter do %>
-                    Filtering to refresh-only candidates. {format_number(@total_count)} URLs are ready for content or technical follow-up.
-                  <% else %>
-                    Viewing the full performance universe. Toggle the "Needs Update" filter to lock onto refresh-ready pages.
-                  <% end %>
-                </p>
-              </div>
-            </li>
-            <%= if days_with_data do %>
-              <li class="flex gap-3">
-                <span class="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-500/20 text-indigo-200">
-                  <.icon name="hero-rocket-launch" class="h-5 w-5" />
-                </span>
-                <div class="space-y-1">
-                  <p class="font-semibold text-white">
-                    Historical depth
-                  </p>
-                  <p>
-                    Leveraging {format_number(days_with_data)} days of Search Console history to benchmark progress.
-                  </p>
-                </div>
-              </li>
-            <% end %>
-          </ul>
-        </div>
-      </aside>
     </section>
 
     <section class="rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-200/50">
@@ -526,7 +162,11 @@
         </p>
       </div>
       <div class="px-6 py-6">
-        <form id="dashboard-filters" phx-submit="apply_filters" class="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+        <form
+          id="dashboard-filters"
+          phx-submit="apply_filters"
+          class="grid gap-4 md:grid-cols-2 xl:grid-cols-6"
+        >
           <div class="form-control md:col-span-2 xl:col-span-3">
             <label class="label">
               <span class="label-text font-semibold text-slate-700">Search URLs</span>
@@ -560,79 +200,33 @@
             <label class="label">
               <span class="label-text font-semibold text-slate-700">Time period</span>
             </label>
-            <div class="flex flex-wrap items-center gap-2 rounded-full bg-slate-100 p-1 text-xs font-semibold text-slate-600">
-              <button
-                type="button"
-                phx-click="change_period"
-                phx-value-period="7"
-                class={"rounded-full px-3 py-1.5 transition #{if @period_days == 7, do: "bg-slate-900 text-white shadow", else: "hover:text-slate-900"}"}
-                aria-label="Last 7 days"
-              >
-                7d
-              </button>
-              <button
-                type="button"
-                phx-click="change_period"
-                phx-value-period="30"
-                class={"rounded-full px-3 py-1.5 transition #{if @period_days == 30, do: "bg-slate-900 text-white shadow", else: "hover:text-slate-900"}"}
-                aria-label="Last 30 days"
-              >
-                30d
-              </button>
-              <button
-                type="button"
-                phx-click="change_period"
-                phx-value-period="90"
-                class={"rounded-full px-3 py-1.5 transition #{if @period_days == 90, do: "bg-slate-900 text-white shadow", else: "hover:text-slate-900"}"}
-                aria-label="Last 90 days"
-              >
-                90d
-              </button>
-              <button
-                type="button"
-                phx-click="change_period"
-                phx-value-period="180"
-                class={"rounded-full px-3 py-1.5 transition #{if @period_days == 180, do: "bg-slate-900 text-white shadow", else: "hover:text-slate-900"}"}
-                aria-label="Last 6 months"
-              >
-                6mo
-              </button>
-              <button
-                type="button"
-                phx-click="change_period"
-                phx-value-period="all"
-                class={"rounded-full px-3 py-1.5 transition #{if @period_days == 10000, do: "bg-slate-900 text-white shadow", else: "hover:text-slate-900"}"}
-                aria-label="All time"
-              >
-                All
-              </button>
-            </div>
+            <.toggle_button_group
+              options={[
+                %{value: "7", label: "7d"},
+                %{value: "30", label: "30d"},
+                %{value: "90", label: "90d"},
+                %{value: "180", label: "6mo"},
+                %{value: "all", label: "All"}
+              ]}
+              current_value={@period_days}
+              event_name="change_period"
+              value_key="period"
+            />
           </div>
 
           <div class="form-control">
             <label class="label">
               <span class="label-text font-semibold text-slate-700">View mode</span>
             </label>
-            <div class="flex flex-wrap items-center gap-2 rounded-full bg-slate-100 p-1 text-xs font-semibold text-slate-600">
-              <button
-                type="button"
-                phx-click="change_view_mode"
-                phx-value-view_mode="basic"
-                class={"rounded-full px-3 py-1.5 transition #{if @view_mode == "basic", do: "bg-slate-900 text-white shadow", else: "hover:text-slate-900"}"}
-                aria-label="Basic view"
-              >
-                Basic
-              </button>
-              <button
-                type="button"
-                phx-click="change_view_mode"
-                phx-value-view_mode="all"
-                class={"rounded-full px-3 py-1.5 transition #{if @view_mode == "all", do: "bg-slate-900 text-white shadow", else: "hover:text-slate-900"}"}
-                aria-label="All columns"
-              >
-                All
-              </button>
-            </div>
+            <.toggle_button_group
+              options={[
+                %{value: "basic", label: "Basic"},
+                %{value: "all", label: "All"}
+              ]}
+              current_value={@view_mode}
+              event_name="change_view_mode"
+              value_key="view_mode"
+            />
           </div>
 
           <div class="form-control">
@@ -684,8 +278,7 @@
 
           <div class="flex flex-wrap items-center gap-3 xl:col-span-6">
             <button type="submit" class="btn btn-primary gap-2">
-              <.icon name="hero-adjustments-horizontal" class="h-5 w-5" />
-              Apply filters
+              <.icon name="hero-adjustments-horizontal" class="h-5 w-5" /> Apply filters
             </button>
             <.link
               href={
@@ -693,8 +286,7 @@
               }
               class="btn btn-outline btn-success gap-2"
             >
-              <.icon name="hero-arrow-down-tray" class="h-5 w-5" />
-              Export CSV
+              <.icon name="hero-arrow-down-tray" class="h-5 w-5" /> Export CSV
             </.link>
           </div>
         </form>
@@ -708,12 +300,11 @@
             URL performance table
           </h2>
           <p class="text-sm text-slate-500">
-            Showing {length(@urls)} of {format_number(@total_count)} URLs | Sorted by {sort_label} ({sort_direction_label}).
+            Showing {length(@urls)} of {format_number(@total_count)} URLs | Sorted by {@sort_label} ({@sort_direction_label}).
           </p>
         </div>
         <div class="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
-          <.icon name="hero-information-circle" class="h-4 w-4" />
-          Click column headers to re-sort
+          <.icon name="hero-information-circle" class="h-4 w-4" /> Click column headers to re-sort
         </div>
       </header>
       <div class="px-2 pb-6 pt-4 sm:px-6">

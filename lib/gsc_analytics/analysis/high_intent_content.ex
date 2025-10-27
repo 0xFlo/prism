@@ -62,8 +62,13 @@ defmodule GscAnalytics.Analysis.HighIntentContent do
     rows =
       entries
       |> Enum.map(fn entry ->
-        [entry.title, entry.url, entry.filename, Integer.to_string(entry.score),
-         Enum.join(entry.signals, " ")]
+        [
+          entry.title,
+          entry.url,
+          entry.filename,
+          Integer.to_string(entry.score),
+          Enum.join(entry.signals, " ")
+        ]
         |> Enum.map(&escape_csv/1)
         |> Enum.join(",")
       end)
@@ -120,7 +125,9 @@ defmodule GscAnalytics.Analysis.HighIntentContent do
         value
         |> String.trim()
         |> String.trim("'")
-      _ -> nil
+
+      _ ->
+        nil
     end
   end
 
@@ -133,7 +140,8 @@ defmodule GscAnalytics.Analysis.HighIntentContent do
         |> Enum.filter(&String.starts_with?(&1, "- "))
         |> Enum.map(fn "- " <> tag -> String.trim(tag) end)
 
-      _ -> []
+      _ ->
+        []
     end
   end
 

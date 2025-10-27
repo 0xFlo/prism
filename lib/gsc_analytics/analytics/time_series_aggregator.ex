@@ -418,7 +418,8 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregator do
   ## Returns
     Map of %{url => growth_percentage}
   """
-  def batch_calculate_wow_growth_legacy(urls, recent_weeks \\ 4, opts \\ %{}) when is_list(urls) do
+  def batch_calculate_wow_growth_legacy(urls, recent_weeks \\ 4, opts \\ %{})
+      when is_list(urls) do
     account_id = Map.get(opts, :account_id)
     total_weeks = recent_weeks * 2
     days = total_weeks * 7

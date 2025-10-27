@@ -4,6 +4,7 @@ defmodule GscAnalyticsWeb.DashboardKeywordsLive do
   alias GscAnalytics.ContentInsights
   alias GscAnalytics.Dashboard, as: DashboardUtils
   alias GscAnalyticsWeb.Live.AccountHelpers
+  alias GscAnalyticsWeb.Layouts
 
   import GscAnalyticsWeb.Dashboard.HTMLHelpers
 
@@ -162,251 +163,259 @@ defmodule GscAnalyticsWeb.DashboardKeywordsLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="container mx-auto px-4 py-8">
-      <div class="mb-6">
-        <h1 class="text-3xl font-bold text-gray-900 dark:text-gray-100">
-          Top Performing Keywords
-        </h1>
-        <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-          Site-wide keyword performance aggregated across all URLs
-        </p>
-      </div>
-      
-    <!-- Filters -->
-      <div class="mb-6 flex flex-col sm:flex-row gap-4">
-        <!-- Period Selector -->
-        <div class="flex-1">
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Time Period
-          </label>
-          <select
-            class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
-            phx-change="change_period"
-            name="period"
-          >
-            <option value="7" selected={@period_days == 7}>Last 7 days</option>
-            <option value="30" selected={@period_days == 30}>Last 30 days</option>
-            <option value="90" selected={@period_days == 90}>Last 90 days</option>
-            <option value="180" selected={@period_days == 180}>Last 180 days</option>
-            <option value="365" selected={@period_days == 365}>Last 365 days</option>
-            <option value="all" selected={@period_days == 10000}>All time</option>
-          </select>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      current_account={@current_account}
+      current_account_id={@current_account_id}
+      account_options={@account_options}
+    >
+      <div class="mx-auto max-w-7xl">
+        <div class="mb-6">
+          <h1 class="text-3xl font-bold text-gray-900 dark:text-gray-100">
+            Top Performing Keywords
+          </h1>
+          <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+            Site-wide keyword performance aggregated across all URLs
+          </p>
         </div>
         
-    <!-- Search Box -->
-        <div class="flex-1">
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Search Keywords
-          </label>
-          <form phx-submit="search" class="relative">
-            <input
-              type="text"
-              name="search"
-              value={@search}
-              placeholder="Filter by keyword..."
+    <!-- Filters -->
+        <div class="mb-6 flex flex-col sm:flex-row gap-4">
+          <!-- Period Selector -->
+          <div class="flex-1">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Time Period
+            </label>
+            <select
               class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
-            />
-          </form>
+              phx-change="change_period"
+              name="period"
+            >
+              <option value="7" selected={@period_days == 7}>Last 7 days</option>
+              <option value="30" selected={@period_days == 30}>Last 30 days</option>
+              <option value="90" selected={@period_days == 90}>Last 90 days</option>
+              <option value="180" selected={@period_days == 180}>Last 180 days</option>
+              <option value="365" selected={@period_days == 365}>Last 365 days</option>
+              <option value="all" selected={@period_days == 10000}>All time</option>
+            </select>
+          </div>
+          
+    <!-- Search Box -->
+          <div class="flex-1">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Search Keywords
+            </label>
+            <form phx-submit="search" class="relative">
+              <input
+                type="text"
+                name="search"
+                value={@search}
+                placeholder="Filter by keyword..."
+                class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+              />
+            </form>
+          </div>
         </div>
-      </div>
-      
+        
     <!-- Summary Stats -->
-      <div class="mb-6 bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div>
-            <p class="text-sm text-gray-600 dark:text-gray-400">Total Keywords</p>
-            <p class="text-2xl font-semibold text-gray-900 dark:text-gray-100">
-              {format_number(@total_count)}
-            </p>
-          </div>
-          <div>
-            <p class="text-sm text-gray-600 dark:text-gray-400">Time Period</p>
-            <p class="text-2xl font-semibold text-gray-900 dark:text-gray-100">
-              {format_period(@period_days)}
-            </p>
-          </div>
-          <div>
-            <p class="text-sm text-gray-600 dark:text-gray-400">Showing</p>
-            <p class="text-2xl font-semibold text-gray-900 dark:text-gray-100">
-              Page {@page} of {@total_pages}
-            </p>
+        <div class="mb-6 bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <p class="text-sm text-gray-600 dark:text-gray-400">Total Keywords</p>
+              <p class="text-2xl font-semibold text-gray-900 dark:text-gray-100">
+                {format_number(@total_count)}
+              </p>
+            </div>
+            <div>
+              <p class="text-sm text-gray-600 dark:text-gray-400">Time Period</p>
+              <p class="text-2xl font-semibold text-gray-900 dark:text-gray-100">
+                {format_period(@period_days)}
+              </p>
+            </div>
+            <div>
+              <p class="text-sm text-gray-600 dark:text-gray-400">Showing</p>
+              <p class="text-2xl font-semibold text-gray-900 dark:text-gray-100">
+                Page {@page} of {@total_pages}
+              </p>
+            </div>
           </div>
         </div>
-      </div>
-      
+        
     <!-- Keywords Table -->
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-        <div class="overflow-x-auto">
-          <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-            <thead class="bg-gray-50 dark:bg-gray-900">
-              <tr>
-                <th
-                  scope="col"
-                  class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
-                  phx-click="sort_column"
-                  phx-value-column="query"
-                >
-                  <div class="flex items-center gap-2">
-                    Keyword {render_sort_icon(@sort_by, @sort_direction, "query")}
-                  </div>
-                </th>
-                <th
-                  scope="col"
-                  class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
-                  phx-click="sort_column"
-                  phx-value-column="clicks"
-                >
-                  <div class="flex items-center justify-end gap-2">
-                    Clicks {render_sort_icon(@sort_by, @sort_direction, "clicks")}
-                  </div>
-                </th>
-                <th
-                  scope="col"
-                  class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
-                  phx-click="sort_column"
-                  phx-value-column="impressions"
-                >
-                  <div class="flex items-center justify-end gap-2">
-                    Impressions {render_sort_icon(@sort_by, @sort_direction, "impressions")}
-                  </div>
-                </th>
-                <th
-                  scope="col"
-                  class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
-                  phx-click="sort_column"
-                  phx-value-column="ctr"
-                >
-                  <div class="flex items-center justify-end gap-2">
-                    CTR % {render_sort_icon(@sort_by, @sort_direction, "ctr")}
-                  </div>
-                </th>
-                <th
-                  scope="col"
-                  class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
-                  phx-click="sort_column"
-                  phx-value-column="position"
-                >
-                  <div class="flex items-center justify-end gap-2">
-                    Avg Position {render_sort_icon(@sort_by, @sort_direction, "position")}
-                  </div>
-                </th>
-                <th
-                  scope="col"
-                  class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
-                  phx-click="sort_column"
-                  phx-value-column="url_count"
-                >
-                  <div class="flex items-center justify-end gap-2">
-                    URL Count {render_sort_icon(@sort_by, @sort_direction, "url_count")}
-                  </div>
-                </th>
-              </tr>
-            </thead>
-            <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-              <%= if @keywords == [] do %>
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+              <thead class="bg-gray-50 dark:bg-gray-900">
                 <tr>
-                  <td colspan="6" class="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
-                    <div class="flex flex-col items-center gap-2">
-                      <svg
-                        class="w-12 h-12 text-gray-400"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                        />
-                      </svg>
-                      <p class="text-lg font-medium">No keywords found</p>
-                      <p class="text-sm">
-                        Try adjusting your filters or sync more data from Google Search Console
-                      </p>
+                  <th
+                    scope="col"
+                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                    phx-click="sort_column"
+                    phx-value-column="query"
+                  >
+                    <div class="flex items-center gap-2">
+                      Keyword {render_sort_icon(@sort_by, @sort_direction, "query")}
                     </div>
-                  </td>
+                  </th>
+                  <th
+                    scope="col"
+                    class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                    phx-click="sort_column"
+                    phx-value-column="clicks"
+                  >
+                    <div class="flex items-center justify-end gap-2">
+                      Clicks {render_sort_icon(@sort_by, @sort_direction, "clicks")}
+                    </div>
+                  </th>
+                  <th
+                    scope="col"
+                    class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                    phx-click="sort_column"
+                    phx-value-column="impressions"
+                  >
+                    <div class="flex items-center justify-end gap-2">
+                      Impressions {render_sort_icon(@sort_by, @sort_direction, "impressions")}
+                    </div>
+                  </th>
+                  <th
+                    scope="col"
+                    class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                    phx-click="sort_column"
+                    phx-value-column="ctr"
+                  >
+                    <div class="flex items-center justify-end gap-2">
+                      CTR % {render_sort_icon(@sort_by, @sort_direction, "ctr")}
+                    </div>
+                  </th>
+                  <th
+                    scope="col"
+                    class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                    phx-click="sort_column"
+                    phx-value-column="position"
+                  >
+                    <div class="flex items-center justify-end gap-2">
+                      Avg Position {render_sort_icon(@sort_by, @sort_direction, "position")}
+                    </div>
+                  </th>
+                  <th
+                    scope="col"
+                    class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                    phx-click="sort_column"
+                    phx-value-column="url_count"
+                  >
+                    <div class="flex items-center justify-end gap-2">
+                      URL Count {render_sort_icon(@sort_by, @sort_direction, "url_count")}
+                    </div>
+                  </th>
                 </tr>
-              <% else %>
-                <%= for keyword <- @keywords do %>
-                  <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
-                    <td class="px-6 py-4 text-sm font-medium text-gray-900 dark:text-gray-100">
-                      {keyword.query}
-                    </td>
-                    <td class="px-6 py-4 text-sm text-right text-gray-900 dark:text-gray-100">
-                      {format_number(keyword.clicks)}
-                    </td>
-                    <td class="px-6 py-4 text-sm text-right text-gray-500 dark:text-gray-400">
-                      {format_number(keyword.impressions)}
-                    </td>
-                    <td class="px-6 py-4 text-sm text-right text-gray-500 dark:text-gray-400">
-                      {format_ctr(keyword.ctr)}
-                    </td>
-                    <td class="px-6 py-4 text-sm text-right text-gray-500 dark:text-gray-400">
-                      {if keyword.position, do: format_position(keyword.position), else: "—"}
-                    </td>
-                    <td class="px-6 py-4 text-sm text-right text-gray-500 dark:text-gray-400">
-                      {keyword.url_count}
+              </thead>
+              <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                <%= if @keywords == [] do %>
+                  <tr>
+                    <td colspan="6" class="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
+                      <div class="flex flex-col items-center gap-2">
+                        <svg
+                          class="w-12 h-12 text-gray-400"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                          />
+                        </svg>
+                        <p class="text-lg font-medium">No keywords found</p>
+                        <p class="text-sm">
+                          Try adjusting your filters or sync more data from Google Search Console
+                        </p>
+                      </div>
                     </td>
                   </tr>
+                <% else %>
+                  <%= for keyword <- @keywords do %>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
+                      <td class="px-6 py-4 text-sm font-medium text-gray-900 dark:text-gray-100">
+                        {keyword.query}
+                      </td>
+                      <td class="px-6 py-4 text-sm text-right text-gray-900 dark:text-gray-100">
+                        {format_number(keyword.clicks)}
+                      </td>
+                      <td class="px-6 py-4 text-sm text-right text-gray-500 dark:text-gray-400">
+                        {format_number(keyword.impressions)}
+                      </td>
+                      <td class="px-6 py-4 text-sm text-right text-gray-500 dark:text-gray-400">
+                        {format_ctr(keyword.ctr)}
+                      </td>
+                      <td class="px-6 py-4 text-sm text-right text-gray-500 dark:text-gray-400">
+                        {if keyword.position, do: format_position(keyword.position), else: "—"}
+                      </td>
+                      <td class="px-6 py-4 text-sm text-right text-gray-500 dark:text-gray-400">
+                        {keyword.url_count}
+                      </td>
+                    </tr>
+                  <% end %>
                 <% end %>
-              <% end %>
-            </tbody>
-          </table>
-        </div>
-        
+              </tbody>
+            </table>
+          </div>
+          
     <!-- Pagination -->
-        <%= if @total_pages > 1 do %>
-          <div class="bg-white dark:bg-gray-800 px-4 py-3 border-t border-gray-200 dark:border-gray-700 sm:px-6">
-            <div class="flex items-center justify-between">
-              <div class="flex-1 flex justify-between sm:hidden">
-                <button
-                  phx-click="prev_page"
-                  disabled={@page == 1}
-                  class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Previous
-                </button>
-                <button
-                  phx-click="next_page"
-                  disabled={@page == @total_pages}
-                  class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Next
-                </button>
-              </div>
-              <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-                <div>
-                  <p class="text-sm text-gray-700 dark:text-gray-300">
-                    Showing page <span class="font-medium">{@page}</span>
-                    of <span class="font-medium">{@total_pages}</span>
-                    (<span class="font-medium"><%= format_number(@total_count) %></span> total keywords)
-                  </p>
+          <%= if @total_pages > 1 do %>
+            <div class="bg-white dark:bg-gray-800 px-4 py-3 border-t border-gray-200 dark:border-gray-700 sm:px-6">
+              <div class="flex items-center justify-between">
+                <div class="flex-1 flex justify-between sm:hidden">
+                  <button
+                    phx-click="prev_page"
+                    disabled={@page == 1}
+                    class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    phx-click="next_page"
+                    disabled={@page == @total_pages}
+                    class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Next
+                  </button>
                 </div>
-                <div>
-                  <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
-                    <button
-                      phx-click="prev_page"
-                      disabled={@page == 1}
-                      class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300"
-                    >
-                      ← Previous
-                    </button>
-                    <button
-                      phx-click="next_page"
-                      disabled={@page == @total_pages}
-                      class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300"
-                    >
-                      Next →
-                    </button>
-                  </nav>
+                <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                  <div>
+                    <p class="text-sm text-gray-700 dark:text-gray-300">
+                      Showing page <span class="font-medium">{@page}</span>
+                      of <span class="font-medium">{@total_pages}</span>
+                      (<span class="font-medium"><%= format_number(@total_count) %></span> total keywords)
+                    </p>
+                  </div>
+                  <div>
+                    <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
+                      <button
+                        phx-click="prev_page"
+                        disabled={@page == 1}
+                        class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300"
+                      >
+                        ← Previous
+                      </button>
+                      <button
+                        phx-click="next_page"
+                        disabled={@page == @total_pages}
+                        class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300"
+                      >
+                        Next →
+                      </button>
+                    </nav>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        <% end %>
+          <% end %>
+        </div>
       </div>
-    </div>
+    </Layouts.app>
     """
   end
 

@@ -85,8 +85,11 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
         |> Enum.sort_by(& &1.id)
         |> List.first()
         |> case do
-          nil -> raise "No GSC accounts configured. Please update :gsc_accounts in config/config.exs"
-          account -> account
+          nil ->
+            raise "No GSC accounts configured. Please update :gsc_accounts in config/config.exs"
+
+          account ->
+            account
         end
     end
   end

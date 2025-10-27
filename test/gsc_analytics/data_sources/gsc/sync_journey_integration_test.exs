@@ -86,9 +86,7 @@ defmodule GscAnalytics.DataSources.GSC.SyncJourneyIntegrationTest do
       end_date = ~D[2025-10-14]
 
       assert {:ok, summary} =
-               Sync.sync_date_range(@site_url, start_date, end_date,
-                 account_id: @account_id
-               )
+               Sync.sync_date_range(@site_url, start_date, end_date, account_id: @account_id)
 
       # Assert: Summary shows all days completed
       assert summary.days_processed == 5
@@ -240,9 +238,7 @@ defmodule GscAnalytics.DataSources.GSC.SyncJourneyIntegrationTest do
       # Action: Start sync in background task to monitor progress
       task =
         Task.async(fn ->
-          Sync.sync_date_range(@site_url, ~D[2025-10-10], ~D[2025-10-14],
-            account_id: @account_id
-          )
+          Sync.sync_date_range(@site_url, ~D[2025-10-10], ~D[2025-10-14], account_id: @account_id)
         end)
 
       # Assert: Receive progress updates (observable via PubSub)
@@ -263,9 +259,7 @@ defmodule GscAnalytics.DataSources.GSC.SyncJourneyIntegrationTest do
       # Action: Sync data
       task =
         Task.async(fn ->
-          Sync.sync_date_range(@site_url, ~D[2025-10-15], ~D[2025-10-15],
-            account_id: @account_id
-          )
+          Sync.sync_date_range(@site_url, ~D[2025-10-15], ~D[2025-10-15], account_id: @account_id)
         end)
 
       # Assert: Receive started notification
@@ -287,9 +281,7 @@ defmodule GscAnalytics.DataSources.GSC.SyncJourneyIntegrationTest do
       # Action: Sync multiple days
       task =
         Task.async(fn ->
-          Sync.sync_date_range(@site_url, ~D[2025-10-01], ~D[2025-10-05],
-            account_id: @account_id
-          )
+          Sync.sync_date_range(@site_url, ~D[2025-10-01], ~D[2025-10-05], account_id: @account_id)
         end)
 
       # Skip started event
@@ -323,9 +315,7 @@ defmodule GscAnalytics.DataSources.GSC.SyncJourneyIntegrationTest do
 
       # Action: Attempt sync
       result =
-        Sync.sync_date_range(@site_url, ~D[2025-10-15], ~D[2025-10-15],
-          account_id: @account_id
-        )
+        Sync.sync_date_range(@site_url, ~D[2025-10-15], ~D[2025-10-15], account_id: @account_id)
 
       # Assert: Sync completes but reports 0 URLs for failed day
       assert {:ok, summary} = result
@@ -345,9 +335,7 @@ defmodule GscAnalytics.DataSources.GSC.SyncJourneyIntegrationTest do
 
       # Action: Sync range with one failing day
       # Note: This may return error for the failed day, but should still save good days
-      Sync.sync_date_range(@site_url, ~D[2025-10-10], ~D[2025-10-12],
-        account_id: @account_id
-      )
+      Sync.sync_date_range(@site_url, ~D[2025-10-10], ~D[2025-10-12], account_id: @account_id)
 
       # Assert: Successfully synced days are in database
       start_date = ~D[2025-10-10]

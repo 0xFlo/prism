@@ -271,7 +271,7 @@ defmodule GscAnalytics.Analytics.TimeSeriesDataTest do
       ts = %TimeSeriesData{
         date: ~D[2025-01-15],
         clicks: 12345,
-        impressions: 678910,
+        impressions: 678_910,
         ctr: 0.01818,
         position: 4.567,
         period_end: nil
@@ -280,7 +280,7 @@ defmodule GscAnalytics.Analytics.TimeSeriesDataTest do
       result = TimeSeriesData.to_json_map(ts)
 
       assert result.clicks == 12345
-      assert result.impressions == 678910
+      assert result.impressions == 678_910
       assert result.ctr == 0.01818
       assert result.position == 4.567
     end

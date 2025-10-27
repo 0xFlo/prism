@@ -76,7 +76,8 @@ defmodule GscAnalytics.DataSources.GSC.Accounts do
   Retrieve the service account JSON credentials file for the given account.
   """
   @spec service_account_file(account_id()) ::
-          {:ok, String.t()} | {:error, :unknown_account | :account_disabled | :missing_credentials}
+          {:ok, String.t()}
+          | {:error, :unknown_account | :account_disabled | :missing_credentials}
   def service_account_file(account_id) do
     with {:ok, %{service_account_file: path}} when is_binary(path) <- fetch_account(account_id) do
       {:ok, path}
@@ -95,7 +96,8 @@ defmodule GscAnalytics.DataSources.GSC.Accounts do
   @spec default_property(account_id()) ::
           {:ok, String.t()} | {:error, :unknown_account | :account_disabled | :missing_property}
   def default_property(account_id) do
-    with {:ok, %{default_property: property}} when is_binary(property) <- fetch_account(account_id) do
+    with {:ok, %{default_property: property}} when is_binary(property) <-
+           fetch_account(account_id) do
       {:ok, property}
     else
       {:ok, _} ->

@@ -53,9 +53,10 @@ defmodule GscAnalytics.DataSources.GSC.Support.RateLimiterIntegrationTest do
       # Business requirement: "Allow up to 1,200 queries per minute"
 
       # Make 10 requests (well within limit)
-      results = for _i <- 1..10 do
-        RateLimiter.check_rate(@account_id, @test_site)
-      end
+      results =
+        for _i <- 1..10 do
+          RateLimiter.check_rate(@account_id, @test_site)
+        end
 
       # All should be allowed
       assert Enum.all?(results, fn result -> result == :ok end)
@@ -71,7 +72,8 @@ defmodule GscAnalytics.DataSources.GSC.Support.RateLimiterIntegrationTest do
 
       # Next request should be denied
       assert {:error, :rate_limited, wait_time} = RateLimiter.check_rate(@account_id, @test_site)
-      assert wait_time == 60_000  # 1 minute window
+      # 1 minute window
+      assert wait_time == 60_000
     end
 
     test "tracks rate separately for different sites" do
@@ -102,7 +104,8 @@ defmodule GscAnalytics.DataSources.GSC.Support.RateLimiterIntegrationTest do
       # and allow another 1,200 requests
       # (This would require time travel or waiting in a real test)
 
-      assert true  # Placeholder for time-dependent test
+      # Placeholder for time-dependent test
+      assert true
     end
   end
 
@@ -174,11 +177,12 @@ defmodule GscAnalytics.DataSources.GSC.Support.RateLimiterIntegrationTest do
       # Business requirement: "Handle concurrent sync operations safely"
 
       # Spawn 50 concurrent tasks making requests
-      tasks = for _i <- 1..50 do
-        Task.async(fn ->
-          RateLimiter.check_rate(@account_id, @test_site)
-        end)
-      end
+      tasks =
+        for _i <- 1..50 do
+          Task.async(fn ->
+            RateLimiter.check_rate(@account_id, @test_site)
+          end)
+        end
 
       # Wait for all tasks to complete
       results = Task.await_many(tasks)
@@ -197,19 +201,21 @@ defmodule GscAnalytics.DataSources.GSC.Support.RateLimiterIntegrationTest do
       end
 
       # Spawn 20 concurrent tasks (10 should succeed, 10 should fail)
-      tasks = for _i <- 1..20 do
-        Task.async(fn ->
-          RateLimiter.check_rate(@account_id, @test_site)
-        end)
-      end
+      tasks =
+        for _i <- 1..20 do
+          Task.async(fn ->
+            RateLimiter.check_rate(@account_id, @test_site)
+          end)
+        end
 
       results = Task.await_many(tasks)
 
       # Count successes and failures
-      {successes, failures} = Enum.split_with(results, fn
-        :ok -> true
-        {:error, :rate_limited, _} -> false
-      end)
+      {successes, failures} =
+        Enum.split_with(results, fn
+          :ok -> true
+          {:error, :rate_limited, _} -> false
+        end)
 
       # Exactly 10 should succeed (to reach 1200 limit)
       assert length(successes) == 10
@@ -255,6 +261,7 @@ defmodule GscAnalytics.DataSources.GSC.Support.RateLimiterIntegrationTest do
 
       # Hammer should have stored bucket state
       bucket_name = "gsc:#{@account_id}:#{site}"
+
       {:ok, {count, _used, _ms_to_next, _created, _updated}} =
         Hammer.inspect_bucket(bucket_name, 60_000, 1200)
 
@@ -295,7 +302,8 @@ defmodule GscAnalytics.DataSources.GSC.Support.RateLimiterIntegrationTest do
       # If Hammer fails, rate limiter should default to allowing requests
       # (fail-open strategy to avoid blocking all API calls)
 
-      assert true  # Placeholder for error injection test
+      # Placeholder for error injection test
+      assert true
     end
   end
 end

@@ -32,6 +32,7 @@ defmodule GscAnalyticsWeb.DashboardLive do
        %{total_urls: 0, total_clicks: 0, total_impressions: 0, avg_ctr: 0, avg_position: 0}
      end)
      |> assign_new(:site_trends, fn -> [] end)
+     |> assign_new(:show_impressions, fn -> true end)
      |> assign_new(:chart_label, fn -> "Date" end)
      |> assign_new(:chart_view, fn -> "daily" end)
      |> assign_new(:sort_by, fn -> "clicks" end)
@@ -101,7 +102,10 @@ defmodule GscAnalyticsWeb.DashboardLive do
      |> assign(:needs_update_filter, needs_update)
      |> assign(:search, search)
      |> assign(:period_days, period_days)
-     |> assign(:page_title, "GSC Analytics Dashboard")}
+     |> assign(:page_title, "GSC Analytics Dashboard")
+     |> assign_display_labels()
+     |> assign_mom_indicators()
+     |> assign_date_labels()}
   end
 
   @impl true
@@ -204,6 +208,11 @@ defmodule GscAnalyticsWeb.DashboardLive do
     }
 
     {:noreply, push_patch(socket, to: ~p"/dashboard?#{params}")}
+  end
+
+  @impl true
+  def handle_event("toggle_impressions", _params, socket) do
+    {:noreply, assign(socket, :show_impressions, !socket.assigns.show_impressions)}
   end
 
   @impl true
@@ -366,7 +375,9 @@ defmodule GscAnalyticsWeb.DashboardLive do
       })
 
     stats = SummaryStats.fetch(%{account_id: account_id})
-    {site_trends, chart_label} = SiteTrends.fetch(socket.assigns.chart_view, %{account_id: account_id})
+
+    {site_trends, chart_label} =
+      SiteTrends.fetch(socket.assigns.chart_view, %{account_id: account_id})
 
     {:noreply,
      socket
@@ -413,4 +424,79 @@ defmodule GscAnalyticsWeb.DashboardLive do
   end
 
   defp parse_period(_), do: 30
+
+  # Display label helpers - extract inline template computations to proper assigns
+  defp assign_display_labels(socket) do
+    socket
+    |> assign(:period_label, period_label(socket.assigns.period_days))
+    |> assign(:chart_view_label, chart_view_label(socket.assigns.chart_view))
+    |> assign(:sort_label, sort_label(socket.assigns.sort_by))
+    |> assign(:sort_direction_label, sort_direction_label(socket.assigns.sort_direction))
+  end
+
+  defp period_label(7), do: "Last 7 days"
+  defp period_label(30), do: "Last 30 days"
+  defp period_label(90), do: "Last 90 days"
+  defp period_label(180), do: "Last 6 months"
+  defp period_label(10000), do: "All time"
+  defp period_label(days) when is_integer(days), do: "#{days} days"
+  defp period_label(value), do: to_string(value)
+
+  defp chart_view_label("weekly"), do: "Weekly trend"
+  defp chart_view_label("monthly"), do: "Monthly trend"
+  defp chart_view_label(_), do: "Daily trend"
+
+  defp sort_label("lifetime_clicks"), do: "Total Clicks (All Time)"
+  defp sort_label("period_clicks"), do: "Clicks in Period"
+  defp sort_label("period_impressions"), do: "Impressions in Period"
+  defp sort_label("lifetime_avg_ctr"), do: "Average CTR"
+  defp sort_label("lifetime_avg_position"), do: "Average Position"
+  defp sort_label(_), do: "Rank"
+
+  defp sort_direction_label("asc"), do: "ascending"
+  defp sort_direction_label("desc"), do: "descending"
+  defp sort_direction_label(_), do: "descending"
+
+  # Month-over-month indicator helpers
+  defp assign_mom_indicators(socket) do
+    mom_change = socket.assigns.stats.month_over_month_change || 0
+
+    socket
+    |> assign(:mom_change, mom_change)
+    |> assign(:mom_indicator_class, mom_indicator_class(mom_change))
+    |> assign(:mom_icon, mom_icon(mom_change))
+    |> assign(:mom_delta_display, mom_delta_display(mom_change))
+  end
+
+  defp mom_indicator_class(change) when change > 0,
+    do: "border-emerald-400/40 bg-emerald-500/10 text-emerald-200"
+
+  defp mom_indicator_class(change) when change < 0,
+    do: "border-rose-400/50 bg-rose-500/10 text-rose-200"
+
+  defp mom_indicator_class(_), do: "border-slate-200/40 bg-slate-200/10 text-slate-200"
+
+  defp mom_icon(change) when change > 0, do: "hero-arrow-trending-up"
+  defp mom_icon(change) when change < 0, do: "hero-arrow-trending-down"
+  defp mom_icon(_), do: "hero-arrows-right-left"
+
+  defp mom_delta_display(change) when change > 0, do: "+#{Float.round(change, 1)}%"
+  defp mom_delta_display(change) when change < 0, do: "#{Float.round(change, 1)}%"
+  defp mom_delta_display(_), do: "0%"
+
+  # Date label helpers
+  defp assign_date_labels(socket) do
+    stats = socket.assigns.stats
+
+    socket
+    |> assign(:earliest_all_time, format_earliest_date(stats.all_time[:earliest_date]))
+    |> assign(:latest_all_time, format_latest_date(stats.all_time[:latest_date]))
+    |> assign(:days_with_data, stats.all_time[:days_with_data])
+  end
+
+  defp format_earliest_date(nil), do: nil
+  defp format_earliest_date(date), do: Calendar.strftime(date, "%b %Y")
+
+  defp format_latest_date(nil), do: nil
+  defp format_latest_date(date), do: Calendar.strftime(date, "%b %d, %Y")
 end

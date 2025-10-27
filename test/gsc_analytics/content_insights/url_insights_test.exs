@@ -169,6 +169,7 @@ defmodule GscAnalytics.ContentInsights.UrlInsightsTest do
       data_available: true,
       top_queries: []
     }
+
     attrs = Map.merge(defaults, overrides)
 
     %TimeSeries{

@@ -63,6 +63,7 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
       # Create 30 days of data to ensure lifetime stats exist
       for days_ago <- 0..30 do
         date = Date.add(~D[2025-10-15], -days_ago)
+
         populate_time_series_data(account_id, date, [
           {"https://example.com/tracked-url", 10, 100}
         ])
@@ -77,7 +78,8 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
       # Assert: Shows metrics (clicks, impressions)
       # We don't assert on exact numbers (implementation detail)
       # Just that metrics are visible
-      assert html =~ ~r/\d+/ # Contains numbers (metrics)
+      # Contains numbers (metrics)
+      assert html =~ ~r/\d+/
     end
   end
 
@@ -99,7 +101,8 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
       html =
         view
         |> element("#search-input")
-        |> render_change(%{"search" => "blog"})  # Live search
+        # Live search
+        |> render_change(%{"search" => "blog"})
 
       # Assert: Only blog URLs shown
       assert html =~ "blog/post-1"
@@ -224,6 +227,7 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
         {"https://example.com/blog/python-1", 400, 4000},
         {"https://example.com/docs/guide", 200, 2000}
       ]
+
       populate_time_series_data(account_id, date, urls)
 
       {:ok, view, _html} = live(conn, ~p"/")
@@ -266,9 +270,11 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
       {:ok, view, _html} = live(conn, ~p"/?limit=100")
 
       view |> element("th[phx-value-column=lifetime_clicks]") |> render_click()
+
       view
       |> element("#search-input")
       |> render_change(%{"search" => "page-1"})
+
       view |> element("th[phx-value-column=lifetime_avg_position]") |> render_click()
       html = view |> element("button[phx-click=next_page]") |> render_click()
 
@@ -308,7 +314,9 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
 
     urls = Enum.map(records, & &1.url)
 
-    Repo.delete_all(from ls in "url_lifetime_stats", where: ls.account_id == ^account_id and ls.url in ^urls)
+    Repo.delete_all(
+      from ls in "url_lifetime_stats", where: ls.account_id == ^account_id and ls.url in ^urls
+    )
 
     lifetime_rows =
       from(ts in TimeSeries,
@@ -358,7 +366,8 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
   end
 
   defp normalize_url_spec({url, clicks, impressions}) do
-    {url, clicks, impressions, 10.0}  # Default position
+    # Default position
+    {url, clicks, impressions, 10.0}
   end
 
   defp normalize_url_spec({url, opts}) when is_list(opts) do

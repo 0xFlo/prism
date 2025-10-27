@@ -35,11 +35,13 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
     account_id = socket.assigns.current_account_id
     view_mode = normalize_view_mode(params["view"])
     period_days = parse_period(params["period"])
+
     insights =
       ContentInsights.url_insights(url, view_mode, %{
         period_days: period_days,
         account_id: account_id
       })
+
     current_path = URI.parse(uri).path || "/dashboard/url"
 
     # Parse sort params
@@ -56,8 +58,14 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
 
     enriched_insights =
       sorted_insights
-     |> Map.put(:time_series_json, ChartDataPresenter.encode_time_series(sorted_insights.time_series || []))
-      |> Map.put(:chart_events_json, ChartDataPresenter.encode_events(sorted_insights.chart_events || []))
+      |> Map.put(
+        :time_series_json,
+        ChartDataPresenter.encode_time_series(sorted_insights.time_series || [])
+      )
+      |> Map.put(
+        :chart_events_json,
+        ChartDataPresenter.encode_events(sorted_insights.chart_events || [])
+      )
 
     {:noreply,
      socket

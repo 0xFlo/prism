@@ -89,7 +89,8 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
       assert html =~ "sparse-data"
 
       # Assert: Shows available metrics
-      assert html =~ ~r/\d+/ # Contains numbers
+      # Contains numbers
+      assert html =~ ~r/\d+/
     end
   end
 
@@ -164,9 +165,27 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
       date = ~D[2025-10-15]
 
       top_queries = [
-        %{"query" => "elixir phoenix", "clicks" => 100, "impressions" => 1000, "ctr" => 0.1, "position" => 5.0},
-        %{"query" => "liveview tutorial", "clicks" => 80, "impressions" => 900, "ctr" => 0.089, "position" => 7.0},
-        %{"query" => "phoenix framework", "clicks" => 60, "impressions" => 800, "ctr" => 0.075, "position" => 10.0}
+        %{
+          "query" => "elixir phoenix",
+          "clicks" => 100,
+          "impressions" => 1000,
+          "ctr" => 0.1,
+          "position" => 5.0
+        },
+        %{
+          "query" => "liveview tutorial",
+          "clicks" => 80,
+          "impressions" => 900,
+          "ctr" => 0.089,
+          "position" => 7.0
+        },
+        %{
+          "query" => "phoenix framework",
+          "clicks" => 60,
+          "impressions" => 800,
+          "ctr" => 0.075,
+          "position" => 10.0
+        }
       ]
 
       populate_url_data(account_id, url, date, %{
@@ -188,7 +207,8 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
       assert html =~ "phoenix framework"
 
       # Assert: Shows query metrics
-      assert html =~ "100" # Top query clicks
+      # Top query clicks
+      assert html =~ "100"
     end
 
     test "user sees message when no query data available", %{conn: conn} do
@@ -200,7 +220,8 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
       populate_url_data(account_id, url, date, %{
         clicks: 100,
         impressions: 1000,
-        top_queries: nil  # No query data
+        # No query data
+        top_queries: nil
       })
 
       # Action: View URL detail

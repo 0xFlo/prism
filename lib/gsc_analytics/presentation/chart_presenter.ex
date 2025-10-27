@@ -119,8 +119,9 @@ defmodule GscAnalytics.Presentation.ChartPresenter do
     end
   end
 
-  defp migration_path(%{source_url: source, target_url: target}) when is_binary(source) and is_binary(target),
-    do: "#{source} → #{target}"
+  defp migration_path(%{source_url: source, target_url: target})
+       when is_binary(source) and is_binary(target),
+       do: "#{source} → #{target}"
 
   defp migration_path(_), do: nil
 

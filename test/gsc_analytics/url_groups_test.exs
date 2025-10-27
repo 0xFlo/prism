@@ -96,8 +96,10 @@ defmodule GscAnalytics.UrlGroupsTest do
 
       refute Enum.any?(result.urls, &String.contains?(&1, "#"))
       assert Enum.count(result.redirect_events, &(&1.type == :gsc_migration)) == 1
+
       refute Enum.any?(result.redirect_events, fn event ->
-               String.contains?(event.source_url, "#") or String.contains?(event.target_url || "", "#")
+               String.contains?(event.source_url, "#") or
+                 String.contains?(event.target_url || "", "#")
              end)
     end
   end

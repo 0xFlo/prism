@@ -182,45 +182,45 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
       status = job.status || :running
       active? = status in [:running, :paused, :cancelling]
 
-    percent =
-      cond do
-        total > 0 ->
-          min(completed / total * 100, 100.0) |> Float.round(2)
+      percent =
+        cond do
+          total > 0 ->
+            min(completed / total * 100, 100.0) |> Float.round(2)
 
-        status in [:completed, :completed_with_warnings, :cancelled] ->
-          100.0
+          status in [:completed, :completed_with_warnings, :cancelled] ->
+            100.0
 
-        completed > 0 ->
-          100.0
+          completed > 0 ->
+            100.0
 
-        true ->
-          0.0
-      end
+          true ->
+            0.0
+        end
 
-    socket
-    |> assign(:progress, %{
-      job_id: job.id,
-      status: status,
-      running?: status in [:running, :cancelling],
-      active?: active?,
-      percent: percent,
-      total_steps: total,
-      completed_steps: completed,
-      current_step: job.current_step,
-      current_date: job.current_date,
-      started_at: job.started_at,
-      finished_at: job.finished_at,
-      metadata: job.metadata || %{},
-      metrics: normalize_metrics(job[:metrics]),
-      summary: job[:summary],
-      error: job[:error],
-      events: format_events(job.events || []),
-      controls: %{
-        can_pause?: status == :running,
-        can_resume?: status == :paused,
-        can_stop?: status in [:running, :paused, :cancelling]
-      }
-    })
+      socket
+      |> assign(:progress, %{
+        job_id: job.id,
+        status: status,
+        running?: status in [:running, :cancelling],
+        active?: active?,
+        percent: percent,
+        total_steps: total,
+        completed_steps: completed,
+        current_step: job.current_step,
+        current_date: job.current_date,
+        started_at: job.started_at,
+        finished_at: job.finished_at,
+        metadata: job.metadata || %{},
+        metrics: normalize_metrics(job[:metrics]),
+        summary: job[:summary],
+        error: job[:error],
+        events: format_events(job.events || []),
+        controls: %{
+          can_pause?: status == :running,
+          can_resume?: status == :paused,
+          can_stop?: status in [:running, :paused, :cancelling]
+        }
+      })
     end
   end
 

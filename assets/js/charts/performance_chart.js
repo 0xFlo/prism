@@ -11,8 +11,6 @@ import {
   calculatePlotDimensions,
   createXScaler,
   createYScaler,
-  findNearestDataIndex,
-  calculateMaxValues
 } from "./geometry"
 import {
   clearCanvas,
@@ -44,6 +42,7 @@ class PerformanceChartController {
     this.cachedPadding = {top: 20, right: 48, bottom: 75, left: 64}
     this.cachedMaxClicks = 1
     this.cachedMaxImpressions = 1
+    this.showImpressions = true
   }
 
   mount() {
@@ -89,6 +88,7 @@ class PerformanceChartController {
   update() {
     this.series = this.readSeries()
     this.events = this.readEvents()
+    this.showImpressions = this.parseBoolean(this.el.dataset.showImpressions)
     this.xLabel = this.el.dataset.xLabel || "Date"
     this.drawChart()
   }
@@ -138,47 +138,60 @@ class PerformanceChartController {
       return
     }
 
-    const padding = {top: 20, right: 48, bottom: 75, left: 64}
-    const plotWidth = width - padding.left - padding.right
-    const plotHeight = height - padding.top - padding.bottom
-    const plotBottom = padding.top + plotHeight
+    const padding = getDefaultPadding()
+    const {plotWidth, plotHeight, plotBottom} = calculatePlotDimensions(width, height, padding)
 
     const clicks = series.map(point => Number(point.clicks) || 0)
     const impressions = series.map(point => Number(point.impressions) || 0)
 
-    const maxClicks = this.nicelyRoundedMax(Math.max(...clicks))
-    const maxImpressions = this.nicelyRoundedMax(Math.max(...impressions))
+    const clicksAxis = this.buildYAxisMeta(clicks)
+    const impressionsAxis =
+      this.showImpressions ? this.buildYAxisMeta(impressions) : null
+
+    const xForIndex = createXScaler(series.length, plotWidth, padding.left)
+    const yForClicks = createYScaler(clicksAxis.domainMax, plotHeight, padding.top)
+    const yForImpressions =
+      impressionsAxis && this.showImpressions
+        ? createYScaler(impressionsAxis.domainMax, plotHeight, padding.top)
+        : null
 
     this.cachedPadding = padding
-    this.cachedMaxClicks = maxClicks
-    this.cachedMaxImpressions = maxImpressions
+    this.cachedMaxClicks = clicksAxis.domainMax
+    this.cachedMaxImpressions = impressionsAxis ? impressionsAxis.domainMax : 1
 
-    const xForIndex = index => {
-      if (series.length === 1) {
-        return padding.left + plotWidth / 2
-      }
-      const ratio = index / (series.length - 1)
-      return padding.left + ratio * plotWidth
+    this.drawAxes(width, height, padding, series, xForIndex, {
+      primary: {
+        label: "Clicks",
+        color: "#6366f1",
+        meta: clicksAxis,
+        yForValue: yForClicks,
+      },
+      secondary:
+        impressionsAxis && this.showImpressions
+          ? {
+              label: "Impressions",
+              color: "#10b981",
+              meta: impressionsAxis,
+              yForValue: yForImpressions,
+            }
+          : null,
+    })
+
+    this.drawLine(clicks, "#6366f1", xForIndex, yForClicks, padding, plotBottom)
+    if (this.showImpressions && yForImpressions) {
+      this.drawLine(
+        impressions,
+        "#10b981",
+        xForIndex,
+        yForImpressions,
+        padding,
+        plotBottom,
+      )
     }
 
-    const yForClicks = value => padding.top + (1 - value / maxClicks) * plotHeight
-    const yForImpressions = value =>
-      padding.top + (1 - value / maxImpressions) * plotHeight
-
-    this.drawAxes(width, height, padding, series, maxClicks, maxImpressions)
-    this.drawLine(clicks, "#6366f1", xForIndex, yForClicks, padding, plotBottom)
-    this.drawLine(
-      impressions,
-      "#10b981",
-      xForIndex,
-      yForImpressions,
-      padding,
-      plotBottom,
-    )
-    this.drawLegend(width, padding, [
-      ["Clicks", "#6366f1"],
-      ["Impressions", "#10b981"],
-    ])
+    const legendItems = [["Clicks", "#6366f1"]]
+    if (this.showImpressions) legendItems.push(["Impressions", "#10b981"])
+    this.drawLegend(width, padding, legendItems)
     this.drawEvents(series, xForIndex, padding, plotBottom)
 
     this.drawInteractiveElements()
@@ -192,8 +205,21 @@ class PerformanceChartController {
     ctx.fillText("No time series data available", width / 2, height / 2)
   }
 
-  drawAxes(width, height, padding, series, maxClicks, maxImpressions) {
+  drawAxes(width, height, padding, series, xForIndex, axes) {
     const ctx = this.ctx
+    const plotWidth = width - padding.left - padding.right
+
+    if (axes?.primary) {
+      this.drawHorizontalGridLines(
+        width,
+        height,
+        padding,
+        axes.primary.meta,
+        axes.primary.yForValue,
+      )
+    }
+
+    ctx.save()
     ctx.strokeStyle = "#d1d5db"
     ctx.lineWidth = 1
 
@@ -201,92 +227,86 @@ class PerformanceChartController {
     ctx.moveTo(padding.left, padding.top)
     ctx.lineTo(padding.left, height - padding.bottom)
     ctx.lineTo(width - padding.right, height - padding.bottom)
+    if (axes?.secondary) {
+      ctx.lineTo(width - padding.right, padding.top)
+    }
     ctx.stroke()
+    ctx.restore()
 
-    ctx.fillStyle = "#6b7280"
-    ctx.font = "12px Inter, system-ui, sans-serif"
-    ctx.textAlign = "center"
-    ctx.fillText(
-      this.xLabel,
-      padding.left + (width - padding.left - padding.right) / 2,
-      height - padding.bottom + 60,
-    )
-
-    this.drawYAxisTicks(padding.left, padding, height, maxClicks, "#6366f1", "Clicks")
-    this.drawYAxisTicks(
-      width - padding.right,
-      padding,
-      height,
-      maxImpressions,
-      "#10b981",
-      "Impressions",
-      true,
-    )
-
-    const ctxWidth = width - padding.left - padding.right
-    const tickIndices = buildTickIndices(series.length, ctxWidth)
-    const stagger = shouldStaggerLabels(tickIndices.length, ctxWidth)
-
-    tickIndices.forEach((index, order) => {
-      const dataPoint = series[index]
-      const label = formatDateLabel(dataPoint, index, series, this.formatters)
-      const x =
-        series.length === 1
-          ? padding.left + ctxWidth / 2
-          : padding.left + (index / (series.length - 1)) * ctxWidth
-
-      const baseY = height - padding.bottom + 26
-      const yOffset = stagger && order % 2 === 1 ? 18 : 0
-
-      ctx.save()
-      ctx.translate(x, baseY + yOffset)
-      ctx.rotate(-Math.PI / 6)
-      ctx.fillText(label, 0, 0)
-      ctx.restore()
-    })
-
-    ctx.strokeStyle = "rgba(203, 213, 225, 0.5)"
-    ctx.setLineDash([2, 3])
-    ctx.lineWidth = 1
-
-    const gridLines = 4
-    for (let i = 1; i <= gridLines; i++) {
-      const y = padding.top + (i / (gridLines + 1)) * (height - padding.top - padding.bottom)
-      ctx.beginPath()
-      ctx.moveTo(padding.left, y)
-      ctx.lineTo(width - padding.right, y)
-      ctx.stroke()
+    if (axes?.primary) {
+      this.drawYAxisTicks(
+        padding.left,
+        padding,
+        height,
+        axes.primary.meta,
+        axes.primary.color,
+        axes.primary.label,
+        false,
+        axes.primary.yForValue,
+      )
     }
 
-    ctx.setLineDash([])
-    ctx.lineWidth = 1
+    if (axes?.secondary) {
+      this.drawYAxisTicks(
+        width - padding.right,
+        padding,
+        height,
+        axes.secondary.meta,
+        axes.secondary.color,
+        axes.secondary.label,
+        true,
+        axes.secondary.yForValue,
+      )
+    }
+
+    this.drawXAxisLabels(series, xForIndex, padding, width, height, plotWidth)
   }
 
-  drawYAxisTicks(axisX, padding, height, maxValue, color, label, alignRight = false) {
+  drawYAxisTicks(
+    axisX,
+    padding,
+    height,
+    axisMeta,
+    color,
+    label,
+    alignRight = false,
+    yForValue,
+  ) {
+    if (!axisMeta || !Array.isArray(axisMeta.ticks)) return
+
     const ctx = this.ctx
-    ctx.fillStyle = color
+    const tickLength = 6
+    const textOffset = tickLength + 4
+    const direction = alignRight ? -1 : 1
+
+    ctx.save()
     ctx.strokeStyle = color
     ctx.lineWidth = 1
     ctx.textAlign = alignRight ? "right" : "left"
     ctx.font = "12px Inter, system-ui, sans-serif"
 
-    const ticks = 4
-    for (let i = 0; i <= ticks; i++) {
-      const value = (i / ticks) * maxValue
-      const y = padding.top + (1 - i / ticks) * (height - padding.top - padding.bottom)
+    axisMeta.ticks.forEach(value => {
+      const y = yForValue(value)
       ctx.beginPath()
-      const length = 6
-      const dir = alignRight ? -1 : 1
       ctx.moveTo(axisX, y)
-      ctx.lineTo(axisX + dir * length, y)
+      ctx.lineTo(axisX + direction * tickLength, y)
       ctx.stroke()
-      ctx.fillText(formatNumber(value), axisX + dir * (length + 4), y + 4)
-    }
+    })
+
+    ctx.fillStyle = "#475569"
+    axisMeta.ticks.forEach(value => {
+      const y = yForValue(value)
+      const labelText = this.formatAxisTick(value, axisMeta.domainMax)
+      ctx.fillText(labelText, axisX + direction * textOffset, y + 4)
+    })
+
+    ctx.restore()
 
     ctx.save()
     ctx.font = "bold 12px Inter, system-ui, sans-serif"
+    ctx.fillStyle = color
     ctx.textAlign = alignRight ? "right" : "left"
-    ctx.fillText(label, alignRight ? axisX - 10 : axisX + 10, padding.top - 6)
+    ctx.fillText(label, axisX + direction * 10, padding.top - 14)
     ctx.restore()
   }
 
@@ -338,6 +358,163 @@ class PerformanceChartController {
       ctx.fillText(label, cursorX, legendY + 10)
       cursorX += ctx.measureText(label).width + 16
     })
+  }
+
+  drawHorizontalGridLines(width, height, padding, axisMeta, yForValue) {
+    if (!axisMeta || !Array.isArray(axisMeta.ticks)) return
+
+    const ctx = this.ctx
+    const rightBound = width - padding.right
+    const step = axisMeta.step || axisMeta.domainMax || 1
+
+    ctx.save()
+    ctx.strokeStyle = "rgba(148, 163, 184, 0.25)"
+    ctx.lineWidth = 1
+    ctx.setLineDash([4, 4])
+
+    axisMeta.ticks.forEach(value => {
+      if (value <= 0) return
+      if (value >= axisMeta.domainMax - step * 0.001) return
+      const y = yForValue(value)
+      if (y <= padding.top || y >= height - padding.bottom) return
+      ctx.beginPath()
+      ctx.moveTo(padding.left, y)
+      ctx.lineTo(rightBound, y)
+      ctx.stroke()
+    })
+
+    ctx.restore()
+  }
+
+  drawXAxisLabels(series, xForIndex, padding, width, height, plotWidth) {
+    if (!Array.isArray(series) || series.length === 0) return
+
+    const ctx = this.ctx
+    const tickIndices = buildTickIndices(series.length, plotWidth)
+    const stagger = shouldStaggerLabels(tickIndices.length, plotWidth)
+    const axisY = height - padding.bottom
+    const baseLabelY = axisY + 10
+
+    ctx.save()
+    ctx.strokeStyle = "rgba(148, 163, 184, 0.4)"
+    ctx.lineWidth = 1
+    ctx.font = "12px Inter, system-ui, sans-serif"
+    ctx.textAlign = "center"
+    ctx.textBaseline = "top"
+    ctx.fillStyle = "#475569"
+
+    tickIndices.forEach((index, order) => {
+      const dataPoint = series[index]
+      const label = formatDateLabel(dataPoint, index, series, this.formatters)
+      const x = xForIndex(index)
+      const verticalOffset = stagger && order % 2 === 1 ? 12 : 0
+
+      ctx.beginPath()
+      ctx.moveTo(x, axisY)
+      ctx.lineTo(x, axisY + 6)
+      ctx.stroke()
+
+      const lines = this.splitXAxisLabel(label)
+      lines.forEach((line, lineIndex) => {
+        ctx.fillText(line, x, baseLabelY + verticalOffset + lineIndex * 14)
+      })
+    })
+
+    ctx.restore()
+
+    ctx.save()
+    ctx.fillStyle = "#6b7280"
+    ctx.font = "12px Inter, system-ui, sans-serif"
+    ctx.textAlign = "center"
+    ctx.fillText(
+      this.xLabel,
+      padding.left + plotWidth / 2,
+      axisY + 44,
+    )
+    ctx.restore()
+  }
+
+  splitXAxisLabel(label) {
+    if (!label) return [""]
+    const cleaned = String(label).trim()
+    if (!cleaned) return [""]
+
+    if (cleaned.includes(" - ")) {
+      const parts = cleaned.split(" - ").map(part => part.trim()).filter(Boolean)
+      if (parts.length >= 2) {
+        const [first, ...rest] = parts
+        return [first, rest.join(" - ")]
+      }
+    }
+
+    const words = cleaned.split(/\s+/)
+    if (words.length === 1) return [cleaned]
+    if (words.length === 2) return [words[0], words[1]]
+
+    return [words.slice(0, 2).join(" "), words.slice(2).join(" ")]
+  }
+
+  buildYAxisMeta(values, targetTickCount = 5) {
+    const sanitized = Array.isArray(values)
+      ? values.map(value => Number(value) || 0).filter(value => value >= 0)
+      : []
+
+    const maxValue = sanitized.length ? Math.max(...sanitized) : 0
+    const {domainMax, step} = this.computeNiceScale(maxValue, targetTickCount)
+
+    const ticks = []
+    for (let current = 0; current <= domainMax + step * 0.5; current += step) {
+      ticks.push(Number(current.toFixed(6)))
+    }
+
+    if (!ticks.includes(0)) ticks.unshift(0)
+
+    const uniqueTicks = Array.from(new Set(ticks)).sort((a, b) => a - b)
+    return {domainMax, step, ticks: uniqueTicks}
+  }
+
+  formatAxisTick(value, domainMax) {
+    if (!Number.isFinite(value)) return "0"
+    if (value === 0) return "0"
+
+    if (domainMax >= 1_000) {
+      return formatNumber(value)
+    }
+
+    if (domainMax >= 10) {
+      return Math.round(value).toLocaleString()
+    }
+
+    if (domainMax >= 1) {
+      return Number(value.toFixed(1)).toString()
+    }
+
+    return Number(value.toFixed(2)).toString()
+  }
+
+  computeNiceScale(maxValue, targetTickCount = 5) {
+    const safeMax = Number.isFinite(maxValue) && maxValue > 0 ? maxValue : 1
+    const roughStep = safeMax / Math.max(1, targetTickCount)
+    const step = this.niceNumber(roughStep)
+    const domainMax = step * Math.max(1, Math.ceil(safeMax / step))
+
+    return {domainMax, step}
+  }
+
+  niceNumber(value) {
+    if (!Number.isFinite(value) || value <= 0) return 1
+
+    const exponent = Math.floor(Math.log10(value))
+    const fraction = value / Math.pow(10, exponent)
+    let niceFraction
+
+    if (fraction <= 1) niceFraction = 1
+    else if (fraction <= 2) niceFraction = 2
+    else if (fraction <= 2.5) niceFraction = 2.5
+    else if (fraction <= 5) niceFraction = 5
+    else niceFraction = 10
+
+    return niceFraction * Math.pow(10, exponent)
   }
 
   drawEvents(series, xForIndex, padding, plotBottom) {
@@ -502,14 +679,11 @@ class PerformanceChartController {
   drawHighlightPoints(dataPoint, xPos, padding, height, opacity = 1) {
     const ctx = this.ctx
     const clicks = Number(dataPoint.clicks) || 0
-    const impressions = Number(dataPoint.impressions) || 0
 
     const maxClicks = this.cachedMaxClicks
-    const maxImpressions = this.cachedMaxImpressions
     const plotHeight = height - padding.top - padding.bottom
 
     const yClicks = padding.top + (1 - clicks / maxClicks) * plotHeight
-    const yImpressions = padding.top + (1 - impressions / maxImpressions) * plotHeight
 
     ctx.save()
     ctx.globalAlpha = opacity
@@ -525,6 +699,12 @@ class PerformanceChartController {
     ctx.fill()
     ctx.stroke()
     ctx.restore()
+
+    if (!this.showImpressions) return
+
+    const impressions = Number(dataPoint.impressions) || 0
+    const maxImpressions = this.cachedMaxImpressions
+    const yImpressions = padding.top + (1 - impressions / maxImpressions) * plotHeight
 
     ctx.save()
     ctx.globalAlpha = opacity
@@ -552,11 +732,17 @@ class PerformanceChartController {
     const ctr = `${((dataPoint.ctr || 0) * 100).toFixed(2)}%`
     const position = (dataPoint.position || 0).toFixed(1)
 
+    const metrics = [{label: "Clicks", value: clicks, color: "#6366f1"}]
+    if (this.showImpressions) {
+      metrics.push({label: "Impressions", value: impressions, color: "#10b981"})
+    }
+
     const tooltipPadding = 14
     const lineHeight = 24
     const headerHeight = 28
     const tooltipWidth = 230
-    const tooltipHeight = headerHeight + lineHeight * 4 + tooltipPadding * 2 + 4
+    const tooltipHeight =
+      headerHeight + lineHeight * (metrics.length + 2) + tooltipPadding * 2 + 4
 
     let tooltipX = chartX + 15
     if (tooltipX + tooltipWidth > width - 10) {
@@ -611,34 +797,23 @@ class PerformanceChartController {
 
     let currentY = tooltipY + headerHeight + tooltipPadding + 16
 
-    ctx.fillStyle = "#6366f1"
-    ctx.beginPath()
-    ctx.arc(tooltipX + tooltipPadding + 6, currentY - 5, 5, 0, Math.PI * 2)
-    ctx.fill()
+    metrics.forEach(metric => {
+      ctx.textAlign = "left"
+      ctx.fillStyle = metric.color
+      ctx.beginPath()
+      ctx.arc(tooltipX + tooltipPadding + 6, currentY - 5, 5, 0, Math.PI * 2)
+      ctx.fill()
 
-    ctx.fillStyle = textColor
-    ctx.font = "12px Inter, system-ui, sans-serif"
-    ctx.fillText("Clicks", tooltipX + tooltipPadding + 18, currentY - 2)
-    ctx.font = "600 13px Inter, system-ui, sans-serif"
-    ctx.fillText(clicks, tooltipX + tooltipWidth - tooltipPadding - 4, currentY - 2)
-    ctx.textAlign = "right"
+      ctx.fillStyle = textColor
+      ctx.font = "12px Inter, system-ui, sans-serif"
+      ctx.fillText(metric.label, tooltipX + tooltipPadding + 18, currentY - 2)
+      ctx.font = "600 13px Inter, system-ui, sans-serif"
+      ctx.textAlign = "right"
+      ctx.fillText(metric.value, tooltipX + tooltipWidth - tooltipPadding - 4, currentY - 2)
 
-    currentY += lineHeight
+      currentY += lineHeight
+    })
 
-    ctx.textAlign = "left"
-    ctx.fillStyle = "#10b981"
-    ctx.beginPath()
-    ctx.arc(tooltipX + tooltipPadding + 6, currentY - 5, 5, 0, Math.PI * 2)
-    ctx.fill()
-
-    ctx.fillStyle = textColor
-    ctx.font = "12px Inter, system-ui, sans-serif"
-    ctx.fillText("Impressions", tooltipX + tooltipPadding + 18, currentY - 2)
-    ctx.font = "600 13px Inter, system-ui, sans-serif"
-    ctx.textAlign = "right"
-    ctx.fillText(impressions, tooltipX + tooltipWidth - tooltipPadding - 4, currentY - 2)
-
-    currentY += lineHeight
     ctx.textAlign = "left"
     ctx.fillStyle = secondaryTextColor
     ctx.font = "12px Inter, system-ui, sans-serif"
@@ -659,6 +834,12 @@ class PerformanceChartController {
     ctx.fillText(position, tooltipX + tooltipWidth - tooltipPadding - 4, currentY - 2)
 
     ctx.restore()
+  }
+
+  parseBoolean(value) {
+    if (value === undefined) return true
+    const normalized = String(value).toLowerCase()
+    return !["false", "0", "off"].includes(normalized)
   }
 
   nicelyRoundedMax(value) {

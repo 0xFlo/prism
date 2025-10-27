@@ -43,20 +43,24 @@ defmodule GscAnalytics.Analytics.PeriodConfigTest do
 
     test "calculates week end correctly for Monday" do
       # ISO 8601: Week starts on Monday
-      row = %{date: ~D[2025-01-06]}  # Monday
+      # Monday
+      row = %{date: ~D[2025-01-06]}
       result = PeriodConfig.compute_period_end(row, :week)
 
       # Week runs Monday to Sunday (date + 6 days)
-      assert result.period_end == ~D[2025-01-12]  # Sunday
+      # Sunday
+      assert result.period_end == ~D[2025-01-12]
       assert result.date == ~D[2025-01-06]
     end
 
     test "calculates week end correctly for mid-week" do
       # If date is Wednesday, still should add 6 days
-      row = %{date: ~D[2025-01-08]}  # Wednesday
+      # Wednesday
+      row = %{date: ~D[2025-01-08]}
       result = PeriodConfig.compute_period_end(row, :week)
 
-      assert result.period_end == ~D[2025-01-14]  # Wednesday + 6 days
+      # Wednesday + 6 days
+      assert result.period_end == ~D[2025-01-14]
       assert result.date == ~D[2025-01-08]
     end
 
@@ -137,9 +141,12 @@ defmodule GscAnalytics.Analytics.PeriodConfigTest do
 
     test "processes multiple rows for weekly period" do
       rows = [
-        %{date: ~D[2025-01-06]},  # Week 1
-        %{date: ~D[2025-01-13]},  # Week 2
-        %{date: ~D[2025-01-20]}   # Week 3
+        # Week 1
+        %{date: ~D[2025-01-06]},
+        # Week 2
+        %{date: ~D[2025-01-13]},
+        # Week 3
+        %{date: ~D[2025-01-20]}
       ]
 
       result = PeriodConfig.compute_period_ends(rows, :week)
@@ -152,9 +159,12 @@ defmodule GscAnalytics.Analytics.PeriodConfigTest do
 
     test "processes multiple rows for monthly period" do
       rows = [
-        %{date: ~D[2025-01-01]},  # January
-        %{date: ~D[2025-02-01]},  # February (non-leap)
-        %{date: ~D[2024-02-01]}   # February (leap year)
+        # January
+        %{date: ~D[2025-01-01]},
+        # February (non-leap)
+        %{date: ~D[2025-02-01]},
+        # February (leap year)
+        %{date: ~D[2024-02-01]}
       ]
 
       result = PeriodConfig.compute_period_ends(rows, :month)
@@ -197,7 +207,8 @@ defmodule GscAnalytics.Analytics.PeriodConfigTest do
   describe "edge cases" do
     test "handles year boundaries for weekly period" do
       # Week spanning 2024-2025 boundary
-      row = %{date: ~D[2024-12-30]}  # Monday
+      # Monday
+      row = %{date: ~D[2024-12-30]}
       result = PeriodConfig.compute_period_end(row, :week)
 
       # Should correctly add 6 days across year boundary

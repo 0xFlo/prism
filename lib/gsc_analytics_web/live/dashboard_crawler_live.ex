@@ -58,7 +58,10 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
 
     socket =
       socket
-      |> assign(:problem_urls, fetch_problem_urls(account_id, socket.assigns.selected_status_filter))
+      |> assign(
+        :problem_urls,
+        fetch_problem_urls(account_id, socket.assigns.selected_status_filter)
+      )
       |> assign(:global_stats, fetch_global_stats(account_id))
 
     {:noreply, socket}

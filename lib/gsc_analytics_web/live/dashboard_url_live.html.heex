@@ -74,7 +74,9 @@
               <span class="ml-4 text-xs text-slate-500">
                 Data coverage: {@insights.data_coverage_summary}
                 <%= if @insights.data_range_start || @insights.data_range_end do %>
-                  · {format_date(@insights.data_range_start)} — {format_date(@insights.data_range_end)}
+                  · {format_date(@insights.data_range_start)} — {format_date(
+                    @insights.data_range_end
+                  )}
                 <% end %>
               </span>
             <% end %>
@@ -228,22 +230,28 @@
             <div class="flex items-center justify-between">
               <dt>Last fetched</dt>
               <dd>
-                {format_date((@insights && @insights.period_end) ||
-                  (@insights && @insights.performance && @insights.performance.fetched_at))}
+                {format_date(
+                  (@insights && @insights.period_end) ||
+                    (@insights && @insights.performance && @insights.performance.fetched_at)
+                )}
               </dd>
             </div>
             <div class="flex items-center justify-between">
               <dt>Selected range</dt>
               <dd>
-                {format_date(@insights && @insights.period_start)} — {format_date(@insights &&
-                  @insights.period_end)}
+                {format_date(@insights && @insights.period_start)} — {format_date(
+                  @insights &&
+                    @insights.period_end
+                )}
               </dd>
             </div>
             <div class="flex items-center justify-between">
               <dt>Data coverage</dt>
               <dd>
-                {format_date(@insights && @insights.data_range_start)} — {format_date(@insights &&
-                  @insights.data_range_end)}
+                {format_date(@insights && @insights.data_range_start)} — {format_date(
+                  @insights &&
+                    @insights.data_range_end
+                )}
               </dd>
             </div>
             <div class="flex items-center justify-between">
@@ -278,7 +286,9 @@
                   <div class="flex items-center gap-2 text-slate-700">
                     <.icon name="hero-flag" class="h-3.5 w-3.5 text-amber-500" />
                     <span>
-                      {format_date(event.checked_at && DateTime.to_date(event.checked_at))} · {redirect_event_label(event)}
+                      {format_date(event.checked_at && DateTime.to_date(event.checked_at))} · {redirect_event_label(
+                        event
+                      )}
                     </span>
                   </div>
                   <div class="ml-6 flex flex-col gap-1 font-mono">

@@ -20,8 +20,13 @@ defmodule GscAnalytics.Analysis.HighIntentContentTest do
 
   test "csv export escapes commas" do
     posts = [
-      %{title: "Best Proxy Providers 2025", url: "https://example.com", filename: "best-proxies.md",
-        score: 3, signals: ["best", "providers"]}
+      %{
+        title: "Best Proxy Providers 2025",
+        url: "https://example.com",
+        filename: "best-proxies.md",
+        score: 3,
+        signals: ["best", "providers"]
+      }
     ]
 
     assert HighIntentContent.to_csv(posts) ==

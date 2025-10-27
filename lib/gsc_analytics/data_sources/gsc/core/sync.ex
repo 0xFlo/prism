@@ -87,7 +87,12 @@ defmodule GscAnalytics.DataSources.GSC.Core.Sync do
     site_url = site_url || get_default_site_url(account_id)
     target_date = Date.add(Date.utc_today(), -Config.data_delay_days())
 
-    sync_date_range(site_url, target_date, target_date, Keyword.put(opts, :account_id, account_id))
+    sync_date_range(
+      site_url,
+      target_date,
+      target_date,
+      Keyword.put(opts, :account_id, account_id)
+    )
   end
 
   @doc """

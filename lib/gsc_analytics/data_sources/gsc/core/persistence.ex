@@ -139,6 +139,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
     # Bulk insert time series records in chunks to respect PostgreSQL parameter limits
     # With 10 fields per record, chunking at 500 keeps us well under the 65,535 parameter limit
     batch_size = Config.time_series_batch_size()
+
     total_inserted =
       time_series_records
       |> Enum.chunk_every(batch_size)
@@ -153,7 +154,9 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
         acc + inserted
       end)
 
-    Logger.debug("Total inserted: #{total_inserted} time_series records across #{ceil(url_count / batch_size)} chunks")
+    Logger.debug(
+      "Total inserted: #{total_inserted} time_series records across #{ceil(url_count / batch_size)} chunks"
+    )
 
     # Refresh materialized view for these URLs only
     urls_to_refresh = Enum.map(rows, fn row -> get_in(row, ["keys", Access.at(0)]) end)
