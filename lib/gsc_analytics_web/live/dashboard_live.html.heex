@@ -6,6 +6,78 @@
   account_options={@account_options}
 >
   <div class="mx-auto max-w-7xl space-y-10 px-4 py-10 lg:space-y-12 lg:px-6">
+    <div class="sticky top-24 z-20">
+      <div class="rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-2xl shadow-slate-200/60 backdrop-blur-sm supports-[backdrop-filter]:bg-white/75 dark:border-slate-700/70 dark:bg-slate-900/80">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div class="space-y-2">
+            <p class="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500 dark:text-slate-400">
+              Time Controls
+            </p>
+            <p class="text-sm text-slate-500 dark:text-slate-400">
+              Adjust cadence and window — updates apply to both the chart and performance table.
+            </p>
+          </div>
+          <button
+            type="button"
+            phx-click="toggle_impressions"
+            aria-pressed={@show_impressions}
+            class={[
+              "inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-all duration-150 ease-out sm:self-start",
+              if(@show_impressions,
+                do:
+                  "border-transparent bg-emerald-500 text-white shadow-sm shadow-emerald-500/25 hover:bg-emerald-500/90",
+                else:
+                  "border-emerald-200 bg-white text-emerald-600 hover:bg-emerald-50 hover:shadow-sm hover:shadow-emerald-200/50"
+              )
+            ]}
+            data-state={if(@show_impressions, do: "active", else: "inactive")}
+          >
+            <.icon
+              name={if @show_impressions, do: "hero-eye-slash", else: "hero-eye"}
+              class="h-4 w-4"
+            />
+            <span>
+              {if @show_impressions, do: "Hide Impressions", else: "Show Impressions"}
+            </span>
+          </button>
+        </div>
+        <div class="mt-5 grid gap-4 lg:grid-cols-2 lg:items-center">
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+            <span class="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">
+              Chart cadence
+            </span>
+            <.toggle_button_group
+              options={[
+                %{value: "daily", label: "Daily"},
+                %{value: "weekly", label: "Weekly"},
+                %{value: "monthly", label: "Monthly"}
+              ]}
+              current_value={@chart_view}
+              event_name="change_chart_view"
+              value_key="chart_view"
+            />
+          </div>
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+            <span class="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">
+              Data window
+            </span>
+            <.toggle_button_group
+              options={[
+                %{value: "7", label: "7d"},
+                %{value: "30", label: "30d"},
+                %{value: "90", label: "90d"},
+                %{value: "180", label: "6mo"},
+                %{value: "all", label: "All"}
+              ]}
+              current_value={@period_days}
+              event_name="change_period"
+              value_key="period"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+
     <section class="relative overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-50 shadow-2xl">
       <div class="pointer-events-none absolute inset-0 opacity-60">
         <div class="absolute -top-24 -left-24 h-64 w-64 rounded-full bg-sky-500/40 blur-3xl">
@@ -88,7 +160,7 @@
 
     <section>
       <div class="rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-200/50">
-        <div class="flex flex-col gap-4 border-b border-slate-100 px-6 py-5 lg:flex-row lg:items-center lg:justify-between">
+        <div class="space-y-3 border-b border-slate-100 px-6 py-5">
           <div>
             <h2 class="text-lg font-semibold text-slate-900">
               Site performance trends
@@ -104,38 +176,6 @@
                 <% end %>
               </p>
             <% end %>
-          </div>
-          <div class="flex flex-wrap items-center gap-3">
-            <.toggle_button_group
-              options={[
-                %{value: "daily", label: "Daily"},
-                %{value: "weekly", label: "Weekly"},
-                %{value: "monthly", label: "Monthly"}
-              ]}
-              current_value={@chart_view}
-              event_name="change_chart_view"
-              value_key="chart_view"
-            />
-            <button
-              type="button"
-              phx-click="toggle_impressions"
-              aria-pressed={@show_impressions}
-              class={[
-                "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition",
-                if(@show_impressions,
-                  do: "border-transparent bg-emerald-500 text-white shadow",
-                  else: "border-emerald-200 bg-white text-emerald-600 hover:bg-emerald-50"
-                )
-              ]}
-            >
-              <.icon
-                name={if @show_impressions, do: "hero-eye-slash", else: "hero-eye"}
-                class="h-4 w-4"
-              />
-              <span>
-                {if @show_impressions, do: "Hide Impressions", else: "Show Impressions"}
-              </span>
-            </button>
           </div>
         </div>
         <div class="px-4 pb-6 pt-6 sm:px-6">
@@ -162,12 +202,8 @@
         </p>
       </div>
       <div class="px-6 py-6">
-        <form
-          id="dashboard-filters"
-          phx-submit="apply_filters"
-          class="grid gap-4 md:grid-cols-2 xl:grid-cols-6"
-        >
-          <div class="form-control md:col-span-2 xl:col-span-3">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div class="form-control md:col-span-2">
             <label class="label">
               <span class="label-text font-semibold text-slate-700">Search URLs</span>
             </label>
@@ -198,24 +234,6 @@
 
           <div class="form-control">
             <label class="label">
-              <span class="label-text font-semibold text-slate-700">Time period</span>
-            </label>
-            <.toggle_button_group
-              options={[
-                %{value: "7", label: "7d"},
-                %{value: "30", label: "30d"},
-                %{value: "90", label: "90d"},
-                %{value: "180", label: "6mo"},
-                %{value: "all", label: "All"}
-              ]}
-              current_value={@period_days}
-              event_name="change_period"
-              value_key="period"
-            />
-          </div>
-
-          <div class="form-control">
-            <label class="label">
               <span class="label-text font-semibold text-slate-700">View mode</span>
             </label>
             <.toggle_button_group
@@ -229,67 +247,17 @@
             />
           </div>
 
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text font-semibold text-slate-700">Sort by</span>
-            </label>
-            <select name="sort_by" class="select select-bordered w-full">
-              <option value="lifetime_clicks" selected={@sort_by == "lifetime_clicks"}>
-                Total Clicks (All Time)
-              </option>
-              <option value="period_clicks" selected={@sort_by == "period_clicks"}>
-                Period Clicks
-              </option>
-              <option value="period_impressions" selected={@sort_by == "period_impressions"}>
-                Period Impressions
-              </option>
-              <option value="lifetime_avg_ctr" selected={@sort_by == "lifetime_avg_ctr"}>
-                Avg CTR
-              </option>
-              <option value="lifetime_avg_position" selected={@sort_by == "lifetime_avg_position"}>
-                Avg Position
-              </option>
-            </select>
-          </div>
-
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text font-semibold text-slate-700">Show</span>
-            </label>
-            <select name="limit" class="select select-bordered w-full">
-              <option value="50" selected={@limit == 50}>50 URLs</option>
-              <option value="100" selected={@limit == 100}>100 URLs</option>
-              <option value="200" selected={@limit == 200}>200 URLs</option>
-              <option value="500" selected={@limit == 500}>500 URLs</option>
-            </select>
-          </div>
-
-          <div class="form-control flex flex-row items-center gap-3 xl:col-span-1">
-            <label class="label cursor-pointer gap-3">
-              <input
-                type="checkbox"
-                phx-click="toggle_needs_update"
-                checked={@needs_update_filter}
-                class="checkbox checkbox-primary"
-              />
-              <span class="label-text text-slate-700">Needs update only</span>
-            </label>
-          </div>
-
-          <div class="flex flex-wrap items-center gap-3 xl:col-span-6">
-            <button type="submit" class="btn btn-primary gap-2">
-              <.icon name="hero-adjustments-horizontal" class="h-5 w-5" /> Apply filters
-            </button>
+          <div class="flex flex-wrap items-center justify-between gap-3 md:col-span-2">
             <.link
               href={
-                ~p"/dashboard/export?#{%{view_mode: @view_mode, needs_update: @needs_update_filter, sort_by: @sort_by, limit: @limit}}"
+                ~p"/dashboard/export?#{%{view_mode: @view_mode, sort_by: @sort_by, limit: @limit}}"
               }
               class="btn btn-outline btn-success gap-2"
             >
               <.icon name="hero-arrow-down-tray" class="h-5 w-5" /> Export CSV
             </.link>
           </div>
-        </form>
+        </div>
       </div>
     </section>
 
@@ -313,6 +281,7 @@
           view_mode={@view_mode}
           sort_by={@sort_by}
           sort_direction={@sort_direction}
+          period_label={@period_label}
         />
       </div>
       <.pagination
@@ -320,6 +289,7 @@
         total_pages={@total_pages}
         total_items={@total_count}
         per_page={@limit}
+        per_page_options={[50, 100, 200, 500]}
       />
     </section>
   </div>

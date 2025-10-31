@@ -110,6 +110,11 @@ defmodule GscAnalytics.ContentInsights.UrlPerformanceTest do
     assert first.period_clicks > 0
     assert first.backlink_count == 2
     assert first.http_status == 200
+    assert first.selected_clicks == first.period_clicks
+    assert first.selected_impressions == first.period_impressions
+    assert_in_delta(first.selected_ctr, first.period_ctr, 0.0001)
+    assert first.selected_position == first.period_position
+    assert first.selected_metrics_source == :period
 
     second = Enum.find(rest, &(&1.url == "https://example.com/b"))
     assert second.backlink_count == 1
@@ -127,6 +132,24 @@ defmodule GscAnalytics.ContentInsights.UrlPerformanceTest do
 
     assert result.total_count == 1
     assert Enum.map(result.urls, & &1.url) == ["https://example.com/b"]
+  end
+
+  test "list/1 uses lifetime metrics for all-time period" do
+    %{urls: urls} =
+      UrlPerformance.list(%{
+        account_id: @account_id,
+        limit: 10,
+        page: 1,
+        period_days: 10_000
+      })
+
+    first = hd(urls)
+
+    assert first.selected_metrics_source == :lifetime
+    assert first.selected_clicks == first.lifetime_clicks
+    assert first.selected_impressions == first.lifetime_impressions
+    assert first.selected_ctr == first.lifetime_avg_ctr
+    assert first.selected_position == first.lifetime_avg_position
   end
 
   defp insert_time_series(account_id, url, date, attrs) do

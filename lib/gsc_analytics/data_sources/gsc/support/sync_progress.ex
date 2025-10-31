@@ -333,6 +333,7 @@ defmodule GscAnalytics.DataSources.GSC.Support.SyncProgress do
       urls: attrs[:urls] || 0,
       rows: attrs[:rows] || 0,
       query_batches: attrs[:query_batches] || 0,
+      query_sub_requests: attrs[:query_sub_requests] || 0,
       url_requests: attrs[:url_requests] || 0,
       api_calls: attrs[:api_calls] || 0,
       duration_ms: attrs[:duration_ms],
@@ -353,6 +354,7 @@ defmodule GscAnalytics.DataSources.GSC.Support.SyncProgress do
     urls = max(event.urls || 0, 0)
     rows = max(event.rows || 0, 0)
     query_batches = max(event.query_batches || 0, 0)
+    query_sub_requests = max(event.query_sub_requests || 0, 0)
     url_requests = max(event.url_requests || 0, 0)
     api_calls = event.api_calls || query_batches + url_requests
 
@@ -360,7 +362,8 @@ defmodule GscAnalytics.DataSources.GSC.Support.SyncProgress do
       metrics
       |> Map.update(:total_urls, 0, &(&1 + urls))
       |> Map.update(:total_rows, 0, &(&1 + rows))
-      |> Map.update(:total_query_sub_requests, 0, &(&1 + query_batches))
+      |> Map.update(:total_query_http_batches, 0, &(&1 + query_batches))
+      |> Map.update(:total_query_sub_requests, 0, &(&1 + query_sub_requests))
       |> Map.update(:total_url_requests, 0, &(&1 + url_requests))
       |> Map.update(:total_api_calls, 0, &(&1 + api_calls))
 

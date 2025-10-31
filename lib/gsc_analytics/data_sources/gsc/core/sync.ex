@@ -417,6 +417,8 @@ defmodule GscAnalytics.DataSources.GSC.Core.Sync do
       status: :ok,
       urls: if(type == :urls, do: count, else: 0),
       rows: if(type == :queries, do: count, else: 0),
+      query_batches: if(type == :queries, do: api_calls, else: 0),
+      url_requests: if(type == :urls, do: api_calls, else: 0),
       api_calls: api_calls
     })
   end

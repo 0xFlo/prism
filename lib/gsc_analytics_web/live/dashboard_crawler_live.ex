@@ -29,7 +29,6 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
     current_job = Crawler.current_progress()
     history = Crawler.get_history()
 
-    socket = assign(socket, :current_scope, nil)
     {socket, account} = AccountHelpers.init_account_assigns(socket, params)
 
     problem_urls = fetch_problem_urls(account.id)

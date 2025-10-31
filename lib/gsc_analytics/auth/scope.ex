@@ -18,7 +18,12 @@ defmodule GscAnalytics.Auth.Scope do
 
   alias GscAnalytics.Auth.User
 
-  defstruct user: nil
+  defstruct user: nil, account_ids: []
+
+  @type t :: %__MODULE__{
+          user: User.t() | nil,
+          account_ids: [integer()]
+        }
 
   @doc """
   Creates a scope for the given user.
@@ -26,8 +31,47 @@ defmodule GscAnalytics.Auth.Scope do
   Returns nil if no user is given.
   """
   def for_user(%User{} = user) do
-    %__MODULE__{user: user}
+    account_ids = GscAnalytics.Accounts.account_ids_for_user(user)
+    %__MODULE__{user: user, account_ids: account_ids}
   end
 
   def for_user(nil), do: nil
+
+  @doc """
+  Returns true when the given account is accessible for the scope.
+
+  Nil scopes are treated as internal callers and bypass checks.
+  """
+  @spec account_authorized?(t() | nil, integer()) :: boolean()
+  def account_authorized?(nil, _account_id), do: true
+
+  def account_authorized?(%__MODULE__{account_ids: account_ids}, account_id) do
+    account_id in (account_ids || [])
+  end
+
+  @doc """
+  Authorizes access to an account, returning `:ok` or `{:error, :unauthorized_account}`.
+  """
+  @spec authorize_account(t() | nil, integer()) :: :ok | {:error, :unauthorized_account}
+  def authorize_account(nil, _account_id), do: :ok
+
+  def authorize_account(%__MODULE__{} = scope, account_id) do
+    if account_authorized?(scope, account_id) do
+      :ok
+    else
+      {:error, :unauthorized_account}
+    end
+  end
+
+  @doc """
+  Authorizes access to an account, raising when unauthorized.
+  Suitable for controller-level guards where exceptions are acceptable.
+  """
+  @spec authorize_account!(t() | nil, integer()) :: :ok
+  def authorize_account!(scope, account_id) do
+    case authorize_account(scope, account_id) do
+      :ok -> :ok
+      {:error, :unauthorized_account} -> raise "Unauthorized access to account #{account_id}"
+    end
+  end
 end

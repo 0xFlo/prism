@@ -12,7 +12,6 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
   def mount(params, _session, socket) do
     # LiveView best practice: Use assign_new/3 for safe defaults
     # This prevents runtime errors from missing assigns and makes the component more resilient
-    socket = assign(socket, :current_scope, nil)
     {socket, _account} = AccountHelpers.init_account_assigns(socket, params)
 
     {:ok,

@@ -17,19 +17,6 @@ defmodule GscAnalyticsWeb.Router do
     plug :accepts, ["json"]
   end
 
-  scope "/", GscAnalyticsWeb do
-    pipe_through :browser
-
-    # Dashboard as home page
-    live "/", DashboardLive, :index
-    live "/dashboard", DashboardLive, :index
-    live "/dashboard/keywords", DashboardKeywordsLive, :index
-    live "/dashboard/sync", DashboardSyncLive, :index
-    live "/dashboard/crawler", DashboardCrawlerLive, :index
-    live "/dashboard/url", DashboardUrlLive, :show
-    get "/dashboard/export", Dashboard.ExportController, :export_csv
-  end
-
   # Other scopes may use custom stacks.
   # scope "/api", GscAnalyticsWeb do
   #   pipe_through :api
@@ -59,10 +46,23 @@ defmodule GscAnalyticsWeb.Router do
 
     live_session :require_authenticated_user,
       on_mount: [{GscAnalyticsWeb.UserAuth, :require_authenticated}] do
+      live "/", DashboardLive, :index
+      live "/dashboard", DashboardLive, :index
+      live "/dashboard/keywords", DashboardKeywordsLive, :index
+      live "/dashboard/sync", DashboardSyncLive, :index
+      live "/dashboard/crawler", DashboardCrawlerLive, :index
+      live "/dashboard/url", DashboardUrlLive, :show
+      live "/accounts", AccountSettingsLive, :index
       live "/users/settings", UserLive.Settings, :edit
       live "/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email
     end
 
+    scope "/auth/google" do
+      get "/", GoogleAuthController, :request
+      get "/callback", GoogleAuthController, :callback
+    end
+
+    get "/dashboard/export", Dashboard.ExportController, :export_csv
     post "/users/update-password", UserSessionController, :update_password
   end
 

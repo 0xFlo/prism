@@ -20,15 +20,16 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
   """
   @spec init_account_assigns(socket(), map()) :: {socket(), map()}
   def init_account_assigns(socket, params \\ %{}) do
-    accounts = Accounts.list_gsc_accounts()
+    current_scope = Map.get(socket.assigns, :current_scope)
+    accounts = Accounts.list_gsc_accounts(current_scope)
     accounts_by_id = Map.new(accounts, fn account -> {account.id, account} end)
     requested_id = params |> Map.get("account_id") |> parse_account_param()
-    current_account = resolve_initial_account(accounts_by_id, requested_id)
+    current_account = resolve_initial_account(current_scope, accounts_by_id, requested_id)
 
     socket =
       socket
       |> assign(:accounts_by_id, accounts_by_id)
-      |> assign(:account_options, Accounts.gsc_account_options())
+      |> assign(:account_options, Accounts.gsc_account_options(current_scope))
       |> assign(:current_account, current_account)
       |> assign(:current_account_id, current_account.id)
 
@@ -41,12 +42,13 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
   """
   @spec assign_current_account(socket(), map()) :: socket()
   def assign_current_account(socket, params \\ %{}) do
+    current_scope = Map.get(socket.assigns, :current_scope)
     requested_id = params |> Map.get("account_id") |> parse_account_param()
     accounts = Map.get(socket.assigns, :accounts_by_id, %{})
 
     current_account =
       case requested_id && Map.get(accounts, requested_id) do
-        nil -> resolve_initial_account(accounts, requested_id)
+        nil -> resolve_initial_account(current_scope, accounts, requested_id)
         account -> account
       end
 
@@ -71,13 +73,15 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
 
   def parse_account_param(_), do: nil
 
-  defp resolve_initial_account(accounts_by_id, requested_id) do
+  defp resolve_initial_account(current_scope, accounts_by_id, requested_id) do
+    default_account_id = Accounts.default_account_id(current_scope)
+
     cond do
       requested_id && Map.has_key?(accounts_by_id, requested_id) ->
         Map.fetch!(accounts_by_id, requested_id)
 
-      Map.has_key?(accounts_by_id, Accounts.default_account_id()) ->
-        Map.fetch!(accounts_by_id, Accounts.default_account_id())
+      default_account_id && Map.has_key?(accounts_by_id, default_account_id) ->
+        Map.fetch!(accounts_by_id, default_account_id)
 
       true ->
         accounts_by_id

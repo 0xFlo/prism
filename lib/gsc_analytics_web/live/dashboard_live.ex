@@ -19,7 +19,6 @@ defmodule GscAnalyticsWeb.DashboardLive do
     # This enables real-time dashboard updates when sync completes
     if connected?(socket), do: SyncProgress.subscribe()
 
-    socket = assign(socket, :current_scope, nil)
     {socket, _account} = AccountHelpers.init_account_assigns(socket, params)
 
     # LiveView best practice: Use assign_new/3 to prevent overwriting existing assigns
@@ -42,7 +41,6 @@ defmodule GscAnalyticsWeb.DashboardLive do
      |> assign_new(:total_pages, fn -> 1 end)
      |> assign_new(:total_count, fn -> 0 end)
      |> assign_new(:view_mode, fn -> "basic" end)
-     |> assign_new(:needs_update_filter, fn -> false end)
      |> assign_new(:search, fn -> "" end)
      |> assign_new(:page_title, fn -> "GSC Analytics Dashboard" end)}
   end
@@ -54,10 +52,9 @@ defmodule GscAnalyticsWeb.DashboardLive do
 
     limit = DashboardUtils.normalize_limit(params["limit"])
     page = DashboardUtils.normalize_page(params["page"])
-    sort_by = params["sort_by"] || "lifetime_clicks"
+    sort_by = normalize_sort_by(params["sort_by"])
     sort_direction = DashboardUtils.normalize_sort_direction(params["sort_direction"])
     view_mode = Columns.validate_view_mode(params["view_mode"] || "basic")
-    needs_update = parse_bool(params["needs_update"])
     chart_view = chart_view(params["chart_view"])
     search = params["search"] || ""
     # Parse period parameter for v2 functions (default to 30 days)
@@ -73,7 +70,6 @@ defmodule GscAnalyticsWeb.DashboardLive do
         page: page,
         sort_by: sort_by,
         sort_direction: sort_direction,
-        needs_update: needs_update,
         search: search,
         period_days: period_days,
         account_id: account_id
@@ -81,7 +77,9 @@ defmodule GscAnalyticsWeb.DashboardLive do
 
     # Get summary stats showing current month, last month, all time
     stats = SummaryStats.fetch(%{account_id: account_id})
-    {site_trends, chart_label} = SiteTrends.fetch(chart_view, %{account_id: account_id})
+
+    {site_trends, chart_label} =
+      SiteTrends.fetch(chart_view, %{account_id: account_id, period_days: period_days})
 
     {:noreply,
      socket
@@ -99,7 +97,6 @@ defmodule GscAnalyticsWeb.DashboardLive do
      |> assign(:sort_direction, Atom.to_string(sort_direction))
      |> assign(:limit, limit)
      |> assign(:view_mode, view_mode)
-     |> assign(:needs_update_filter, needs_update)
      |> assign(:search, search)
      |> assign(:period_days, period_days)
      |> assign(:page_title, "GSC Analytics Dashboard")
@@ -113,7 +110,6 @@ defmodule GscAnalyticsWeb.DashboardLive do
     # Update search - reset to page 1 when searching
     params = %{
       view_mode: socket.assigns.view_mode,
-      needs_update: socket.assigns.needs_update_filter,
       sort_by: socket.assigns.sort_by,
       sort_direction: socket.assigns.sort_direction,
       limit: socket.assigns.limit,
@@ -134,7 +130,6 @@ defmodule GscAnalyticsWeb.DashboardLive do
 
     params = %{
       view_mode: validated_mode,
-      needs_update: socket.assigns.needs_update_filter,
       sort_by: socket.assigns.sort_by,
       sort_direction: socket.assigns.sort_direction,
       limit: socket.assigns.limit,
@@ -149,35 +144,12 @@ defmodule GscAnalyticsWeb.DashboardLive do
   end
 
   @impl true
-  def handle_event("toggle_needs_update", _params, socket) do
-    # Toggle the current state - reset to page 1 since filtering changes results
-    needs_update = !socket.assigns.needs_update_filter
-
-    params = %{
-      view_mode: socket.assigns.view_mode,
-      needs_update: needs_update,
-      sort_by: socket.assigns.sort_by,
-      sort_direction: socket.assigns.sort_direction,
-      limit: socket.assigns.limit,
-      page: 1,
-      chart_view: socket.assigns.chart_view,
-      search: socket.assigns.search,
-      period: socket.assigns.period_days,
-      account_id: socket.assigns.current_account_id
-    }
-
-    {:noreply,
-     socket
-     |> assign(:needs_update_filter, needs_update)
-     |> push_patch(to: ~p"/dashboard?#{params}")}
-  end
-
-  @impl true
   def handle_event("change_period", %{"period" => period}, socket) do
-    # Update URL with new period - reset to page 1 since data changes
+    # Update local assigns for immediate visual feedback, then sync URL for data refresh
+    new_period_days = parse_period(period)
+
     params = %{
       view_mode: socket.assigns.view_mode,
-      needs_update: socket.assigns.needs_update_filter,
       sort_by: socket.assigns.sort_by,
       sort_direction: socket.assigns.sort_direction,
       limit: socket.assigns.limit,
@@ -188,15 +160,18 @@ defmodule GscAnalyticsWeb.DashboardLive do
       account_id: socket.assigns.current_account_id
     }
 
-    {:noreply, push_patch(socket, to: ~p"/dashboard?#{params}")}
+    {:noreply,
+     socket
+     |> assign(:period_days, new_period_days)
+     |> assign_display_labels()
+     |> push_patch(to: ~p"/dashboard?#{params}")}
   end
 
   @impl true
   def handle_event("change_chart_view", %{"chart_view" => chart_view}, socket) do
-    # Update URL with new chart view mode - keep current page
+    # Update local assigns for immediate visual feedback, then sync URL for data refresh
     params = %{
       view_mode: socket.assigns.view_mode,
-      needs_update: socket.assigns.needs_update_filter,
       sort_by: socket.assigns.sort_by,
       sort_direction: socket.assigns.sort_direction,
       limit: socket.assigns.limit,
@@ -207,7 +182,11 @@ defmodule GscAnalyticsWeb.DashboardLive do
       account_id: socket.assigns.current_account_id
     }
 
-    {:noreply, push_patch(socket, to: ~p"/dashboard?#{params}")}
+    {:noreply,
+     socket
+     |> assign(:chart_view, chart_view)
+     |> assign_display_labels()
+     |> push_patch(to: ~p"/dashboard?#{params}")}
   end
 
   @impl true
@@ -219,19 +198,20 @@ defmodule GscAnalyticsWeb.DashboardLive do
   def handle_event("sort_column", %{"column" => column}, socket) do
     # Determine new sort direction - toggle if same column, default for new column
     # Reset to page 1 since sort order changes results
+    normalized_column = normalize_sort_by(column)
+
     new_direction =
-      if socket.assigns.sort_by == column do
+      if socket.assigns.sort_by == normalized_column do
         # Toggle direction for same column
         if socket.assigns.sort_direction == "asc", do: "desc", else: "asc"
       else
         # Default direction for new column - position ascending (lower is better), others descending
-        if column == "position", do: "asc", else: "desc"
+        if normalized_column == "position", do: "asc", else: "desc"
       end
 
     params = %{
       view_mode: socket.assigns.view_mode,
-      needs_update: socket.assigns.needs_update_filter,
-      sort_by: column,
+      sort_by: normalized_column,
       sort_direction: new_direction,
       limit: socket.assigns.limit,
       page: 1,
@@ -245,26 +225,22 @@ defmodule GscAnalyticsWeb.DashboardLive do
   end
 
   @impl true
-  def handle_event("apply_filters", params, socket) do
-    sort_by = params["sort_by"] || socket.assigns.sort_by
-    limit_param = params["limit"] || socket.assigns.limit
-    search_param = params["search"] || socket.assigns.search
+  def handle_event("change_limit", %{"limit" => limit}, socket) do
+    normalized_limit = DashboardUtils.normalize_limit(limit)
 
-    # Reset to page 1 when applying filters (limit or sort changes)
-    query_params = %{
-      view_mode: params["view_mode"] || socket.assigns.view_mode,
-      needs_update: socket.assigns.needs_update_filter,
-      sort_by: sort_by,
+    params = %{
+      view_mode: socket.assigns.view_mode,
+      sort_by: socket.assigns.sort_by,
       sort_direction: socket.assigns.sort_direction,
-      limit: limit_param,
+      limit: normalized_limit,
       page: 1,
       chart_view: socket.assigns.chart_view,
-      search: search_param,
+      search: socket.assigns.search,
       period: socket.assigns.period_days,
       account_id: socket.assigns.current_account_id
     }
 
-    {:noreply, push_patch(socket, to: ~p"/dashboard?#{query_params}")}
+    {:noreply, push_patch(socket, to: ~p"/dashboard?#{params}")}
   end
 
   @impl true
@@ -277,7 +253,6 @@ defmodule GscAnalyticsWeb.DashboardLive do
 
     params = %{
       view_mode: socket.assigns.view_mode,
-      needs_update: socket.assigns.needs_update_filter,
       sort_by: socket.assigns.sort_by,
       sort_direction: socket.assigns.sort_direction,
       limit: socket.assigns.limit,
@@ -298,7 +273,6 @@ defmodule GscAnalyticsWeb.DashboardLive do
 
     params = %{
       view_mode: socket.assigns.view_mode,
-      needs_update: socket.assigns.needs_update_filter,
       sort_by: socket.assigns.sort_by,
       sort_direction: socket.assigns.sort_direction,
       limit: socket.assigns.limit,
@@ -319,7 +293,6 @@ defmodule GscAnalyticsWeb.DashboardLive do
 
     params = %{
       view_mode: socket.assigns.view_mode,
-      needs_update: socket.assigns.needs_update_filter,
       sort_by: socket.assigns.sort_by,
       sort_direction: socket.assigns.sort_direction,
       limit: socket.assigns.limit,
@@ -337,7 +310,6 @@ defmodule GscAnalyticsWeb.DashboardLive do
   def handle_event("change_account", %{"account_id" => account_id}, socket) do
     params = %{
       view_mode: socket.assigns.view_mode,
-      needs_update: socket.assigns.needs_update_filter,
       sort_by: socket.assigns.sort_by,
       sort_direction: socket.assigns.sort_direction,
       limit: socket.assigns.limit,
@@ -368,7 +340,6 @@ defmodule GscAnalyticsWeb.DashboardLive do
         page: socket.assigns.page,
         sort_by: socket.assigns.sort_by,
         sort_direction: String.to_existing_atom(socket.assigns.sort_direction),
-        needs_update: socket.assigns.needs_update_filter,
         search: socket.assigns.search,
         period_days: socket.assigns[:period_days] || 30,
         account_id: account_id
@@ -377,7 +348,10 @@ defmodule GscAnalyticsWeb.DashboardLive do
     stats = SummaryStats.fetch(%{account_id: account_id})
 
     {site_trends, chart_label} =
-      SiteTrends.fetch(socket.assigns.chart_view, %{account_id: account_id})
+      SiteTrends.fetch(socket.assigns.chart_view, %{
+        account_id: account_id,
+        period_days: socket.assigns.period_days
+      })
 
     {:noreply,
      socket
@@ -403,8 +377,19 @@ defmodule GscAnalyticsWeb.DashboardLive do
   defp chart_view("monthly"), do: "monthly"
   defp chart_view(_), do: "daily"
 
-  defp parse_bool(value) when value in [true, "true", "1", 1], do: true
-  defp parse_bool(_), do: false
+  defp normalize_sort_by(nil), do: "clicks"
+  defp normalize_sort_by(""), do: "clicks"
+
+  defp normalize_sort_by(sort_by) when sort_by in ["clicks", "impressions", "ctr", "position"],
+    do: sort_by
+
+  defp normalize_sort_by("lifetime_clicks"), do: "clicks"
+  defp normalize_sort_by("period_clicks"), do: "clicks"
+  defp normalize_sort_by("period_impressions"), do: "impressions"
+  defp normalize_sort_by("lifetime_avg_ctr"), do: "ctr"
+  defp normalize_sort_by("lifetime_avg_position"), do: "position"
+  defp normalize_sort_by(other) when is_binary(other), do: other
+  defp normalize_sort_by(_), do: "clicks"
 
   defp parse_period(nil), do: 30
   defp parse_period("7"), do: 7
@@ -427,10 +412,12 @@ defmodule GscAnalyticsWeb.DashboardLive do
 
   # Display label helpers - extract inline template computations to proper assigns
   defp assign_display_labels(socket) do
+    period_label_text = period_label(socket.assigns.period_days)
+
     socket
-    |> assign(:period_label, period_label(socket.assigns.period_days))
+    |> assign(:period_label, period_label_text)
     |> assign(:chart_view_label, chart_view_label(socket.assigns.chart_view))
-    |> assign(:sort_label, sort_label(socket.assigns.sort_by))
+    |> assign(:sort_label, sort_label(socket.assigns.sort_by, period_label_text))
     |> assign(:sort_direction_label, sort_direction_label(socket.assigns.sort_direction))
   end
 
@@ -446,12 +433,16 @@ defmodule GscAnalyticsWeb.DashboardLive do
   defp chart_view_label("monthly"), do: "Monthly trend"
   defp chart_view_label(_), do: "Daily trend"
 
-  defp sort_label("lifetime_clicks"), do: "Total Clicks (All Time)"
-  defp sort_label("period_clicks"), do: "Clicks in Period"
-  defp sort_label("period_impressions"), do: "Impressions in Period"
-  defp sort_label("lifetime_avg_ctr"), do: "Average CTR"
-  defp sort_label("lifetime_avg_position"), do: "Average Position"
-  defp sort_label(_), do: "Rank"
+  defp sort_label("clicks", period_label), do: "Clicks (#{period_label})"
+  defp sort_label("impressions", period_label), do: "Impressions (#{period_label})"
+  defp sort_label("ctr", period_label), do: "CTR (#{period_label})"
+  defp sort_label("position", period_label), do: "Average Position (#{period_label})"
+  defp sort_label("period_clicks", period_label), do: sort_label("clicks", period_label)
+  defp sort_label("period_impressions", period_label), do: sort_label("impressions", period_label)
+  defp sort_label("lifetime_clicks", _period_label), do: "Total Clicks (All Time)"
+  defp sort_label("lifetime_avg_ctr", period_label), do: sort_label("ctr", period_label)
+  defp sort_label("lifetime_avg_position", period_label), do: sort_label("position", period_label)
+  defp sort_label(_, period_label), do: "Clicks (#{period_label})"
 
   defp sort_direction_label("asc"), do: "ascending"
   defp sort_direction_label("desc"), do: "descending"

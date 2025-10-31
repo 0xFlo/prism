@@ -46,9 +46,7 @@
           <.icon name="hero-arrow-left" class="h-5 w-5" /> Back to dashboard
         </.link>
         <.link
-          href={
-            ~p"/dashboard/export?#{%{limit: 100, sort_by: "clicks", view_mode: "basic", needs_update: false}}"
-          }
+          href={~p"/dashboard/export?#{%{limit: 100, sort_by: "clicks", view_mode: "basic"}}"}
           class="btn btn-outline gap-2"
         >
           <.icon name="hero-arrow-down-tray" class="h-5 w-5" /> Export overview

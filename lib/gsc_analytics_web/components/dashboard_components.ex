@@ -34,6 +34,7 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
   attr :view_mode, :string, default: "basic"
   attr :sort_by, :string, default: "clicks"
   attr :sort_direction, :string, default: "desc"
+  attr :period_label, :string, default: "Last 30 days"
 
   def url_table(assigns) do
     ~H"""
@@ -43,13 +44,14 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
           <tr>
             <%= for col <- visible_columns(@view_mode) do %>
               <%= if Map.get(col, :sortable, false) do %>
+                <% header_label = column_header_label(col.key, @period_label) || col.label %>
                 <th
                   class={sort_header_class(Atom.to_string(col.key), @sort_by) <> " " <> col.align}
                   phx-click="sort_column"
-                  phx-value-column={col.key}
+                  phx-value-column={Atom.to_string(col.key)}
                 >
                   <div class="flex items-center gap-1 #{col.align}">
-                    <span>{col.label}</span>
+                    <span>{header_label}</span>
                     <.icon
                       name={sort_icon(Atom.to_string(col.key), @sort_by, @sort_direction)}
                       class="h-4 w-4"
@@ -57,10 +59,10 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
                   </div>
                 </th>
               <% else %>
-                <th class={col.align}>{col.label}</th>
+                <% header_label = column_header_label(col.key, @period_label) || col.label %>
+                <th class={col.align}>{header_label}</th>
               <% end %>
             <% end %>
-            <th class="text-center">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -68,7 +70,7 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
             <tr>
               <td
                 class="py-10 text-center text-sm text-slate-500"
-                colspan={Enum.count(visible_columns(@view_mode)) + 1}
+                colspan={Enum.count(visible_columns(@view_mode))}
               >
                 No URLs found for the current filters
               </td>
@@ -144,18 +146,14 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
                   <% end %>
                 </td>
               <% end %>
-              <!-- Lifetime Clicks -->
+              <!-- Clicks -->
               <td class="text-right font-semibold text-green-700">
-                {format_number(url.lifetime_clicks)}
+                {format_number(url.selected_clicks || 0)}
               </td>
-              <!-- Period Clicks -->
-              <td class="text-right font-semibold text-blue-700">
-                {format_number(url.period_clicks)}
-              </td>
-              <!-- Period Impressions (only in 'all' mode) -->
-              <%= if column_visible?(:period_impressions, @view_mode) do %>
+              <!-- Impressions (only in 'all' mode) -->
+              <%= if column_visible?(:impressions, @view_mode) do %>
                 <td class="text-right text-blue-600">
-                  {format_number(url.period_impressions)}
+                  {format_number(url.selected_impressions || 0)}
                 </td>
               <% end %>
               <!-- Active Since (only in 'all' mode) -->
@@ -168,25 +166,12 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
                   <% end %>
                 </td>
               <% end %>
-              <!-- Backlinks -->
-              <td class="text-right">
-                <div class="flex items-center justify-end gap-2">
-                  <span class="font-medium">{format_number(url.backlink_count || 0)}</span>
-                  <%= if url.backlink_count > 0 && stale_backlinks?(url.backlinks_last_imported) do %>
-                    <span
-                      class="badge badge-warning badge-xs tooltip"
-                      data-tip="Backlink data >90 days old"
-                    >
-                      stale
-                    </span>
-                  <% end %>
-                </div>
-              </td>
               <!-- CTR -->
               <td class="text-right">
-                <%= if url.lifetime_avg_ctr do %>
-                  <span class={"badge #{if @view_mode == "all", do: "badge-sm", else: ""} #{get_badge_color(url.lifetime_avg_ctr * 100, :ctr)}"}>
-                    {format_percentage(url.lifetime_avg_ctr * 100)}
+                <%= if url.selected_ctr do %>
+                  <% ctr_value = url.selected_ctr * 100 %>
+                  <span class={"badge #{if @view_mode == "all", do: "badge-sm", else: ""} #{get_badge_color(ctr_value, :ctr)}"}>
+                    {format_percentage(ctr_value)}
                   </span>
                 <% else %>
                   <span class="text-gray-400">—</span>
@@ -194,26 +179,14 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
               </td>
               <!-- Avg Position -->
               <td class="text-right">
-                <%= if url.lifetime_avg_position do %>
-                  <span class={"badge #{if @view_mode == "all", do: "badge-sm", else: ""} #{get_badge_color(url.lifetime_avg_position, :position)}"}>
-                    {format_position(url.lifetime_avg_position)}
+                <%= if url.selected_position do %>
+                  <span class={"badge #{if @view_mode == "all", do: "badge-sm", else: ""} #{get_badge_color(url.selected_position, :position)}"}>
+                    {format_position(url.selected_position)}
                   </span>
                 <% else %>
                   <span class="text-gray-400">—</span>
                 <% end %>
               </td>
-              <!-- HTTP Status -->
-              <%= if column_visible?(:http_status, @view_mode) do %>
-                <td class="text-center">
-                  <%= if url.http_status do %>
-                    <span class={http_status_badge_class(url.http_status)}>
-                      {url.http_status}
-                    </span>
-                  <% else %>
-                    <span class="text-gray-400">—</span>
-                  <% end %>
-                </td>
-              <% end %>
               <!-- WoW Growth -->
               <%= if column_visible?(:wow_growth, @view_mode) do %>
                 <td class="text-right">
@@ -229,25 +202,6 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
                   </span>
                 </td>
               <% end %>
-              <!-- Status -->
-              <%= if column_visible?(:status, @view_mode) do %>
-                <td class="text-center">
-                  <%= if url.data_available do %>
-                    <span class="badge badge-success">Active</span>
-                  <% else %>
-                    <span class="badge badge-ghost">No Data</span>
-                  <% end %>
-                </td>
-              <% end %>
-              <!-- Actions -->
-              <td class="text-center">
-                <.link
-                  navigate={~p"/dashboard/url?#{%{url: URI.encode(url.url)}}"}
-                  class="btn btn-ghost btn-xs"
-                >
-                  Details
-                </.link>
-              </td>
             </tr>
           <% end %>
         </tbody>
@@ -394,6 +348,7 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
   attr :total_pages, :integer, required: true
   attr :total_items, :integer, required: true
   attr :per_page, :integer, required: true
+  attr :per_page_options, :list, default: [50, 100, 200, 500]
 
   def pagination(assigns) do
     # Calculate range being displayed
@@ -412,11 +367,27 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
     ~H"""
     <div class="flex flex-col sm:flex-row items-center justify-between gap-4 py-4 px-6 border-t border-slate-200">
       <!-- Items info -->
-      <div class="text-sm text-slate-600">
-        Showing <span class="font-semibold text-slate-900">{@start_item}</span>
-        to <span class="font-semibold text-slate-900">{@end_item}</span>
-        of <span class="font-semibold text-slate-900">{format_number(@total_items)}</span>
-        URLs
+      <div class="flex flex-col sm:flex-row sm:items-center sm:gap-6 text-sm text-slate-600">
+        <div>
+          Showing <span class="font-semibold text-slate-900">{@start_item}</span>
+          to <span class="font-semibold text-slate-900">{@end_item}</span>
+          of <span class="font-semibold text-slate-900">{format_number(@total_items)}</span>
+          URLs
+        </div>
+        <form phx-change="change_limit" class="flex items-center gap-2">
+          <label for="per-page-select" class="text-xs uppercase tracking-wide text-slate-400">
+            Rows per page
+          </label>
+          <select
+            id="per-page-select"
+            name="limit"
+            class="select select-bordered select-sm"
+          >
+            <option :for={option <- @per_page_options} value={option} selected={@per_page == option}>
+              {option}
+            </option>
+          </select>
+        </form>
       </div>
       <!-- Pagination controls -->
       <div class="join">
@@ -624,6 +595,12 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
 
   # Private helper functions
 
+  defp column_header_label(:clicks, period_label), do: "Clicks · #{period_label}"
+  defp column_header_label(:impressions, period_label), do: "Impressions · #{period_label}"
+  defp column_header_label(:ctr, period_label), do: "CTR · #{period_label}"
+  defp column_header_label(:position, period_label), do: "Position · #{period_label}"
+  defp column_header_label(_key, _period_label), do: nil
+
   @doc false
   defp calculate_visible_pages(_current, total) when total <= 7 do
     # If 7 or fewer pages, show all
@@ -675,30 +652,47 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
     assigns =
       assign(assigns, :options_with_attrs, fn ->
         Enum.map(assigns.options, fn option ->
-          Map.put(option, :phx_value_attr, %{assigns.value_key => option.value})
+          option
+          |> Map.put(:phx_value_attr, %{assigns.value_key => option.value})
+          |> Map.put(:active?, toggle_active?(assigns.current_value, option.value))
         end)
       end)
 
     ~H"""
-    <div class="flex flex-wrap items-center gap-2 rounded-full bg-slate-100 p-1 text-xs font-semibold text-slate-600">
+    <div class="flex flex-wrap items-center gap-2 rounded-full border border-slate-200/60 bg-slate-100/80 p-1 text-xs font-semibold text-slate-600 shadow-sm shadow-slate-200/40">
       <button
         :for={option <- @options_with_attrs.()}
         type="button"
         phx-click={@event_name}
         {Map.new(option.phx_value_attr, fn {k, v} -> {"phx-value-#{k}", v} end)}
-        class={
-          "rounded-full px-3 py-1.5 transition " <>
-            if(to_string(@current_value) == option.value,
-              do: "bg-slate-900 text-white shadow",
-              else: "hover:text-slate-900"
-            )
-        }
+        class={[
+          "rounded-full px-3 py-1.5 transition-all duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-400",
+          option.active? &&
+            "bg-slate-900 text-white shadow-sm shadow-slate-900/25 hover:bg-slate-900/90",
+          !option.active? &&
+            "text-slate-600 hover:text-slate-900 hover:bg-white/70 hover:shadow-sm hover:shadow-slate-200/60"
+        ]}
         aria-label={option.label}
+        data-state={if(option.active?, do: "active", else: "inactive")}
       >
         {option.label}
       </button>
     </div>
     """
+  end
+
+  defp toggle_active?(current_value, option_value) do
+    current =
+      case current_value do
+        value when is_binary(value) -> value
+        value when is_integer(value) -> Integer.to_string(value)
+        value -> to_string(value)
+      end
+
+    cond do
+      option_value == "all" and current in ["all", "10000"] -> true
+      true -> current == option_value
+    end
   end
 
   @doc """

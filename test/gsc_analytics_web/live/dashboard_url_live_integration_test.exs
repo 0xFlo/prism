@@ -22,6 +22,8 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
   alias GscAnalytics.Repo
   alias GscAnalytics.Schemas.TimeSeries
 
+  setup :register_and_log_in_user
+
   describe "URL detail user journey: viewing time series" do
     test "user can view URL with daily time series chart", %{conn: conn} do
       # Setup: Create 30 days of data for a URL

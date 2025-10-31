@@ -76,29 +76,38 @@ defmodule GscAnalyticsWeb.Dashboard.Columns do
         sortable: false
       },
       %{
-        key: :lifetime_clicks,
-        label: "Total Clicks (All Time)",
+        key: :clicks,
+        label: "Clicks",
         visible_in: [:basic, :all],
-        getter: & &1.lifetime_clicks,
+        getter: & &1.selected_clicks,
         formatter: &format_number/2,
         align: "text-right",
         sortable: true
       },
       %{
-        key: :period_clicks,
-        label: "Clicks (Period)",
-        visible_in: [:basic, :all],
-        getter: & &1.period_clicks,
-        formatter: &format_number/2,
-        align: "text-right",
-        sortable: true
-      },
-      %{
-        key: :period_impressions,
-        label: "Impressions (Period)",
+        key: :impressions,
+        label: "Impressions",
         visible_in: [:all],
-        getter: & &1.period_impressions,
+        getter: & &1.selected_impressions,
         formatter: &format_number/2,
+        align: "text-right",
+        sortable: true
+      },
+      %{
+        key: :ctr,
+        label: "CTR",
+        visible_in: [:basic, :all],
+        getter: & &1.selected_ctr,
+        formatter: &format_ctr/2,
+        align: "text-right",
+        sortable: true
+      },
+      %{
+        key: :position,
+        label: "Position",
+        visible_in: [:basic, :all],
+        getter: & &1.selected_position,
+        formatter: &format_position/2,
         align: "text-right",
         sortable: true
       },
@@ -108,42 +117,6 @@ defmodule GscAnalyticsWeb.Dashboard.Columns do
         visible_in: [:all],
         getter: & &1.first_seen_date,
         formatter: &format_date/2,
-        align: "text-center",
-        sortable: true
-      },
-      %{
-        key: :backlinks,
-        label: "Backlinks",
-        visible_in: [:basic, :all],
-        getter: & &1.backlink_count,
-        formatter: &format_backlinks/2,
-        align: "text-right",
-        sortable: true
-      },
-      %{
-        key: :lifetime_avg_ctr,
-        label: "Avg CTR",
-        visible_in: [:basic, :all],
-        getter: & &1.lifetime_avg_ctr,
-        formatter: &format_ctr/2,
-        align: "text-right",
-        sortable: true
-      },
-      %{
-        key: :lifetime_avg_position,
-        label: "Avg Position",
-        visible_in: [:basic, :all],
-        getter: & &1.lifetime_avg_position,
-        formatter: &format_position/2,
-        align: "text-right",
-        sortable: true
-      },
-      %{
-        key: :http_status,
-        label: "HTTP Status",
-        visible_in: [:basic, :all],
-        getter: & &1.http_status,
-        formatter: &format_http_status/2,
         align: "text-center",
         sortable: true
       },
@@ -159,7 +132,7 @@ defmodule GscAnalyticsWeb.Dashboard.Columns do
       %{
         key: :status,
         label: "Status",
-        visible_in: [:basic, :all],
+        visible_in: [],
         getter: & &1.data_available,
         formatter: &format_status/2,
         align: "text-center",
@@ -248,15 +221,6 @@ defmodule GscAnalyticsWeb.Dashboard.Columns do
   defp format_status(true, :csv), do: "Active"
   defp format_status(false, :csv), do: "No Data"
   defp format_status(status, :html), do: status
-
-  defp format_backlinks(nil, _), do: "0"
-  defp format_backlinks(count, _format) when is_integer(count), do: to_string(count)
-  defp format_backlinks(_, _), do: "0"
-
-  defp format_http_status(nil, :csv), do: "—"
-  defp format_http_status(nil, :html), do: nil
-  defp format_http_status(status, :csv) when is_integer(status), do: to_string(status)
-  defp format_http_status(status, :html) when is_integer(status), do: status
 
   defp format_date(nil, _), do: "—"
   defp format_date(%Date{} = date, :csv), do: Date.to_string(date)

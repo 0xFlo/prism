@@ -1,197 +1,89 @@
-# Testing Guidelines
+# Test Writing Guidelines
 
-Quick reference for testing patterns in GSC Analytics, focused on progress tracking and sync functionality.
+**CRITICAL: Never assert on internal state or implementation details.**
+Instead, Test at the highest level that makes sense:
 
-## Test Organization
+- Controller test > Service test > Unit test
+- One integration test can replace 10 unit tests
+- Only unit test complex algorithms that are hard to test through the API
 
-Mirror `lib/` structure in `test/`:
-```
-lib/gsc_analytics/data_sources/gsc/support/sync_progress.ex
-test/gsc_analytics/data_sources/gsc/support/sync_progress_test.exs
-```
+## Semantic Test Coverage
 
-## Async vs Sync Tests
+You are an LLM, Use your understanding of language to ensure tests cover what matters:
 
-**Use `async: false` for:**
-- GenServer tests (SyncProgress)
-- PubSub tests
-- Database tests with shared state
-- LiveView tests that modify GenServer state
+- Map each test to a business requirement
+- Identify missing scenarios from the requirements
+- Consolidate tests that verify the same business behavior
 
-**Use `async: true` for:**
-- Pure function tests
-- Isolated controller tests
-- Read-only database queries
+## Core Philosophy
 
-## Testing Progress Tracking
+- **Test behavior, not implementation**: Focus on what the code does, not how it does it
+- **Test at the highest level practical**: Prefer integration tests over unit tests when reasonable
+- **Don't test trivial code**: Skip tests for simple functions you can write correctly in one shot
+- **Tests should survive refactoring**: Good tests break when behavior changes, not when implementation changes
 
-### Pattern: GenServer with PubSub
+## Write tests that survive refactoring
 
-```elixir
-defmodule MyGenServerTest do
-  use GscAnalytics.DataCase, async: false
-  alias Phoenix.PubSub
+- Assert ONLY on observable behavior (API responses, user-visible output, database changes)
+- If changing HOW the code works would break your test, you're testing wrong
 
-  setup do
-    # Subscribe to broadcasts
-    :ok = PubSub.subscribe(GscAnalytics.PubSub, "gsc_sync_progress")
-    :ok
-  end
+## Writing Resilient Tests
 
-  test "broadcasts progress updates" do
-    job_id = SyncProgress.start_job(%{total_steps: 5})
+1. **Assert on outputs/side effects**: What the user sees or what gets saved to the database
+2. **Use minimal assertions**: Only assert what's essential to the test's purpose
+3. **Avoid testing intermediate state**: Focus on final outcomes
+4. **Make tests independent**: Each test should set up its own state and clean up after itself
+5. **Use descriptive test names**: "should calculate tax correctly for international orders" not "test_calculate_tax_2"
 
-    # Verify broadcast received
-    assert_receive {:sync_progress, %{type: :started, job: job}}
-    assert job.total_steps == 5
-  end
-end
-```
+## Requirements-Driven Testing
 
-**Critical**: Always include `:step` parameter when calling `day_completed/2`:
-```elixir
-# ✅ Correct - includes step number
-SyncProgress.day_completed(job_id, %{step: 1, status: :ok})
+Before writing tests, analyze what the system is supposed to do:
 
-# ❌ Wrong - missing step, progress stays at 0%
-SyncProgress.day_completed(job_id, %{status: :ok})
-```
+1. **Read the user story/requirement** (from comments, docs, or code context)
+2. **Identify the business behaviors** that need protection
+3. **Write tests that verify those behaviors**, not the current implementation
 
-### Pattern: LiveView with Real-time Updates
+### Example:
 
-```elixir
-defmodule MyLiveViewTest do
-  use GscAnalyticsWeb.ConnCase, async: false
+```javascript
+// If you see this comment or requirement:
+// "Users can only apply for jobs after email confirmation"
 
-  test "updates when job progresses", %{conn: conn} do
-    {:ok, view, _html} = live(conn, ~p"/dashboard/sync")
+// Generate tests that verify the BUSINESS RULE:
+test("unconfirmed users cannot apply for jobs");
+test("confirmed users can apply for jobs");
+test("confirmation email triggers pending applications");
 
-    # Trigger progress
-    job_id = SyncProgress.start_job(%{total_steps: 4})
-    SyncProgress.day_completed(job_id, %{step: 1, status: :ok})
-
-    # Verify UI updated
-    assert render(view) =~ "25.0%"  # 1/4 = 25%
-  end
-end
+// NOT tests of HOW it's implemented:
+test("user.confirmed_at is not null"); // ❌ Implementation detail
 ```
 
-## Fake GSC Client Pattern
+## What TO Test
 
-```elixir
-defmodule MyTest.FakeClient do
-  def fetch_all_urls_for_date(_, _, _date) do
-    {:ok, %{"rows" => [%{"keys" => ["https://test.com"], "clicks" => 1}]}}
-  end
+1. **Complex state transformations**: When logic is too complicated to write confidently once
+2. **API boundaries/cut points**: The public interface of modules/services
+3. **Business requirements**: Test that actual business rules are enforced
+4. **User journeys**: Complete workflows from the user's perspective that must not break
+5. **Edge cases that matter**: Only test boundaries that represent real scenarios
 
-  def fetch_query_batch(_, requests, _operation) do
-    responses = Enum.map(requests, fn req ->
-      %{id: req.id, status: 200, body: %{"rows" => []}}
-    end)
-    {:ok, responses, 1}
-  end
-end
+## What NOT TO Test
 
-# Use in tests
-setup do
-  original = Application.get_env(:gsc_analytics, :gsc_client)
-  Application.put_env(:gsc_analytics, :gsc_client, MyTest.FakeClient)
-  on_exit(fn -> Application.put_env(:gsc_analytics, :gsc_client, original) end)
-  :ok
-end
-```
+1. **Simple getters/setters**: Unless they contain logic
+2. **Internal helper functions**: Test them through the public API instead
+3. **Implementation details**: Don't assert on internal state, private methods, or data structures
+4. **Every possible input**: Focus on representative cases and real edge cases
+5. **Simple CRUD**: Unless there are business rules involved
 
-## Common Pitfalls
+## Example
 
-### 1. Missing Step Parameter (The 0% Bug)
-**Problem**: Progress stays at 0% because `completed_steps` never increments.
+```javascript
+// ❌ BAD - breaks when implementation changes
+expect(service._users.length).toBe(1);
+expect(token.context).toBe("session");
+expect(cache._internal.size).toBe(5);
 
-**Solution**: Always pass `step:` parameter:
-```elixir
-SyncProgress.day_completed(job_id, %{
-  date: date,
-  step: step_number,  # ← Required!
-  status: :ok
-})
-```
-
-### 2. Calculating Percent in GenServer
-**Problem**: Tests expect `state.percent` but it's calculated in LiveView.
-
-**Solution**: Use helper function in tests:
-```elixir
-use GscAnalytics.SyncTestHelpers  # imports calculate_percent/1
-
-assert calculate_percent(state) == 50.0
-```
-
-### 3. PubSub Message Leakage
-**Problem**: Messages from previous tests interfere with current test.
-
-**Solution**: Flush messages in setup:
-```elixir
-setup do
-  flush_progress_messages()  # from SyncTestHelpers
-  :ok
-end
-```
-
-### 4. Race Conditions in LiveView Tests
-**Problem**: Asserting on HTML before PubSub message processed.
-
-**Solution**: Use `render/1` which waits for updates:
-```elixir
-# ✅ Good - render/1 processes pending messages
-assert render(view) =~ "50.0%"
-
-# ❌ Risky - might miss async update
-{:ok, _view, html} = live(conn, path)
-assert html =~ "50.0%"  # May not have updated yet
-```
-
-## Test Helpers
-
-Located in `test/support/sync_test_helpers.ex`:
-
-```elixir
-# Calculate percentage like LiveView does
-calculate_percent(job)
-
-# Subscribe to progress broadcasts
-subscribe_to_progress()
-
-# Assert event received
-assert_progress_event(:step_completed, timeout: 100)
-
-# Clean up messages between tests
-flush_progress_messages()
-```
-
-## Quick Checklist
-
-Before committing tests:
-- [ ] `async: false` for GenServer/PubSub tests
-- [ ] `:step` parameter included in all `day_completed` calls
-- [ ] PubSub messages flushed in setup
-- [ ] Progress percentage calculated with helper function
-- [ ] Fake clients restore original config in `on_exit`
-- [ ] All tests pass: `mix test`
-
-## Running Tests
-
-```bash
-# All tests
-mix test
-
-# Specific file
-mix test test/path/to/test_file.exs
-
-# Specific test line
-mix test test/path/to/test_file.exs:42
-
-# With trace
-mix test --trace
-
-# Failed tests only
-mix test --failed
+// ✅ GOOD - tests behavior, not implementation
+expect(api.post("/login", credentials)).toReturn(200);
+expect(database.users.count()).toBe(1);
+expect(page.text()).toContain("Welcome");
 ```

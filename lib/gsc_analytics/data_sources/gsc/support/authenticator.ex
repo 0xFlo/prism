@@ -10,6 +10,7 @@ defmodule GscAnalytics.DataSources.GSC.Support.Authenticator do
   use GenServer
   require Logger
 
+  alias GscAnalytics.Auth
   alias GscAnalytics.DataSources.GSC.Accounts
   alias GscAnalytics.DataSources.GSC.Telemetry.AuditLogger
 
@@ -17,6 +18,8 @@ defmodule GscAnalytics.DataSources.GSC.Support.Authenticator do
   @google_auth_scope "https://www.googleapis.com/auth/webmasters.readonly"
 
   @type account_id :: Accounts.account_id()
+
+  @refresh_leading_time 300_000
 
   @type account_state :: %{
           credentials: map() | nil,
@@ -189,7 +192,30 @@ defmodule GscAnalytics.DataSources.GSC.Support.Authenticator do
     end
   end
 
+  @impl true
+  def handle_info({:refresh_oauth_token, account_id}, state) do
+    case refresh_oauth_token(state, account_id) do
+      {new_state, {:ok, _token}} ->
+        {:noreply, new_state}
+
+      {new_state, {:error, reason}} ->
+        Logger.warning(
+          "Proactive OAuth token refresh failed for account #{account_id}: #{inspect(reason)}"
+        )
+
+        {:noreply, new_state}
+    end
+  end
+
   # Internal helpers ----------------------------------------------------------
+
+  defp get_auth_method(account_id) when is_integer(account_id) do
+    case Auth.has_oauth_token?(nil, account_id) do
+      true -> :oauth
+      {:error, _reason} -> :service_account
+      _ -> :service_account
+    end
+  end
 
   defp maybe_load_credentials_from_disk(state, account_id, nil) do
     Logger.warning(
@@ -235,9 +261,19 @@ defmodule GscAnalytics.DataSources.GSC.Support.Authenticator do
   defp maybe_fetch_token(state, account_id, opts \\ []) do
     state = ensure_account_entry(state, account_id)
 
+    case get_auth_method(account_id) do
+      :oauth ->
+        fetch_oauth_token(state, account_id, opts)
+
+      :service_account ->
+        fetch_service_account_token(state, account_id, opts)
+    end
+  end
+
+  defp fetch_service_account_token(state, account_id, opts) do
     with {:ok, %{credentials: credentials}} when is_map(credentials) <-
            fetch_account_state(state, account_id) do
-      fetch_with_credentials(state, account_id, credentials, opts)
+      fetch_service_account_with_credentials(state, account_id, credentials, opts)
     else
       {:ok, %{credentials: nil}} ->
         {state, {:error, :missing_credentials}}
@@ -247,7 +283,7 @@ defmodule GscAnalytics.DataSources.GSC.Support.Authenticator do
     end
   end
 
-  defp fetch_with_credentials(state, account_id, credentials, _opts) do
+  defp fetch_service_account_with_credentials(state, account_id, credentials, _opts) do
     case fetch_access_token(credentials) do
       {:ok, token, expires_in} ->
         expires_at = DateTime.add(DateTime.utc_now(), expires_in, :second)
@@ -270,7 +306,7 @@ defmodule GscAnalytics.DataSources.GSC.Support.Authenticator do
             last_error: nil
           })
           |> cancel_retry(account_id, :fetch_token)
-          |> schedule_token_refresh(account_id, expires_in)
+          |> schedule_service_account_refresh(account_id, expires_in)
 
         {state, {:ok, token}}
 
@@ -289,6 +325,85 @@ defmodule GscAnalytics.DataSources.GSC.Support.Authenticator do
           |> schedule_retry(account_id, :fetch_token, 30_000)
 
         {state, {:error, reason}}
+    end
+  end
+
+  defp needs_oauth_refresh?(oauth_token, force_refresh?) do
+    force_refresh? ||
+      token_expired?(oauth_token.expires_at) ||
+      not present_access_token?(oauth_token.access_token)
+  end
+
+  defp refresh_oauth_token(state, account_id) do
+    case Auth.refresh_oauth_access_token(nil, account_id) do
+      {:ok, refreshed} ->
+        handle_oauth_success(state, account_id, refreshed)
+
+      {:error, reason} ->
+        Logger.error("OAuth token refresh failed for account #{account_id}: #{inspect(reason)}")
+
+        state =
+          state
+          |> cancel_refresh(account_id)
+          |> put_account(account_id, %{last_error: reason, token: nil, expires_at: nil})
+
+        {state, {:error, {:oauth_refresh_failed, reason}}}
+    end
+  end
+
+  defp handle_oauth_success(state, account_id, %{access_token: access_token} = token)
+       when is_binary(access_token) and access_token != "" do
+    expires_at = token.expires_at
+
+    AuditLogger.log_auth_event("oauth_token_available", %{
+      account_id: account_id,
+      expires_at: maybe_iso8601(expires_at)
+    })
+
+    Logger.info(
+      "Using OAuth token for account #{account_id}; token expires #{format_expiry_from_datetime(expires_at)}"
+    )
+
+    state =
+      state
+      |> put_account(account_id, %{
+        token: access_token,
+        expires_at: expires_at,
+        last_error: nil
+      })
+      |> cancel_retry(account_id, :fetch_token)
+      |> schedule_oauth_refresh(account_id, expires_at)
+
+    {state, {:ok, access_token}}
+  end
+
+  defp handle_oauth_success(state, account_id, _token) do
+    Logger.error("OAuth token for account #{account_id} is missing an access token")
+
+    state =
+      state
+      |> cancel_refresh(account_id)
+      |> put_account(account_id, %{last_error: :missing_access_token, token: nil, expires_at: nil})
+
+    {state, {:error, :missing_access_token}}
+  end
+
+  defp fetch_oauth_token(state, account_id, opts) do
+    force_refresh? = Keyword.get(opts, :force?, false)
+
+    case Auth.get_oauth_token(nil, account_id) do
+      {:ok, oauth_token} ->
+        if needs_oauth_refresh?(oauth_token, force_refresh?) do
+          refresh_oauth_token(state, account_id)
+        else
+          handle_oauth_success(state, account_id, oauth_token)
+        end
+
+      {:error, :not_found} ->
+        {state, {:error, :oauth_not_configured}}
+
+      {:error, reason} ->
+        {state, {:error, {:oauth_error, reason}}}
     end
   end
 
@@ -327,7 +442,7 @@ defmodule GscAnalytics.DataSources.GSC.Support.Authenticator do
     end)
   end
 
-  defp schedule_token_refresh(state, account_id, expires_in) do
+  defp schedule_service_account_refresh(state, account_id, expires_in) do
     refresh_in = max((expires_in - 600) * 1000, 60_000)
 
     state
@@ -336,6 +451,20 @@ defmodule GscAnalytics.DataSources.GSC.Support.Authenticator do
       refresh_timer: Process.send_after(self(), {:refresh_token, account_id}, refresh_in)
     })
   end
+
+  defp schedule_oauth_refresh(state, account_id, %DateTime{} = expires_at) do
+    now = DateTime.utc_now()
+    time_until_expiry = max(DateTime.diff(expires_at, now, :millisecond), 0)
+    refresh_in = max(time_until_expiry - @refresh_leading_time, 0)
+
+    state
+    |> cancel_refresh(account_id)
+    |> put_account(account_id, %{
+      refresh_timer: Process.send_after(self(), {:refresh_oauth_token, account_id}, refresh_in)
+    })
+  end
+
+  defp schedule_oauth_refresh(state, _account_id, _expires_at), do: state
 
   defp cancel_refresh(state, account_id) do
     case get_in(state, [:accounts, account_id, :refresh_timer]) do
@@ -377,6 +506,19 @@ defmodule GscAnalytics.DataSources.GSC.Support.Authenticator do
   defp token_expired?(expires_at) do
     DateTime.compare(DateTime.utc_now(), expires_at) == :gt
   end
+
+  defp present_access_token?(token) when is_binary(token), do: String.trim(token) != ""
+  defp present_access_token?(_), do: false
+
+  defp format_expiry_from_datetime(nil), do: "at an unknown time"
+
+  defp format_expiry_from_datetime(%DateTime{} = expires_at) do
+    seconds = DateTime.diff(expires_at, DateTime.utc_now(), :second)
+    format_expiry_window(seconds)
+  end
+
+  defp maybe_iso8601(%DateTime{} = datetime), do: DateTime.to_iso8601(datetime)
+  defp maybe_iso8601(_), do: nil
 
   # OAuth helpers -------------------------------------------------------------
 

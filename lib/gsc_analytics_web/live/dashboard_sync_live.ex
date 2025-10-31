@@ -31,7 +31,6 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
 
     progress_state = SyncProgress.current_state()
 
-    socket = assign(socket, :current_scope, nil)
     {socket, account} = AccountHelpers.init_account_assigns(socket, params)
 
     socket =
@@ -40,18 +39,24 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
       |> assign(:page_title, "Sync Status")
       |> assign(:day_options, @day_options)
       |> assign(:form, build_form(@default_days))
-      |> assign(:sync_info, load_sync_info(account.id))
+      |> assign(:sync_info, empty_sync_info())
+      |> assign(:sync_info_status, :idle)
+      |> assign(:sync_info_requested_account_id, nil)
+      |> assign(:sync_info_loaded_account_id, nil)
       |> assign_progress(progress_state)
+
+    socket = maybe_request_sync_info(socket, account.id, force: true)
 
     {:ok, socket}
   end
 
   @impl true
   def handle_params(params, _uri, socket) do
-    socket =
-      socket
-      |> AccountHelpers.assign_current_account(params)
-      |> assign(:sync_info, load_sync_info(socket.assigns.current_account_id))
+    socket = AccountHelpers.assign_current_account(socket, params)
+    account_id = socket.assigns.current_account_id
+
+    force? = socket.assigns[:sync_info_loaded_account_id] != account_id
+    socket = maybe_request_sync_info(socket, account_id, force: force?)
 
     {:noreply, socket}
   end
@@ -67,7 +72,7 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
           {:noreply, put_flash(socket, :error, "A sync is already in progress")}
         else
           account_id = socket.assigns.current_account_id
-          site_url = configured_site(account_id)
+          site_url = configured_site(socket.assigns.current_scope, account_id)
 
           Task.start(fn -> Sync.sync_full_history(site_url, account_id: account_id) end)
 
@@ -84,7 +89,7 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
           {:noreply, put_flash(socket, :error, "A sync is already in progress")}
         else
           account_id = socket.assigns.current_account_id
-          site_url = configured_site(account_id)
+          site_url = configured_site(socket.assigns.current_scope, account_id)
 
           Task.start(fn -> Sync.sync_last_n_days(site_url, days, account_id: account_id) end)
 
@@ -133,13 +138,32 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
     socket =
       case payload.type do
         :finished ->
-          assign(socket, :sync_info, load_sync_info(socket.assigns.current_account_id))
+          maybe_request_sync_info(socket, socket.assigns.current_account_id, force: true)
 
         _ ->
           socket
       end
 
     {:noreply, socket}
+  end
+
+  def handle_info({:load_sync_info, account_id, force?}, %{assigns: assigns} = socket) do
+    cond do
+      assigns.current_account_id != account_id and not force? ->
+        {:noreply, socket}
+
+      true ->
+        info = load_sync_info(assigns.current_scope, account_id)
+
+        socket =
+          if assigns.current_account_id == account_id do
+            assign_sync_info(socket, info, account_id)
+          else
+            socket
+          end
+
+        {:noreply, socket}
+    end
   end
 
   @impl true
@@ -224,6 +248,55 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
     end
   end
 
+  defp maybe_request_sync_info(socket, account_id, opts)
+
+  defp maybe_request_sync_info(socket, _account_id, _opts)
+       when not is_map_key(socket.assigns, :sync_info_status) do
+    socket
+  end
+
+  defp maybe_request_sync_info(socket, account_id, opts) do
+    force? = Keyword.get(opts, :force?, false)
+    requested_account = socket.assigns[:sync_info_requested_account_id]
+    loaded_account = socket.assigns[:sync_info_loaded_account_id]
+    status = socket.assigns[:sync_info_status] || :idle
+
+    cond do
+      not Phoenix.LiveView.connected?(socket) ->
+        socket
+
+      not force? and loaded_account == account_id ->
+        socket
+
+      status == :loading and requested_account == account_id and not force? ->
+        socket
+
+      true ->
+        send(self(), {:load_sync_info, account_id, force?})
+
+        socket
+        |> assign(:sync_info_status, :loading)
+        |> assign(:sync_info_requested_account_id, account_id)
+        |> maybe_reset_sync_info(loaded_account, account_id, force?)
+    end
+  end
+
+  defp maybe_reset_sync_info(socket, loaded_account, account_id, force?) do
+    if force? or loaded_account != account_id do
+      assign(socket, :sync_info, empty_sync_info())
+    else
+      socket
+    end
+  end
+
+  defp assign_sync_info(socket, info, account_id) do
+    socket
+    |> assign(:sync_info, info)
+    |> assign(:sync_info_status, :ready)
+    |> assign(:sync_info_loaded_account_id, account_id)
+    |> assign(:sync_info_requested_account_id, nil)
+  end
+
   defp build_form(days) do
     to_form(%{"days" => days}, as: :sync)
   end
@@ -258,48 +331,69 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
 
   defp maybe_apply_control(_progress, _action), do: :ok
 
-  defp configured_site(account_id) do
-    case Accounts.gsc_default_property(account_id) do
+  defp empty_sync_info do
+    %{
+      last_sync: nil,
+      earliest_date: nil,
+      latest_date: nil,
+      total_records: 0,
+      days_available: 0
+    }
+  end
+
+  defp configured_site(current_scope, account_id) do
+    case Accounts.gsc_default_property(current_scope, account_id) do
       {:ok, property} -> property
       {:error, _reason} -> "sc-domain:example.com"
     end
   end
 
-  defp load_sync_info(account_id) when is_integer(account_id) do
-    last_fetch_query =
+  defp load_sync_info(_current_scope, account_id) when is_integer(account_id) do
+    last_sync =
       from(p in Performance,
         where: p.account_id == ^account_id,
         select: max(p.fetched_at)
       )
+      |> Repo.one()
 
-    date_range_query =
+    earliest_date =
       from(ts in TimeSeries,
         where: ts.account_id == ^account_id,
-        select: %{
-          min_date: min(ts.date),
-          max_date: max(ts.date),
-          total_records: count()
-        }
+        order_by: [asc: ts.date],
+        select: ts.date,
+        limit: 1
       )
+      |> Repo.one()
 
-    last_fetched = Repo.one(last_fetch_query)
-    date_info = Repo.one(date_range_query) || %{min_date: nil, max_date: nil, total_records: 0}
+    latest_date =
+      from(ts in TimeSeries,
+        where: ts.account_id == ^account_id,
+        order_by: [desc: ts.date],
+        select: ts.date,
+        limit: 1
+      )
+      |> Repo.one()
+
+    total_records =
+      from(ts in TimeSeries,
+        where: ts.account_id == ^account_id
+      )
+      |> Repo.aggregate(:count, :date)
 
     %{
-      last_sync: last_fetched,
-      earliest_date: date_info.min_date,
-      latest_date: date_info.max_date,
-      total_records: date_info.total_records,
-      days_available: calculate_days_available(date_info)
+      last_sync: last_sync,
+      earliest_date: earliest_date,
+      latest_date: latest_date,
+      total_records: total_records,
+      days_available: calculate_days_available(earliest_date, latest_date)
     }
   end
 
-  defp calculate_days_available(%{min_date: min, max_date: max})
-       when not is_nil(min) and not is_nil(max) do
+  defp calculate_days_available(%Date{} = min, %Date{} = max) do
     Date.diff(max, min) + 1
   end
 
-  defp calculate_days_available(_), do: 0
+  defp calculate_days_available(_min, _max), do: 0
 
   defp format_events(events) do
     events

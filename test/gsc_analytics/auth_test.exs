@@ -202,6 +202,128 @@ defmodule GscAnalytics.AuthTest do
     end
   end
 
+  describe "oauth token management" do
+    import Mox
+
+    alias GscAnalytics.AccountsFixtures
+    alias GscAnalytics.Auth.OAuthToken
+    alias GscAnalytics.Repo
+
+    setup :verify_on_exit!
+
+    setup do
+      scope = AccountsFixtures.scope_with_accounts([2])
+      %{scope: scope}
+    end
+
+    test "stores and retrieves encrypted OAuth tokens", %{scope: scope} do
+      attrs = %{
+        account_id: 2,
+        google_email: "test@example.com",
+        refresh_token: "refresh_xyz",
+        access_token: "access_abc",
+        expires_at: DateTime.add(DateTime.utc_now(), 3600, :second),
+        scopes: ["https://www.googleapis.com/auth/webmasters.readonly"]
+      }
+
+      {:ok, token} = Auth.store_oauth_token(scope, attrs)
+
+      assert token.access_token == "access_abc"
+      assert token.refresh_token == "refresh_xyz"
+
+      raw = Repo.get_by(OAuthToken, account_id: 2)
+      refute raw.access_token_encrypted == "access_abc"
+      refute raw.refresh_token_encrypted == "refresh_xyz"
+
+      {:ok, fetched} = Auth.get_oauth_token(scope, 2)
+      assert fetched.google_email == "test@example.com"
+    end
+
+    test "updates an existing OAuth token in place", %{scope: scope} do
+      attrs = %{
+        account_id: 2,
+        google_email: "test@example.com",
+        refresh_token: "refresh_xyz",
+        access_token: "access_abc",
+        expires_at: DateTime.add(DateTime.utc_now(), 3600, :second),
+        scopes: ["scope-a"]
+      }
+
+      {:ok, initial} = Auth.store_oauth_token(scope, attrs)
+      {:ok, updated} = Auth.store_oauth_token(scope, Map.put(attrs, :access_token, "new_token"))
+
+      assert initial.id == updated.id
+      assert updated.access_token == "new_token"
+      assert {:ok, fetched} = Auth.get_oauth_token(scope, 2)
+      assert fetched.access_token == "new_token"
+    end
+
+    test "disconnects an OAuth account and clears tokens", %{scope: scope} do
+      attrs = %{
+        account_id: 2,
+        google_email: "test@example.com",
+        refresh_token: "refresh_xyz",
+        access_token: "access_abc",
+        expires_at: DateTime.add(DateTime.utc_now(), 3600, :second),
+        scopes: ["scope-a"]
+      }
+
+      {:ok, _} = Auth.store_oauth_token(scope, attrs)
+      assert Auth.has_oauth_token?(scope, 2)
+
+      {:ok, _} = Auth.disconnect_oauth_account(scope, 2)
+      refute Auth.has_oauth_token?(scope, 2)
+    end
+
+    test "rejects access for unauthorized scopes" do
+      restricted_scope = AccountsFixtures.scope_with_accounts([1])
+      assert {:error, :unauthorized_account} = Auth.get_oauth_token(restricted_scope, 2)
+      assert {:error, :unauthorized_account} = Auth.has_oauth_token?(restricted_scope, 2)
+    end
+
+    test "handles nil current_scope for system access" do
+      assert {:error, :not_found} = Auth.get_oauth_token(nil, 999)
+      assert {:error, :missing_account_id} = Auth.store_oauth_token(nil, %{})
+    end
+
+    test "refreshes an expired OAuth token via HTTP", %{scope: scope} do
+      expires_at = DateTime.add(DateTime.utc_now(), -60, :second)
+
+      {:ok, _} =
+        Auth.store_oauth_token(scope, %{
+          account_id: 2,
+          google_email: "test@example.com",
+          refresh_token: "refresh_xyz",
+          access_token: "expired_token",
+          expires_at: expires_at,
+          scopes: ["scope-a"]
+        })
+
+      expect(GscAnalytics.HTTPClientMock, :post, fn url, opts ->
+        assert url == "https://oauth2.googleapis.com/token"
+        assert opts[:form][:grant_type] == "refresh_token"
+
+        response = %Req.Response{
+          status: 200,
+          body: %{
+            "access_token" => "new_access_token",
+            "expires_in" => 3_600,
+            "scope" => "scope-a"
+          }
+        }
+
+        {:ok, response}
+      end)
+
+      {:ok, refreshed} = Auth.refresh_oauth_access_token(scope, 2)
+      assert refreshed.access_token == "new_access_token"
+      assert refreshed.refresh_token == "refresh_xyz"
+
+      {:ok, stored} = Auth.get_oauth_token(scope, 2)
+      assert stored.access_token == "new_access_token"
+    end
+  end
+
   describe "update_user_password/2" do
     setup do
       %{user: user_fixture()}

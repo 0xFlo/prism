@@ -5,6 +5,8 @@ defmodule GscAnalyticsWeb.DashboardSyncLiveTest do
   alias GscAnalytics.DataSources.GSC.Support.SyncProgress
   alias Phoenix.PubSub
 
+  setup :register_and_log_in_user
+
   test "renders sync status page", %{conn: conn} do
     {:ok, _view, html} = live(conn, ~p"/dashboard/sync")
 

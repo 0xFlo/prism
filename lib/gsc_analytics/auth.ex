@@ -6,7 +6,7 @@ defmodule GscAnalytics.Auth do
   import Ecto.Query, warn: false
   alias GscAnalytics.Repo
 
-  alias GscAnalytics.Auth.{User, UserToken, UserNotifier, OAuthToken}
+  alias GscAnalytics.Auth.{Scope, User, UserToken, UserNotifier, OAuthToken}
 
   ## Database getters
 
@@ -284,101 +284,119 @@ defmodule GscAnalytics.Auth do
   ## OAuth Token Management
 
   @doc """
-  Gets the OAuth token for a specific account.
+  Retrieves the OAuth token for a specific account.
   Returns the token with decrypted fields populated.
   """
-  def get_oauth_token(account_id) do
-    case Repo.get_by(OAuthToken, account_id: account_id) do
-      nil -> {:error, :not_found}
-      token -> {:ok, OAuthToken.with_decrypted_tokens(token)}
+  def get_oauth_token(current_scope, account_id) do
+    with {:ok, account_id} <- normalize_account_id(account_id),
+         :ok <- Scope.authorize_account(current_scope, account_id) do
+      case Repo.get_by(OAuthToken, account_id: account_id) do
+        nil -> {:error, :not_found}
+        token -> {:ok, OAuthToken.with_decrypted_tokens(token)}
+      end
     end
   end
 
   @doc """
   Stores or updates OAuth tokens for an account.
+  Returns the freshly decrypted token on success.
   """
-  def store_oauth_token(attrs) do
-    case Repo.get_by(OAuthToken, account_id: attrs.account_id) do
-      nil ->
-        %OAuthToken{}
-        |> OAuthToken.changeset(attrs)
-        |> Repo.insert()
+  def store_oauth_token(current_scope, attrs) when is_map(attrs) do
+    attrs = ensure_map(attrs)
 
-      existing ->
-        existing
-        |> OAuthToken.changeset(attrs)
-        |> Repo.update()
+    with {:ok, account_id} <- account_id_from_attrs(attrs),
+         :ok <- Scope.authorize_account(current_scope, account_id) do
+      normalized_attrs =
+        attrs
+        |> Map.put(:account_id, account_id)
+        |> normalize_scope_attr()
+
+      result =
+        case Repo.get_by(OAuthToken, account_id: account_id) do
+          nil ->
+            %OAuthToken{}
+            |> OAuthToken.changeset(normalized_attrs)
+            |> Repo.insert()
+
+          existing ->
+            existing
+            |> OAuthToken.changeset(normalized_attrs)
+            |> Repo.update()
+        end
+
+      case result do
+        {:ok, token} -> {:ok, OAuthToken.with_decrypted_tokens(token)}
+        {:error, _} = error -> error
+      end
     end
   end
 
   @doc """
-  Refreshes the access token using the refresh token.
-  Makes a request to Google OAuth2 token endpoint.
+  Refreshes the access token using the stored refresh token.
   """
-  def refresh_oauth_access_token(account_id) do
-    with {:ok, oauth_token} <- get_oauth_token(account_id),
-         {:ok, new_tokens} <- request_token_refresh(oauth_token.refresh_token) do
-      # Update the stored tokens
+  def refresh_oauth_access_token(current_scope, account_id) do
+    with {:ok, account_id} <- normalize_account_id(account_id),
+         :ok <- Scope.authorize_account(current_scope, account_id),
+         {:ok, existing} <- get_oauth_token(nil, account_id),
+         {:ok, new_tokens} <- request_token_refresh(existing.refresh_token) do
       attrs = %{
         account_id: account_id,
-        google_email: oauth_token.google_email,
-        refresh_token: new_tokens["refresh_token"] || oauth_token.refresh_token,
-        access_token: new_tokens["access_token"],
-        expires_at: calculate_expires_at(new_tokens["expires_in"]),
-        scopes: oauth_token.scopes
+        google_email: existing.google_email,
+        refresh_token: Map.get(new_tokens, "refresh_token", existing.refresh_token),
+        access_token: Map.get(new_tokens, "access_token"),
+        expires_at: calculate_expires_at(Map.get(new_tokens, "expires_in")),
+        scopes: build_scope_list(new_tokens, existing.scopes)
       }
 
-      store_oauth_token(attrs)
+      store_oauth_token(nil, attrs)
     end
   end
 
   @doc """
   Disconnects (deletes) the OAuth token for an account.
   """
-  def disconnect_oauth_account(account_id) do
-    case Repo.get_by(OAuthToken, account_id: account_id) do
-      nil -> {:error, :not_found}
-      token -> Repo.delete(token)
+  def disconnect_oauth_account(current_scope, account_id) do
+    with {:ok, account_id} <- normalize_account_id(account_id),
+         :ok <- Scope.authorize_account(current_scope, account_id) do
+      case Repo.get_by(OAuthToken, account_id: account_id) do
+        nil -> {:error, :not_found}
+        token -> Repo.delete(token)
+      end
     end
   end
 
   @doc """
-  Checks if an account has OAuth tokens configured.
+  Returns whether an account has OAuth tokens configured.
   """
-  def has_oauth_token?(account_id) do
-    Repo.exists?(from(t in OAuthToken, where: t.account_id == ^account_id))
+  def has_oauth_token?(current_scope, account_id) do
+    with {:ok, account_id} <- normalize_account_id(account_id),
+         :ok <- Scope.authorize_account(current_scope, account_id) do
+      Repo.exists?(from(t in OAuthToken, where: t.account_id == ^account_id))
+    end
   end
 
-  # Private helper to request token refresh from Google
-  defp request_token_refresh(refresh_token) do
-    client_id = Application.get_env(:gsc_analytics, :google_oauth)[:client_id]
-    client_secret = Application.get_env(:gsc_analytics, :google_oauth)[:client_secret]
+  # Private helpers ----------------------------------------------------------
 
-    body =
-      URI.encode_query(%{
-        "client_id" => client_id,
-        "client_secret" => client_secret,
-        "refresh_token" => refresh_token,
-        "grant_type" => "refresh_token"
-      })
+  defp request_token_refresh(refresh_token) when is_binary(refresh_token) do
+    with {:ok, %{client_id: client_id, client_secret: client_secret}} <-
+           extract_credentials(Application.get_env(:gsc_analytics, :google_oauth, %{})) do
+      body = %{
+        client_id: client_id,
+        client_secret: client_secret,
+        refresh_token: refresh_token,
+        grant_type: "refresh_token"
+      }
 
-    headers = [{~c"content-type", ~c"application/x-www-form-urlencoded"}]
-    url = ~c"https://oauth2.googleapis.com/token"
+      case http_client().post("https://oauth2.googleapis.com/token", form: body) do
+        {:ok, %Req.Response{status: 200, body: response}} ->
+          {:ok, response}
 
-    case :httpc.request(
-           :post,
-           {url, headers, ~c"application/x-www-form-urlencoded", body},
-           [],
-           []
-         ) do
-      {:ok, {{_, 200, _}, _, response_body}} ->
-        {:ok, JSON.decode!(to_string(response_body))}
+        {:ok, %Req.Response{status: status, body: response}} ->
+          {:error, {:http_error, status, response}}
 
-      {:ok, {{_, status, _}, _, response_body}} ->
-        {:error, {:http_error, status, to_string(response_body)}}
-
-      {:error, reason} ->
-        {:error, reason}
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   end
 
@@ -386,7 +404,77 @@ defmodule GscAnalytics.Auth do
     DateTime.utc_now() |> DateTime.add(expires_in, :second)
   end
 
+  defp calculate_expires_at(expires_in) when is_binary(expires_in) do
+    case Integer.parse(expires_in) do
+      {value, ""} -> calculate_expires_at(value)
+      _ -> nil
+    end
+  end
+
   defp calculate_expires_at(_), do: nil
+
+  defp account_id_from_attrs(%{account_id: account_id}), do: normalize_account_id(account_id)
+  defp account_id_from_attrs(%{"account_id" => account_id}), do: normalize_account_id(account_id)
+  defp account_id_from_attrs(_), do: {:error, :missing_account_id}
+
+  defp normalize_account_id(account_id) when is_integer(account_id) and account_id > 0,
+    do: {:ok, account_id}
+
+  defp normalize_account_id(account_id) when is_binary(account_id) do
+    case Integer.parse(account_id) do
+      {value, ""} when value > 0 -> {:ok, value}
+      _ -> {:error, :invalid_account_id}
+    end
+  end
+
+  defp normalize_account_id(_), do: {:error, :invalid_account_id}
+
+  defp ensure_map(%_{} = struct), do: Map.from_struct(struct)
+  defp ensure_map(map) when is_map(map), do: map
+
+  defp normalize_scope_attr(attrs) do
+    case Map.get(attrs, :scopes) do
+      nil ->
+        attrs
+
+      scopes when is_list(scopes) ->
+        Map.put(attrs, :scopes, Enum.map(scopes, &to_string/1))
+
+      scopes ->
+        Map.put(attrs, :scopes, scopes |> to_string() |> String.split(" "))
+    end
+  end
+
+  defp normalize_oauth_config(config) when is_map(config), do: config
+  defp normalize_oauth_config(config) when is_list(config), do: Map.new(config)
+  defp normalize_oauth_config(_), do: %{}
+
+  defp extract_credentials(config) do
+    normalized = normalize_oauth_config(config)
+
+    case {Map.get(normalized, :client_id), Map.get(normalized, :client_secret)} do
+      {id, secret} when is_binary(id) and is_binary(secret) ->
+        {:ok, %{client_id: id, client_secret: secret}}
+
+      _ ->
+        {:error, :missing_oauth_config}
+    end
+  end
+
+  defp build_scope_list(%{"scope" => scope}, _fallback) when is_binary(scope) do
+    scope
+    |> String.split(~r/\s+/, trim: true)
+  end
+
+  defp build_scope_list(%{"scope" => scopes}, _fallback) when is_list(scopes) do
+    Enum.map(scopes, &to_string/1)
+  end
+
+  defp build_scope_list(_tokens, fallback), do: fallback || []
+
+  defp http_client do
+    Application.get_env(:gsc_analytics, :http_client, GscAnalytics.HTTPClient.Req)
+  end
 
   ## Token helper
 

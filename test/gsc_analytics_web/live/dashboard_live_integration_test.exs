@@ -20,6 +20,8 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
   alias GscAnalytics.Repo
   alias GscAnalytics.Schemas.TimeSeries
 
+  setup :register_and_log_in_user
+
   describe "dashboard user journey: viewing URL list" do
     test "user can view dashboard with URLs sorted by clicks", %{conn: conn} do
       # Setup: Create test data via database (not factories - real data flow)
@@ -207,7 +209,7 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
       {:ok, view, _html} = live(conn, ~p"/?limit=20&page=2")
 
       # Action: Sort while on page 2
-      view |> element("th[phx-value-column=lifetime_clicks]") |> render_click()
+      view |> element("th[phx-value-column=clicks]") |> render_click()
 
       # Assert: Still on page 2 (or reset to page 1 - both valid UX)
       # We just assert it doesn't crash
@@ -240,7 +242,7 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
       # Action 2: Sort by clicks
       html =
         view
-        |> element("th[phx-value-column=lifetime_clicks]")
+        |> element("th[phx-value-column=clicks]")
         |> render_click()
 
       # Assert: Shows blog URLs sorted by clicks (ascending after toggle)
@@ -269,13 +271,13 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
       # Action: Perform multiple operations
       {:ok, view, _html} = live(conn, ~p"/?limit=100")
 
-      view |> element("th[phx-value-column=lifetime_clicks]") |> render_click()
+      view |> element("th[phx-value-column=clicks]") |> render_click()
 
       view
       |> element("#search-input")
       |> render_change(%{"search" => "page-1"})
 
-      view |> element("th[phx-value-column=lifetime_avg_position]") |> render_click()
+      view |> element("th[phx-value-column=position]") |> render_click()
       html = view |> element("button[phx-click=next_page]") |> render_click()
 
       # Assert: Dashboard still functional (didn't crash)

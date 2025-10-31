@@ -7,24 +7,38 @@ defmodule GscAnalytics.Application do
 
   @impl true
   def start(_type, _args) do
-    children = [
-      GscAnalyticsWeb.Telemetry,
-      GscAnalytics.Vault,
-      GscAnalytics.Repo,
-      {DNSCluster, query: Application.get_env(:gsc_analytics, :dns_cluster_query) || :ignore},
-      {Phoenix.PubSub, name: GscAnalytics.PubSub},
+    authenticator_children =
+      if Application.get_env(:gsc_analytics, :start_authenticator, true) do
+        [
+          {GscAnalytics.DataSources.GSC.Support.Authenticator,
+           name: GscAnalytics.DataSources.GSC.Support.Authenticator}
+        ]
+      else
+        []
+      end
 
-      # GSC Services (simplified single-tenant)
-      {GscAnalytics.DataSources.GSC.Support.Authenticator,
-       name: GscAnalytics.DataSources.GSC.Support.Authenticator},
-      {GscAnalytics.DataSources.GSC.Support.SyncProgress, []},
-
-      # Crawler Services
-      {GscAnalytics.Crawler.ProgressTracker, []},
-
-      # Start to serve requests, typically the last entry
-      GscAnalyticsWeb.Endpoint
-    ]
+    children =
+      [
+        GscAnalyticsWeb.Telemetry,
+        GscAnalytics.Vault,
+        GscAnalytics.Repo,
+        {DNSCluster, query: Application.get_env(:gsc_analytics, :dns_cluster_query) || :ignore},
+        {Phoenix.PubSub, name: GscAnalytics.PubSub},
+        {Finch,
+         name: GscAnalytics.Finch,
+         pools: %{
+           default: [
+             size: 70,
+             pool_max_idle_time: 60_000
+           ]
+         }}
+      ]
+      |> Kernel.++(authenticator_children)
+      |> Kernel.++([
+        {GscAnalytics.DataSources.GSC.Support.SyncProgress, []},
+        {GscAnalytics.Crawler.ProgressTracker, []},
+        GscAnalyticsWeb.Endpoint
+      ])
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options

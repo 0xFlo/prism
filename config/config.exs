@@ -42,6 +42,13 @@ config :swoosh, :api_client, Swoosh.ApiClient.Req
 # Configure Vault for encrypting OAuth tokens
 config :gsc_analytics, GscAnalytics.Vault, ciphers: []
 
+config :req, :default_options,
+  finch: GscAnalytics.Finch,
+  pool_timeout: 5_000,
+  receive_timeout: 15_000
+
+config :gsc_analytics, :http_client, GscAnalytics.HTTPClient.Req
+
 # Configure esbuild (the version is required)
 config :esbuild,
   version: "0.25.4",

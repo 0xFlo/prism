@@ -14,6 +14,8 @@ defmodule GscAnalyticsWeb.DashboardLivePerformanceTest do
   @url_count 250
   @days_of_history 14
 
+  setup :register_and_log_in_user
+
   describe "ContentInsights query budget" do
     setup [:start_counters, :seed_dataset]
 
@@ -25,7 +27,7 @@ defmodule GscAnalyticsWeb.DashboardLivePerformanceTest do
           account_id: @account_id,
           limit: 100,
           page: 1,
-          sort_by: "lifetime_clicks",
+          sort_by: "clicks",
           sort_direction: "desc",
           period_days: 30
         })
@@ -36,27 +38,6 @@ defmodule GscAnalyticsWeb.DashboardLivePerformanceTest do
       assert length(result.urls) == 100
       assert analysis.total_count <= 6
       assert analysis.n_plus_one == []
-    end
-
-    test "needs_update filter stays within budget" do
-      QueryCounter.reset()
-
-      result =
-        ContentInsights.list_urls(%{
-          account_id: @account_id,
-          limit: 50,
-          page: 1,
-          sort_by: "period_clicks",
-          sort_direction: "desc",
-          needs_update: true,
-          period_days: 30
-        })
-
-      analysis = QueryCounter.analyze()
-
-      assert analysis.total_count <= 6
-      assert analysis.n_plus_one == []
-      assert length(result.urls) <= 50
     end
   end
 

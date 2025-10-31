@@ -29,6 +29,7 @@ defmodule GscAnalyticsWeb.UserLive.Registration do
             label="Email"
             autocomplete="username"
             required
+            phx-debounce="blur"
             phx-mounted={JS.focus()}
           />
 

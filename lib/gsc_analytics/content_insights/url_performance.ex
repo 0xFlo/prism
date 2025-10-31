@@ -43,7 +43,7 @@ defmodule GscAnalytics.ContentInsights.UrlPerformance do
 
     urls =
       query
-      |> apply_sort(Map.get(opts, :sort_by), Map.get(opts, :sort_direction))
+      |> apply_sort(Map.get(opts, :sort_by), Map.get(opts, :sort_direction), period_days)
       |> limit(^limit)
       |> offset(^offset)
       |> Repo.all()
@@ -141,11 +141,40 @@ defmodule GscAnalytics.ContentInsights.UrlPerformance do
       where: ilike(row.url, ^pattern)
   end
 
-  defp apply_sort(query, sort_by, sort_direction) do
+  defp apply_sort(query, sort_by, sort_direction, period_days) do
     direction = normalize_sort_direction(sort_direction)
+    use_lifetime = lifetime_window?(period_days)
 
     order_by_clause =
       case sort_by do
+        "clicks" ->
+          if use_lifetime do
+            [{direction, dynamic([ls], ls.lifetime_clicks)}]
+          else
+            [{direction, dynamic([ls, pm], coalesce(pm.period_clicks, 0))}]
+          end
+
+        "impressions" ->
+          if use_lifetime do
+            [{direction, dynamic([ls], ls.lifetime_impressions)}]
+          else
+            [{direction, dynamic([ls, pm], coalesce(pm.period_impressions, 0))}]
+          end
+
+        "ctr" ->
+          if use_lifetime do
+            [{direction, dynamic([ls], ls.avg_ctr)}]
+          else
+            [{direction, dynamic([ls, pm], coalesce(pm.period_ctr, 0.0))}]
+          end
+
+        "position" ->
+          if use_lifetime do
+            [{direction, dynamic([ls], ls.avg_position)}]
+          else
+            [{direction, dynamic([ls, pm], coalesce(pm.period_position, 0.0))}]
+          end
+
         "lifetime_clicks" ->
           [{direction, dynamic([ls], ls.lifetime_clicks)}]
 
@@ -180,13 +209,22 @@ defmodule GscAnalytics.ContentInsights.UrlPerformance do
           [{direction, dynamic([ls], ls.first_seen_date)}]
 
         _ ->
-          [{direction, dynamic([ls], ls.lifetime_clicks)}]
+          if use_lifetime do
+            [{direction, dynamic([ls], ls.lifetime_clicks)}]
+          else
+            [{direction, dynamic([ls, pm], coalesce(pm.period_clicks, 0))}]
+          end
       end
 
     from row in query, order_by: ^order_by_clause
   end
 
-  defp enrich_urls(urls, account_id, _period_days) do
+  defp lifetime_window?(period_days) when is_integer(period_days) and period_days >= 10_000,
+    do: true
+
+  defp lifetime_window?(_), do: false
+
+  defp enrich_urls(urls, account_id, period_days) do
     url_list = Enum.map(urls, & &1.url)
 
     # Use window function implementation for 20x performance improvement
@@ -219,11 +257,49 @@ defmodule GscAnalytics.ContentInsights.UrlPerformance do
     Enum.map(urls, fn url_data ->
       wow_growth = Map.get(wow_growth_map, url_data.url, 0.0)
 
+      use_lifetime = lifetime_window?(period_days)
+
+      selected_clicks =
+        if use_lifetime do
+          url_data.lifetime_clicks || 0
+        else
+          url_data.period_clicks || url_data.lifetime_clicks || 0
+        end
+
+      selected_impressions =
+        if use_lifetime do
+          url_data.lifetime_impressions || 0
+        else
+          url_data.period_impressions || url_data.lifetime_impressions || 0
+        end
+
+      selected_ctr =
+        if use_lifetime do
+          url_data.lifetime_avg_ctr
+        else
+          url_data.period_ctr || url_data.lifetime_avg_ctr
+        end
+
+      selected_position =
+        if use_lifetime do
+          url_data.lifetime_avg_position
+        else
+          url_data.period_position || url_data.lifetime_avg_position
+        end
+
+      selected_ctr_pct = Float.round((selected_ctr || 0.0) * 100, 2)
+
       url_data
       |> Map.merge(%{
         wow_growth_last4w: wow_growth,
         lifetime_ctr_pct: Float.round((url_data.lifetime_avg_ctr || 0.0) * 100, 2),
         period_ctr_pct: Float.round((url_data.period_ctr || 0.0) * 100, 2),
+        selected_clicks: selected_clicks,
+        selected_impressions: selected_impressions,
+        selected_ctr: selected_ctr,
+        selected_ctr_pct: selected_ctr_pct,
+        selected_position: selected_position,
+        selected_metrics_source: if(use_lifetime, do: :lifetime, else: :period),
         type: nil,
         content_category: nil
       })
@@ -232,8 +308,15 @@ defmodule GscAnalytics.ContentInsights.UrlPerformance do
   end
 
   defp tag_update_status(url_data, wow_growth) do
-    position = Map.get(url_data, :period_position) || Map.get(url_data, :lifetime_avg_position)
-    clicks = Map.get(url_data, :period_clicks) || Map.get(url_data, :lifetime_clicks, 0)
+    position =
+      Map.get(url_data, :selected_position) ||
+        Map.get(url_data, :period_position) ||
+        Map.get(url_data, :lifetime_avg_position)
+
+    clicks =
+      Map.get(url_data, :selected_clicks) ||
+        Map.get(url_data, :period_clicks) ||
+        Map.get(url_data, :lifetime_clicks, 0)
 
     needs_update =
       cond do

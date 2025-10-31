@@ -58,9 +58,6 @@ defmodule GscAnalytics.DataSources.GSC.Support.AuthenticatorIntegrationTest do
   }
 
   # Mock token response for testing
-  @test_token "test-access-token-12345"
-  @test_expires_in 3600
-
   setup do
     if Process.whereis(Authenticator) do
       GenServer.stop(Authenticator, :normal)
@@ -381,6 +378,89 @@ defmodule GscAnalytics.DataSources.GSC.Support.AuthenticatorIntegrationTest do
       assert {:error, :unknown_account} = Authenticator.get_token(2)
 
       GenServer.stop(pid, :normal)
+    end
+  end
+
+  describe "dual-mode authentication" do
+    import Mox
+
+    alias GscAnalytics.AccountsFixtures
+    alias GscAnalytics.Auth
+
+    setup :verify_on_exit!
+
+    test "uses stored OAuth token when available" do
+      Application.put_env(:gsc_analytics, :gsc_accounts, %{
+        2 => %{
+          name: "OAuth Account",
+          service_account_file: nil,
+          default_property: "sc-domain:test.example",
+          enabled?: true
+        }
+      })
+
+      scope = AccountsFixtures.scope_with_accounts([2])
+
+      {:ok, _} =
+        Auth.store_oauth_token(scope, %{
+          account_id: 2,
+          google_email: "oauth@example.com",
+          refresh_token: "refresh_xyz",
+          access_token: "oauth_token",
+          expires_at: DateTime.add(DateTime.utc_now(), 3_600, :second),
+          scopes: ["scope-a"]
+        })
+
+      {:ok, pid} = Authenticator.start_link([])
+      on_exit(fn -> GenServer.stop(pid, :normal) end)
+
+      Process.sleep(100)
+
+      assert {:ok, "oauth_token"} = Authenticator.get_token(2)
+    end
+
+    test "refreshes OAuth token when expired" do
+      Application.put_env(:gsc_analytics, :gsc_accounts, %{
+        2 => %{
+          name: "OAuth Account",
+          service_account_file: nil,
+          default_property: "sc-domain:test.example",
+          enabled?: true
+        }
+      })
+
+      scope = AccountsFixtures.scope_with_accounts([2])
+
+      {:ok, _} =
+        Auth.store_oauth_token(scope, %{
+          account_id: 2,
+          google_email: "oauth@example.com",
+          refresh_token: "refresh_xyz",
+          access_token: "stale_token",
+          expires_at: DateTime.add(DateTime.utc_now(), -60, :second),
+          scopes: ["scope-a"]
+        })
+
+      expect(GscAnalytics.HTTPClientMock, :post, fn url, opts ->
+        assert url == "https://oauth2.googleapis.com/token"
+        assert opts[:form][:grant_type] == "refresh_token"
+
+        {:ok,
+         %Req.Response{
+           status: 200,
+           body: %{
+             "access_token" => "refreshed_token",
+             "expires_in" => 3_600,
+             "scope" => "scope-a"
+           }
+         }}
+      end)
+
+      {:ok, pid} = Authenticator.start_link([])
+      on_exit(fn -> GenServer.stop(pid, :normal) end)
+      Process.sleep(150)
+
+      assert {:ok, "refreshed_token"} = Authenticator.get_token(2)
     end
   end
 

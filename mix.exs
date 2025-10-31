@@ -76,6 +76,8 @@ defmodule GscAnalytics.MixProject do
       # GSC Integration dependencies
       {:joken, "~> 2.6"},
       {:hammer, "~> 6.2"},
+      {:finch, "~> 0.20"},
+      {:req, "~> 0.5"},
 
       # CSV parsing for backlink imports
       {:nimble_csv, "~> 1.2"},
@@ -88,6 +90,9 @@ defmodule GscAnalytics.MixProject do
 
       # Token encryption for OAuth credentials
       {:cloak_ecto, "~> 1.2"},
+
+      # Testing support
+      {:mox, "~> 1.0", only: :test},
 
       # Tidewave AI Assistant for Phoenix
       {:tidewave, "~> 0.5", only: :dev}

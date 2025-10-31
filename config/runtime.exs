@@ -1,5 +1,15 @@
 import Config
 
+# OAuth credentials (all environments)
+runtime_client_id = System.get_env("GOOGLE_OAUTH_CLIENT_ID")
+runtime_client_secret = System.get_env("GOOGLE_OAUTH_CLIENT_SECRET")
+
+if runtime_client_id && runtime_client_secret do
+  config :gsc_analytics, :google_oauth,
+    client_id: runtime_client_id,
+    client_secret: runtime_client_secret
+end
+
 # config/runtime.exs is executed for all environments, including
 # during releases. It is executed after compilation and before the
 # system starts, so it is typically used to load production configuration

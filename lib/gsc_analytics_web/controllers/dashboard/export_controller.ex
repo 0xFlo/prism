@@ -7,24 +7,21 @@ defmodule GscAnalyticsWeb.Dashboard.ExportController do
 
   def export_csv(conn, params) do
     limit = DashboardUtils.normalize_limit(params["limit"])
-    sort_by = params["sort_by"] || "lifetime_clicks"
+    sort_by = normalize_sort_by(params["sort_by"])
     view_mode = Columns.validate_view_mode(params["view_mode"] || "basic")
-    needs_update_filter = parse_bool(params["needs_update"])
     period_days = parse_period(params["period"] || "30")
 
     result =
       ContentInsights.list_urls(%{
         limit: limit,
         sort_by: sort_by,
-        needs_update: needs_update_filter,
         period_days: period_days
       })
 
     csv_content = generate_csv_content(result.urls, view_mode)
-    filter_suffix = if needs_update_filter, do: "-needs-update", else: ""
 
     filename =
-      "gsc-analytics-#{view_mode}-#{sort_by}#{filter_suffix}-#{Date.to_string(Date.utc_today())}.csv"
+      "gsc-analytics-#{view_mode}-#{sort_by}-#{Date.to_string(Date.utc_today())}.csv"
 
     conn
     |> put_resp_content_type("text/csv")
@@ -50,9 +47,6 @@ defmodule GscAnalyticsWeb.Dashboard.ExportController do
     header_line <> data_lines
   end
 
-  defp parse_bool(value) when value in [true, "true", "1", 1], do: true
-  defp parse_bool(_), do: false
-
   defp parse_period(nil), do: 30
   defp parse_period("7"), do: 7
   defp parse_period("30"), do: 30
@@ -70,4 +64,18 @@ defmodule GscAnalyticsWeb.Dashboard.ExportController do
   end
 
   defp parse_period(_), do: 30
+
+  defp normalize_sort_by(nil), do: "clicks"
+  defp normalize_sort_by(""), do: "clicks"
+
+  defp normalize_sort_by(sort_by) when sort_by in ["clicks", "impressions", "ctr", "position"],
+    do: sort_by
+
+  defp normalize_sort_by("lifetime_clicks"), do: "clicks"
+  defp normalize_sort_by("period_clicks"), do: "clicks"
+  defp normalize_sort_by("period_impressions"), do: "impressions"
+  defp normalize_sort_by("lifetime_avg_ctr"), do: "ctr"
+  defp normalize_sort_by("lifetime_avg_position"), do: "position"
+  defp normalize_sort_by(other) when is_binary(other), do: other
+  defp normalize_sort_by(_), do: "clicks"
 end
