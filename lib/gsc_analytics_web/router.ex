@@ -17,6 +17,10 @@ defmodule GscAnalyticsWeb.Router do
     plug :accepts, ["json"]
   end
 
+  pipeline :oauth_rate_limited do
+    plug GscAnalyticsWeb.Plugs.OAuthRateLimit
+  end
+
   # Other scopes may use custom stacks.
   # scope "/api", GscAnalyticsWeb do
   #   pipe_through :api
@@ -59,6 +63,8 @@ defmodule GscAnalyticsWeb.Router do
     get "/accounts", AccountsRedirectController, :index
 
     scope "/auth/google" do
+      pipe_through [:oauth_rate_limited]
+
       get "/", GoogleAuthController, :request
       get "/callback", GoogleAuthController, :callback
     end
@@ -79,5 +85,11 @@ defmodule GscAnalyticsWeb.Router do
 
     post "/users/log-in", UserSessionController, :create
     delete "/users/log-out", UserSessionController, :delete
+  end
+
+  scope "/", GscAnalyticsWeb do
+    pipe_through [:api]
+
+    get "/health", HealthController, :show
   end
 end

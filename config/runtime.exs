@@ -59,6 +59,13 @@ if config_env() == :prod do
     environment variable GOOGLE_OAUTH_CLIENT_SECRET is missing.
     Set this to the OAuth client secret generated in Google Cloud Console.
     """
+
+  System.get_env("CLOAK_KEY") ||
+    raise """
+    environment variable CLOAK_KEY is missing.
+    Generate one with: mix phx.gen.secret 32
+    Store the Base64 value and keep it stable across deploys to preserve encrypted OAuth tokens.
+    """
 end
 
 if runtime_client_id && runtime_client_secret do

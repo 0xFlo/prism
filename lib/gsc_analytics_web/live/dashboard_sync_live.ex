@@ -72,16 +72,20 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
           {:noreply, put_flash(socket, :error, "A sync is already in progress")}
         else
           account_id = socket.assigns.current_account_id
-          site_url = configured_site(socket.assigns.current_scope, account_id)
+          case configured_site(socket.assigns.current_scope, account_id) do
+            {:ok, site_url} ->
+              Task.start(fn -> Sync.sync_full_history(site_url, account_id: account_id) end)
 
-          Task.start(fn -> Sync.sync_full_history(site_url, account_id: account_id) end)
+              form = build_form("full")
 
-          form = build_form("full")
+              {:noreply,
+               socket
+               |> assign(:form, form)
+               |> put_flash(:info, "Full history sync started")}
 
-          {:noreply,
-           socket
-           |> assign(:form, form)
-           |> put_flash(:info, "Full history sync started")}
+            {:error, message} ->
+              {:noreply, put_flash(socket, :error, message)}
+          end
         end
 
       {:ok, days} when is_integer(days) ->
@@ -89,16 +93,20 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
           {:noreply, put_flash(socket, :error, "A sync is already in progress")}
         else
           account_id = socket.assigns.current_account_id
-          site_url = configured_site(socket.assigns.current_scope, account_id)
+          case configured_site(socket.assigns.current_scope, account_id) do
+            {:ok, site_url} ->
+              Task.start(fn -> Sync.sync_last_n_days(site_url, days, account_id: account_id) end)
 
-          Task.start(fn -> Sync.sync_last_n_days(site_url, days, account_id: account_id) end)
+              form = build_form(Integer.to_string(days))
 
-          form = build_form(Integer.to_string(days))
+              {:noreply,
+               socket
+               |> assign(:form, form)
+               |> put_flash(:info, "Sync started for the last #{days} days")}
 
-          {:noreply,
-           socket
-           |> assign(:form, form)
-           |> put_flash(:info, "Sync started for the last #{days} days")}
+            {:error, message} ->
+              {:noreply, put_flash(socket, :error, message)}
+          end
         end
     end
   end
@@ -343,8 +351,17 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
 
   defp configured_site(current_scope, account_id) do
     case Accounts.gsc_default_property(current_scope, account_id) do
-      {:ok, property} -> property
-      {:error, _reason} -> "sc-domain:example.com"
+      {:ok, property} ->
+        {:ok, property}
+
+      {:error, :missing_property} ->
+        {:error, "Select a default Search Console property from Settings before running a sync."}
+
+      {:error, :unauthorized_account} ->
+        {:error, "You do not have access to manage that workspace."}
+
+      {:error, reason} ->
+        {:error, "Could not determine the Search Console property: #{inspect(reason)}"}
     end
   end
 

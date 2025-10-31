@@ -12,6 +12,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.Sync do
 
   require Logger
 
+  alias GscAnalytics.Accounts
   alias GscAnalytics.DataSources.GSC.Core.{Client, Persistence, Config}
   alias GscAnalytics.DataSources.GSC.Support.{QueryPaginator, SyncProgress}
   alias GscAnalytics.DataSources.GSC.Telemetry.AuditLogger
@@ -493,19 +494,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.Sync do
   # Private - Utilities
   # ============================================================================
 
-  defp get_default_site_url(account_id) do
-    case GscAnalytics.DataSources.GSC.Accounts.default_property(account_id) do
-      {:ok, property} ->
-        property
-
-      {:error, reason} ->
-        Logger.warning(
-          "Falling back to example.com for account #{account_id}; missing property (#{inspect(reason)})"
-        )
-
-        "sc-domain:example.com"
-    end
-  end
+  defp get_default_site_url(account_id), do: Accounts.gsc_default_property!(account_id)
 
   defp format_error(reason) when is_atom(reason), do: to_string(reason)
   defp format_error(reason) when is_binary(reason), do: reason

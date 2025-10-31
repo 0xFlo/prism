@@ -76,7 +76,7 @@ defmodule GscAnalyticsWeb.Layouts do
             <% else %>
               <%= if @current_account do %>
                 <span class="badge badge-outline badge-sm px-3 py-2 text-xs font-medium">
-                  {@current_account.name}
+                  {@current_account.display_name || @current_account.name}
                 </span>
               <% end %>
             <% end %>

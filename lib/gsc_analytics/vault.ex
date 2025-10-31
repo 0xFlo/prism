@@ -7,8 +7,8 @@ defmodule GscAnalytics.Vault do
       Keyword.put(config, :ciphers,
         default: {
           Cloak.Ciphers.AES.GCM,
-          # In development/test, use a default key
-          # In production, this MUST be set via CLOAK_KEY environment variable
+          # In development/test, we generate a throwaway key.
+          # Production must supply a stable, Base64-encoded key via CLOAK_KEY (see config/runtime.exs).
           tag: "AES.GCM.V1",
           key: decode_env!("CLOAK_KEY") || :crypto.strong_rand_bytes(32),
           iv_length: 12

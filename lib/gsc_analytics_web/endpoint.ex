@@ -1,6 +1,9 @@
 defmodule GscAnalyticsWeb.Endpoint do
   use Phoenix.Endpoint, otp_app: :gsc_analytics
 
+  import Plug.Conn
+  require Logger
+
   # The session will be stored in the cookie and signed,
   # this means its contents can be read but not tampered with.
   # Set :encryption_salt if you would also like to encrypt it.
@@ -45,6 +48,7 @@ defmodule GscAnalyticsWeb.Endpoint do
     cookie_key: "request_logger"
 
   plug Plug.RequestId
+  plug :put_logger_metadata
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
 
   plug Plug.Parsers,
@@ -56,4 +60,10 @@ defmodule GscAnalyticsWeb.Endpoint do
   plug Plug.Head
   plug Plug.Session, @session_options
   plug GscAnalyticsWeb.Router
+
+  defp put_logger_metadata(conn, _opts) do
+    request_id = get_resp_header(conn, "x-request-id") |> List.first()
+    if request_id, do: Logger.metadata(request_id: request_id)
+    conn
+  end
 end
