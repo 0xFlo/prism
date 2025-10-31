@@ -52,10 +52,11 @@ defmodule GscAnalyticsWeb.Router do
       live "/dashboard/sync", DashboardSyncLive, :index
       live "/dashboard/crawler", DashboardCrawlerLive, :index
       live "/dashboard/url", DashboardUrlLive, :show
-      live "/accounts", AccountSettingsLive, :index
       live "/users/settings", UserLive.Settings, :edit
       live "/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email
     end
+
+    get "/accounts", AccountsRedirectController, :index
 
     scope "/auth/google" do
       get "/", GoogleAuthController, :request

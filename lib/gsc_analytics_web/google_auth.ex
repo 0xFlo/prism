@@ -44,7 +44,10 @@ defmodule GscAnalyticsWeb.GoogleAuth do
 
       {:error, :missing_oauth_config} ->
         conn
-        |> put_flash(:error, "Google OAuth configuration is missing. Please contact support.")
+        |> put_flash(
+          :error,
+          "Google OAuth configuration is missing. Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET, then restart the server."
+        )
         |> redirect(to: ~p"/accounts")
     end
   end
@@ -92,7 +95,10 @@ defmodule GscAnalyticsWeb.GoogleAuth do
 
       {:error, :missing_oauth_config} ->
         conn
-        |> put_flash(:error, "Google OAuth configuration is missing. Please contact support.")
+        |> put_flash(
+          :error,
+          "Google OAuth configuration is missing. Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET, then restart the server."
+        )
         |> redirect(to: ~p"/accounts")
 
       {:error, {:http_error, status, body}} ->

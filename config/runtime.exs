@@ -1,13 +1,71 @@
 import Config
 
-# OAuth credentials (all environments)
-runtime_client_id = System.get_env("GOOGLE_OAUTH_CLIENT_ID")
-runtime_client_secret = System.get_env("GOOGLE_OAUTH_CLIENT_SECRET")
+project_root = Path.expand("..", __DIR__)
+
+credentials_file =
+  case System.get_env("GOOGLE_OAUTH_CREDENTIALS_FILE") do
+    nil ->
+      Path.wildcard(Path.join(project_root, "client_secret_*.json"))
+      |> List.first()
+
+    path ->
+      case Path.type(path) do
+        :absolute -> path
+        _ -> Path.expand(path, project_root)
+      end
+  end
+
+oauth_from_file =
+  with file when is_binary(file) <- credentials_file,
+       true <- File.exists?(file),
+       {:ok, contents} <- File.read(file),
+       {:ok, decoded} <- JSON.decode(contents),
+       config when is_map(config) <-
+         Map.get(decoded, "web") || Map.get(decoded, "installed"),
+       client_id when is_binary(client_id) <- Map.get(config, "client_id"),
+       client_secret when is_binary(client_secret) <- Map.get(config, "client_secret") do
+    redirect_uri =
+      case Map.get(config, "redirect_uris") do
+        [first | _] when is_binary(first) -> first
+        _ -> nil
+      end
+
+    %{client_id: client_id, client_secret: client_secret, redirect_uri: redirect_uri}
+  else
+    _ -> nil
+  end
+
+runtime_client_id =
+  System.get_env("GOOGLE_OAUTH_CLIENT_ID") ||
+    (oauth_from_file && oauth_from_file.client_id)
+
+runtime_client_secret =
+  System.get_env("GOOGLE_OAUTH_CLIENT_SECRET") ||
+    (oauth_from_file && oauth_from_file.client_secret)
+
+runtime_redirect_uri =
+  System.get_env("GOOGLE_OAUTH_REDIRECT_URI") ||
+    (oauth_from_file && oauth_from_file.redirect_uri)
+
+if config_env() == :prod do
+  runtime_client_id ||
+    raise """
+    environment variable GOOGLE_OAUTH_CLIENT_ID is missing.
+    Set this to the OAuth client ID generated in Google Cloud Console.
+    """
+
+  runtime_client_secret ||
+    raise """
+    environment variable GOOGLE_OAUTH_CLIENT_SECRET is missing.
+    Set this to the OAuth client secret generated in Google Cloud Console.
+    """
+end
 
 if runtime_client_id && runtime_client_secret do
   config :gsc_analytics, :google_oauth,
     client_id: runtime_client_id,
-    client_secret: runtime_client_secret
+    client_secret: runtime_client_secret,
+    redirect_uri: runtime_redirect_uri
 end
 
 # config/runtime.exs is executed for all environments, including

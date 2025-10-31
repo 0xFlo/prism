@@ -45,3 +45,6 @@ logs.md
 
 # Ignore service account credentials placed in priv/
 priv/*.json
+
+# Ignore downloaded OAuth client secrets
+client_secret_*.json
