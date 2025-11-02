@@ -120,33 +120,28 @@ defmodule GscAnalyticsWeb.UserAuth do
 
   # Do not renew session if the user is already logged in
   # to prevent CSRF errors or data being lost in tabs that are still open
-  defp renew_session(conn, user) when conn.assigns.current_scope.user.id == user.id do
-    conn
+  defp renew_session(conn, user) do
+    case conn.assigns[:current_scope] do
+      %Scope{user: %{id: id}} when id == user.id and not is_nil(user) ->
+        # Already logged in as this user - don't renew to preserve CSRF token
+        conn
+
+      _ ->
+        # First login, different user, or logged out - renew session
+        do_renew_session(conn)
+    end
   end
 
-  # This function renews the session ID and erases the whole
-  # session to avoid fixation attacks. If there is any data
-  # in the session you may want to preserve after log in/log out,
-  # you must explicitly fetch the session data before clearing
-  # and then immediately set it after clearing, for example:
-  #
-  #     defp renew_session(conn, _user) do
-  #       delete_csrf_token()
-  #       preferred_locale = get_session(conn, :preferred_locale)
-  #
-  #       conn
-  #       |> configure_session(renew: true)
-  #       |> clear_session()
-  #       |> put_session(:preferred_locale, preferred_locale)
-  #     end
-  #
-  defp renew_session(conn, _user) do
+  defp do_renew_session(conn) do
     delete_csrf_token()
 
     conn
     |> configure_session(renew: true)
     |> clear_session()
   end
+
+  # Session renewal helper - clears session and CSRF token to prevent fixation attacks
+  # If you need to preserve any session data, fetch it before calling and restore after
 
   defp maybe_write_remember_me_cookie(conn, token, %{"remember_me" => "true"}, _),
     do: write_remember_me_cookie(conn, token)

@@ -4,31 +4,37 @@ defmodule GscAnalytics.AccountsTest do
   alias GscAnalytics.Accounts
   alias GscAnalytics.AccountsFixtures
 
-  describe "default property management" do
-    test "returns config fallback when no override exists" do
-      assert {:ok, "sc-domain:scrapfly.io"} = Accounts.gsc_default_property(1)
+  describe "property management" do
+    test "returns error when no active property is set" do
+      account_id = 1
+      assert {:error, :no_active_property} = Accounts.get_active_property_url(account_id)
     end
 
-    test "stores overrides and surfaces them in lookups" do
-      assert {:error, _} = Accounts.gsc_default_property(2)
+    test "returns active property url when one is set" do
+      account_id = 1
 
-      assert {:ok, _setting} =
-               Accounts.set_default_property(nil, 2, "https://example.com/")
+      # Add a property and set it as active
+      {:ok, property} =
+        Accounts.add_property(account_id, %{
+          property_url: "sc-domain:example.com",
+          display_name: "Example Property"
+        })
 
-      assert {:ok, "https://example.com/"} = Accounts.gsc_default_property(2)
+      {:ok, _} = Accounts.set_active_property(account_id, property.id)
 
-      accounts = Accounts.list_gsc_accounts()
-      account = Enum.find(accounts, &(&1.id == 2))
-
-      assert account.default_property == "https://example.com/"
-      assert account.default_property_source == :user
+      assert {:ok, "sc-domain:example.com"} = Accounts.get_active_property_url(account_id)
     end
 
-    test "requires authorization when scope is provided" do
-      scope = AccountsFixtures.scope_with_accounts(1)
+    test "returns the most recently activated property when multiple are active" do
+      account_id = 1
 
-      assert {:error, :unauthorized_account} =
-               Accounts.set_default_property(scope, 2, "https://forbidden.example/")
+      {:ok, prop1} = Accounts.add_property(account_id, %{property_url: "sc-domain:example1.com"})
+      {:ok, prop2} = Accounts.add_property(account_id, %{property_url: "sc-domain:example2.com"})
+
+      {:ok, _} = Accounts.set_active_property(account_id, prop1.id)
+      {:ok, _} = Accounts.set_active_property(account_id, prop2.id)
+
+      assert {:ok, "sc-domain:example2.com"} = Accounts.get_active_property_url(account_id)
     end
   end
 

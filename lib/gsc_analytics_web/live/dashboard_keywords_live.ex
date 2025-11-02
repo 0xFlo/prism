@@ -12,26 +12,44 @@ defmodule GscAnalyticsWeb.DashboardKeywordsLive do
   def mount(params, _session, socket) do
     # LiveView best practice: Use assign_new/3 for safe defaults
     # This prevents runtime errors from missing assigns
-    {socket, _account} = AccountHelpers.init_account_assigns(socket, params)
+    {socket, account, _property} =
+      AccountHelpers.init_account_and_property_assigns(socket, params)
 
-    {:ok,
-     socket
-     |> assign_new(:page_title, fn -> "Top Keywords - GSC Analytics" end)
-     |> assign_new(:keywords, fn -> [] end)
-     |> assign_new(:sort_by, fn -> "clicks" end)
-     |> assign_new(:sort_direction, fn -> "desc" end)
-     |> assign_new(:limit, fn -> 50 end)
-     |> assign_new(:page, fn -> 1 end)
-     |> assign_new(:total_pages, fn -> 1 end)
-     |> assign_new(:total_count, fn -> 0 end)
-     |> assign_new(:period_days, fn -> 30 end)
-     |> assign_new(:search, fn -> "" end)}
+    # Redirect to Settings if no workspaces exist
+    if is_nil(account) do
+      {:ok,
+       socket
+       |> put_flash(
+         :info,
+         "Please add a Google Search Console workspace to get started."
+       )
+       |> redirect(to: ~p"/users/settings")}
+    else
+      {:ok,
+       socket
+       |> assign_new(:page_title, fn -> "Top Keywords - GSC Analytics" end)
+       |> assign_new(:keywords, fn -> [] end)
+       |> assign_new(:sort_by, fn -> "clicks" end)
+       |> assign_new(:sort_direction, fn -> "desc" end)
+       |> assign_new(:limit, fn -> 50 end)
+       |> assign_new(:page, fn -> 1 end)
+       |> assign_new(:total_pages, fn -> 1 end)
+       |> assign_new(:total_count, fn -> 0 end)
+       |> assign_new(:period_days, fn -> 30 end)
+       |> assign_new(:search, fn -> "" end)}
+    end
   end
 
   @impl true
   def handle_params(params, uri, socket) do
-    socket = AccountHelpers.assign_current_account(socket, params)
+    socket =
+      socket
+      |> AccountHelpers.assign_current_account(params)
+      |> AccountHelpers.assign_current_property(params)
+
     account_id = socket.assigns.current_account_id
+    property = socket.assigns.current_property
+    property_url = property && property.property_url
 
     # Parse URL parameters for state management
     limit = DashboardUtils.normalize_limit(params["limit"])
@@ -44,17 +62,25 @@ defmodule GscAnalyticsWeb.DashboardKeywordsLive do
     # Extract path for active nav detection
     current_path = URI.parse(uri).path || "/dashboard/keywords"
 
-    # Fetch keywords data
-    result =
-      ContentInsights.list_keywords(%{
-        limit: limit,
-        page: page,
-        sort_by: sort_by,
-        sort_direction: sort_direction,
-        period_days: period_days,
-        search: search,
-        account_id: account_id
-      })
+    {result, socket} =
+      if property_url do
+        data =
+          ContentInsights.list_keywords(%{
+            limit: limit,
+            page: page,
+            sort_by: sort_by,
+            sort_direction: sort_direction,
+            period_days: period_days,
+            search: search,
+            account_id: account_id,
+            property_url: property_url
+          })
+
+        {data, socket}
+      else
+        socket = maybe_warn_no_property(socket)
+        {empty_keywords_result(page), socket}
+      end
 
     {:noreply,
      socket
@@ -81,6 +107,12 @@ defmodule GscAnalyticsWeb.DashboardKeywordsLive do
   def handle_event("change_period", %{"period" => period}, socket) do
     # Update period - reset to page 1 since data changes
     params = build_params(socket, %{period: period, page: 1})
+    {:noreply, push_patch(socket, to: ~p"/dashboard/keywords?#{params}")}
+  end
+
+  @impl true
+  def handle_event("switch_property", %{"property_id" => property_id}, socket) do
+    params = build_params(socket, %{property_id: property_id})
     {:noreply, push_patch(socket, to: ~p"/dashboard/keywords?#{params}")}
   end
 
@@ -122,23 +154,38 @@ defmodule GscAnalyticsWeb.DashboardKeywordsLive do
     {:noreply, push_patch(socket, to: ~p"/dashboard/keywords?#{params}")}
   end
 
-  @impl true
-  def handle_event("change_account", %{"account_id" => account_id}, socket) do
-    params = build_params(socket, %{account_id: account_id})
-    {:noreply, push_patch(socket, to: ~p"/dashboard/keywords?#{params}")}
-  end
-
   # Helper to build URL params preserving current state
   defp build_params(socket, overrides) do
-    %{
+    base = %{
       sort_by: Map.get(overrides, :sort_by, socket.assigns.sort_by),
       sort_direction: Map.get(overrides, :sort_direction, socket.assigns.sort_direction),
       limit: Map.get(overrides, :limit, socket.assigns.limit),
       page: Map.get(overrides, :page, socket.assigns.page),
       period: Map.get(overrides, :period, socket.assigns.period_days),
       search: Map.get(overrides, :search, socket.assigns.search),
-      account_id: Map.get(overrides, :account_id, socket.assigns.current_account_id)
+      property_id: Map.get(overrides, :property_id, socket.assigns.current_property_id)
     }
+
+    base
+    |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
+    |> Map.new()
+  end
+
+  defp empty_keywords_result(page) do
+    %{keywords: [], total_count: 0, total_pages: 1, page: page}
+  end
+
+  defp maybe_warn_no_property(socket) do
+    if socket.assigns[:no_property_warned] != true do
+      socket
+      |> put_flash(
+        :warning,
+        "Please select a Search Console property from Settings to view data."
+      )
+      |> assign(:no_property_warned, true)
+    else
+      socket
+    end
   end
 
   defp parse_period(nil), do: 30
@@ -168,6 +215,9 @@ defmodule GscAnalyticsWeb.DashboardKeywordsLive do
       current_account={@current_account}
       current_account_id={@current_account_id}
       account_options={@account_options}
+      current_property={@current_property}
+      current_property_id={@current_property_id}
+      property_options={@property_options}
     >
       <div class="mx-auto max-w-7xl">
         <div class="mb-6">

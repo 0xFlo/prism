@@ -6,6 +6,7 @@ defmodule GscAnalytics.Analytics.SummaryStatsTest do
   alias GscAnalytics.Schemas.TimeSeries
 
   @account_id 1
+  @property_url "sc-domain:example.com"
 
   setup do
     Repo.delete_all(TimeSeries)
@@ -62,7 +63,11 @@ defmodule GscAnalytics.Analytics.SummaryStatsTest do
       position: 1.0
     )
 
-    result = SummaryStats.fetch(%{account_id: @account_id})
+    result =
+      SummaryStats.fetch(%{
+        account_id: @account_id,
+        property_url: @property_url
+      })
 
     assert result.current_month.total_clicks == 150
     assert result.current_month.total_impressions == 1_400
@@ -89,6 +94,7 @@ defmodule GscAnalytics.Analytics.SummaryStatsTest do
     %TimeSeries{}
     |> TimeSeries.changeset(%{
       account_id: account_id,
+      property_url: @property_url,
       url: url,
       date: date,
       period_type: :daily,
@@ -111,6 +117,7 @@ defmodule GscAnalytics.Analytics.SummaryStatsTest do
     Repo.insert_all("url_lifetime_stats", [
       %{
         account_id: account_id,
+        property_url: @property_url,
         url: url,
         lifetime_clicks: clicks,
         lifetime_impressions: impressions,

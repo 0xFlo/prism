@@ -16,9 +16,9 @@ defmodule GscAnalytics.Schemas.TimeSeries do
 
   schema "gsc_time_series" do
     field :account_id, :integer, primary_key: true
+    field :property_url, :string, primary_key: true
     field :url, :string, primary_key: true
     field :date, :date, primary_key: true
-
     field :period_type, Ecto.Enum, values: [:daily, :weekly, :monthly], default: :daily
     field :clicks, :integer, default: 0
     field :impressions, :integer, default: 0
@@ -35,7 +35,7 @@ defmodule GscAnalytics.Schemas.TimeSeries do
     timestamps(type: :utc_datetime, updated_at: false)
   end
 
-  @required_fields [:account_id, :url, :date]
+  @required_fields [:account_id, :property_url, :url, :date]
   @optional_fields [
     :period_type,
     :clicks,
@@ -54,6 +54,7 @@ defmodule GscAnalytics.Schemas.TimeSeries do
     time_series
     |> cast(attrs, @required_fields ++ @optional_fields)
     |> validate_required(@required_fields)
+    |> validate_url_lengths()
     |> validate_metrics()
     |> validate_date_not_future()
   end
@@ -70,6 +71,18 @@ defmodule GscAnalytics.Schemas.TimeSeries do
   end
 
   # Validations
+
+  defp validate_url_lengths(changeset) do
+    changeset
+    |> validate_length(:url,
+      max: 2048,
+      message: "URL too long (maximum 2048 characters)"
+    )
+    |> validate_length(:property_url,
+      max: 255,
+      message: "Property URL too long (maximum 255 characters)"
+    )
+  end
 
   defp validate_metrics(changeset) do
     changeset
@@ -101,6 +114,24 @@ defmodule GscAnalytics.Schemas.TimeSeries do
   def for_account(query \\ __MODULE__, account_id) do
     from(ts in query,
       where: ts.account_id == ^account_id
+    )
+  end
+
+  @doc """
+  Query time-series data for a specific property.
+  """
+  def for_property(query \\ __MODULE__, property_url) do
+    from(ts in query,
+      where: ts.property_url == ^property_url
+    )
+  end
+
+  @doc """
+  Query time-series data for an account and property.
+  """
+  def for_account_and_property(query \\ __MODULE__, account_id, property_url) do
+    from(ts in query,
+      where: ts.account_id == ^account_id and ts.property_url == ^property_url
     )
   end
 

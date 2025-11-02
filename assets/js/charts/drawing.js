@@ -17,11 +17,11 @@ export function drawGrid(ctx, padding, width, height, tickCount = 5) {
   const plotWidth = width - padding.left - padding.right
   const plotHeight = height - padding.top - padding.bottom
 
-  ctx.strokeStyle = "#e5e5e5"
+  ctx.strokeStyle = "rgba(148, 163, 184, 0.2)" // Slightly more visible
   ctx.lineWidth = 1
-  ctx.setLineDash([2, 2])
+  ctx.setLineDash([4, 4]) // Slightly longer dashes
 
-  // Horizontal grid lines
+  // Horizontal grid lines only (cleaner like Datafast)
   for (let i = 0; i <= tickCount; i++) {
     const y = padding.top + (i * plotHeight) / tickCount
     ctx.beginPath()

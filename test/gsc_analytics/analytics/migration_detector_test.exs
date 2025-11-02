@@ -6,6 +6,7 @@ defmodule GscAnalytics.Analytics.MigrationDetectorTest do
   alias GscAnalytics.Schemas.TimeSeries
 
   @account_id 1
+  @property_url "sc-domain:example.com"
   @old_url "https://example.com/legacy"
   @new_url "https://example.com/new-home"
   @migration_date ~D[2025-02-01]
@@ -61,6 +62,7 @@ defmodule GscAnalytics.Analytics.MigrationDetectorTest do
     params =
       %{
         account_id: @account_id,
+        property_url: @property_url,
         url: url,
         date: date,
         period_type: :daily,

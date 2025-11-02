@@ -12,19 +12,30 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
   def mount(params, _session, socket) do
     # LiveView best practice: Use assign_new/3 for safe defaults
     # This prevents runtime errors from missing assigns and makes the component more resilient
-    {socket, _account} = AccountHelpers.init_account_assigns(socket, params)
+    {socket, account} = AccountHelpers.init_account_assigns(socket, params)
 
-    {:ok,
-     socket
-     |> assign_new(:page_title, fn -> "URL Performance" end)
-     |> assign_new(:insights, fn -> nil end)
-     |> assign_new(:view_mode, fn -> "daily" end)
-     |> assign_new(:period_days, fn -> 30 end)
-     |> assign_new(:encoded_url, fn -> nil end)
-     |> assign_new(:queries_sort_by, fn -> "clicks" end)
-     |> assign_new(:queries_sort_direction, fn -> "desc" end)
-     |> assign_new(:backlinks_sort_by, fn -> "first_seen_at" end)
-     |> assign_new(:backlinks_sort_direction, fn -> "desc" end)}
+    # Redirect to Settings if no workspaces exist
+    if is_nil(account) do
+      {:ok,
+       socket
+       |> put_flash(
+         :info,
+         "Please add a Google Search Console workspace to get started."
+       )
+       |> redirect(to: ~p"/users/settings")}
+    else
+      {:ok,
+       socket
+       |> assign_new(:page_title, fn -> "URL Performance" end)
+       |> assign_new(:insights, fn -> nil end)
+       |> assign_new(:view_mode, fn -> "daily" end)
+       |> assign_new(:period_days, fn -> 30 end)
+       |> assign_new(:encoded_url, fn -> nil end)
+       |> assign_new(:queries_sort_by, fn -> "clicks" end)
+       |> assign_new(:queries_sort_direction, fn -> "desc" end)
+       |> assign_new(:backlinks_sort_by, fn -> "first_seen_at" end)
+       |> assign_new(:backlinks_sort_direction, fn -> "desc" end)}
+    end
   end
 
   @impl true

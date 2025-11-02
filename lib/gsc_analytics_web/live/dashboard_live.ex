@@ -19,7 +19,8 @@ defmodule GscAnalyticsWeb.DashboardLive do
     # This enables real-time dashboard updates when sync completes
     if connected?(socket), do: SyncProgress.subscribe()
 
-    {socket, _account} = AccountHelpers.init_account_assigns(socket, params)
+    {socket, _account, _property} =
+      AccountHelpers.init_account_and_property_assigns(socket, params)
 
     # LiveView best practice: Use assign_new/3 to prevent overwriting existing assigns
     # and provide safe defaults for all template variables
@@ -42,13 +43,19 @@ defmodule GscAnalyticsWeb.DashboardLive do
      |> assign_new(:total_count, fn -> 0 end)
      |> assign_new(:view_mode, fn -> "basic" end)
      |> assign_new(:search, fn -> "" end)
-     |> assign_new(:page_title, fn -> "GSC Analytics Dashboard" end)}
+     |> assign_new(:page_title, fn -> "GSC Analytics Dashboard" end)
+     |> assign_new(:property_label, fn -> nil end)}
   end
 
   @impl true
   def handle_params(params, uri, socket) do
     socket = AccountHelpers.assign_current_account(socket, params)
+    socket = AccountHelpers.assign_current_property(socket, params)
+
     account_id = socket.assigns.current_account_id
+    property = socket.assigns.current_property
+    property_url = property && property.property_url
+    property_label = property && (property.display_name || property.property_url)
 
     limit = DashboardUtils.normalize_limit(params["limit"])
     page = DashboardUtils.normalize_page(params["page"])
@@ -63,23 +70,72 @@ defmodule GscAnalyticsWeb.DashboardLive do
     # Extract path from URI for active nav detection
     current_path = URI.parse(uri).path || "/"
 
-    # Fetch data with pagination and search
-    result =
-      ContentInsights.list_urls(%{
-        limit: limit,
-        page: page,
-        sort_by: sort_by,
-        sort_direction: sort_direction,
-        search: search,
-        period_days: period_days,
-        account_id: account_id
-      })
+    # Only fetch data if we have a property selected
+    {result, stats, site_trends, chart_label, socket} =
+      if property_url do
+        # Fetch data with pagination and search, filtering by property
+        result =
+          ContentInsights.list_urls(%{
+            limit: limit,
+            page: page,
+            sort_by: sort_by,
+            sort_direction: sort_direction,
+            search: search,
+            period_days: period_days,
+            account_id: account_id,
+            property_url: property_url
+          })
 
-    # Get summary stats showing current month, last month, all time
-    stats = SummaryStats.fetch(%{account_id: account_id})
+        # Get summary stats filtered by property
+        stats = SummaryStats.fetch(%{account_id: account_id, property_url: property_url})
 
-    {site_trends, chart_label} =
-      SiteTrends.fetch(chart_view, %{account_id: account_id, period_days: period_days})
+        {site_trends, chart_label} =
+          SiteTrends.fetch(chart_view, %{
+            account_id: account_id,
+            property_url: property_url,
+            period_days: period_days
+          })
+
+        {result, stats, site_trends, chart_label, socket}
+      else
+        # Empty state when no property selected
+        # Only show warning flash if we haven't already
+        socket =
+          if socket.assigns[:no_property_warned] != true do
+            socket
+            |> put_flash(
+              :warning,
+              "Please select a Search Console property from Settings to view data."
+            )
+            |> assign(:no_property_warned, true)
+          else
+            socket
+          end
+
+        empty_result = %{urls: [], page: 1, total_pages: 1, total_count: 0}
+
+        empty_period_stats = %{
+          total_urls: 0,
+          total_clicks: 0,
+          total_impressions: 0,
+          avg_ctr: 0.0,
+          avg_position: 0.0
+        }
+
+        empty_stats = %{
+          current_month: empty_period_stats,
+          last_month: empty_period_stats,
+          all_time:
+            Map.merge(empty_period_stats, %{
+              earliest_date: nil,
+              latest_date: nil,
+              days_with_data: 0
+            }),
+          month_over_month_change: 0
+        }
+
+        {empty_result, empty_stats, [], "Date", socket}
+      end
 
     {:noreply,
      socket
@@ -99,7 +155,14 @@ defmodule GscAnalyticsWeb.DashboardLive do
      |> assign(:view_mode, view_mode)
      |> assign(:search, search)
      |> assign(:period_days, period_days)
-     |> assign(:page_title, "GSC Analytics Dashboard")
+     |> assign(:property_label, property_label)
+     |> assign(
+       :page_title,
+       if(property_label,
+         do: "GSC Dashboard – #{property_label}",
+         else: "GSC Analytics Dashboard"
+       )
+     )
      |> assign_display_labels()
      |> assign_mom_indicators()
      |> assign_date_labels()}
@@ -108,19 +171,13 @@ defmodule GscAnalyticsWeb.DashboardLive do
   @impl true
   def handle_event("search", %{"search" => search_term}, socket) do
     # Update search - reset to page 1 when searching
-    params = %{
-      view_mode: socket.assigns.view_mode,
-      sort_by: socket.assigns.sort_by,
-      sort_direction: socket.assigns.sort_direction,
-      limit: socket.assigns.limit,
-      page: 1,
-      chart_view: socket.assigns.chart_view,
-      search: search_term,
-      period: socket.assigns.period_days,
-      account_id: socket.assigns.current_account_id
-    }
+    {:noreply, push_dashboard_patch(socket, %{search: search_term, page: 1})}
+  end
 
-    {:noreply, push_patch(socket, to: ~p"/dashboard?#{params}")}
+  @impl true
+  def handle_event("switch_property", %{"property_id" => property_id}, socket) do
+    # Switch property while preserving other params
+    {:noreply, push_dashboard_patch(socket, %{property_id: property_id})}
   end
 
   @impl true
@@ -128,19 +185,7 @@ defmodule GscAnalyticsWeb.DashboardLive do
     # Update URL with new view mode - keep current page
     validated_mode = Columns.validate_view_mode(view_mode)
 
-    params = %{
-      view_mode: validated_mode,
-      sort_by: socket.assigns.sort_by,
-      sort_direction: socket.assigns.sort_direction,
-      limit: socket.assigns.limit,
-      page: socket.assigns.page,
-      chart_view: socket.assigns.chart_view,
-      search: socket.assigns.search,
-      period: socket.assigns.period_days,
-      account_id: socket.assigns.current_account_id
-    }
-
-    {:noreply, push_patch(socket, to: ~p"/dashboard?#{params}")}
+    {:noreply, push_dashboard_patch(socket, %{view_mode: validated_mode})}
   end
 
   @impl true
@@ -148,45 +193,23 @@ defmodule GscAnalyticsWeb.DashboardLive do
     # Update local assigns for immediate visual feedback, then sync URL for data refresh
     new_period_days = parse_period(period)
 
-    params = %{
-      view_mode: socket.assigns.view_mode,
-      sort_by: socket.assigns.sort_by,
-      sort_direction: socket.assigns.sort_direction,
-      limit: socket.assigns.limit,
-      page: 1,
-      chart_view: socket.assigns.chart_view,
-      search: socket.assigns.search,
-      period: period,
-      account_id: socket.assigns.current_account_id
-    }
+    new_socket =
+      socket
+      |> assign(:period_days, new_period_days)
+      |> assign_display_labels()
 
-    {:noreply,
-     socket
-     |> assign(:period_days, new_period_days)
-     |> assign_display_labels()
-     |> push_patch(to: ~p"/dashboard?#{params}")}
+    {:noreply, push_dashboard_patch(new_socket, %{period: period, page: 1})}
   end
 
   @impl true
   def handle_event("change_chart_view", %{"chart_view" => chart_view}, socket) do
     # Update local assigns for immediate visual feedback, then sync URL for data refresh
-    params = %{
-      view_mode: socket.assigns.view_mode,
-      sort_by: socket.assigns.sort_by,
-      sort_direction: socket.assigns.sort_direction,
-      limit: socket.assigns.limit,
-      page: socket.assigns.page,
-      chart_view: chart_view,
-      search: socket.assigns.search,
-      period: socket.assigns.period_days,
-      account_id: socket.assigns.current_account_id
-    }
+    new_socket =
+      socket
+      |> assign(:chart_view, chart_view)
+      |> assign_display_labels()
 
-    {:noreply,
-     socket
-     |> assign(:chart_view, chart_view)
-     |> assign_display_labels()
-     |> push_patch(to: ~p"/dashboard?#{params}")}
+    {:noreply, push_dashboard_patch(new_socket, %{chart_view: chart_view})}
   end
 
   @impl true
@@ -209,38 +232,19 @@ defmodule GscAnalyticsWeb.DashboardLive do
         if normalized_column == "position", do: "asc", else: "desc"
       end
 
-    params = %{
-      view_mode: socket.assigns.view_mode,
-      sort_by: normalized_column,
-      sort_direction: new_direction,
-      limit: socket.assigns.limit,
-      page: 1,
-      chart_view: socket.assigns.chart_view,
-      search: socket.assigns.search,
-      period: socket.assigns.period_days,
-      account_id: socket.assigns.current_account_id
-    }
-
-    {:noreply, push_patch(socket, to: ~p"/dashboard?#{params}")}
+    {:noreply,
+     push_dashboard_patch(socket, %{
+       sort_by: normalized_column,
+       sort_direction: new_direction,
+       page: 1
+     })}
   end
 
   @impl true
   def handle_event("change_limit", %{"limit" => limit}, socket) do
     normalized_limit = DashboardUtils.normalize_limit(limit)
 
-    params = %{
-      view_mode: socket.assigns.view_mode,
-      sort_by: socket.assigns.sort_by,
-      sort_direction: socket.assigns.sort_direction,
-      limit: normalized_limit,
-      page: 1,
-      chart_view: socket.assigns.chart_view,
-      search: socket.assigns.search,
-      period: socket.assigns.period_days,
-      account_id: socket.assigns.current_account_id
-    }
-
-    {:noreply, push_patch(socket, to: ~p"/dashboard?#{params}")}
+    {:noreply, push_dashboard_patch(socket, %{limit: normalized_limit, page: 1})}
   end
 
   @impl true
@@ -251,19 +255,7 @@ defmodule GscAnalyticsWeb.DashboardLive do
     # Ensure page is within valid range
     page_num = max(1, min(page_num, socket.assigns.total_pages))
 
-    params = %{
-      view_mode: socket.assigns.view_mode,
-      sort_by: socket.assigns.sort_by,
-      sort_direction: socket.assigns.sort_direction,
-      limit: socket.assigns.limit,
-      page: page_num,
-      chart_view: socket.assigns.chart_view,
-      search: socket.assigns.search,
-      period: socket.assigns.period_days,
-      account_id: socket.assigns.current_account_id
-    }
-
-    {:noreply, push_patch(socket, to: ~p"/dashboard?#{params}")}
+    {:noreply, push_dashboard_patch(socket, %{page: page_num})}
   end
 
   @impl true
@@ -271,19 +263,7 @@ defmodule GscAnalyticsWeb.DashboardLive do
     # Navigate to next page
     next_page = min(socket.assigns.page + 1, socket.assigns.total_pages)
 
-    params = %{
-      view_mode: socket.assigns.view_mode,
-      sort_by: socket.assigns.sort_by,
-      sort_direction: socket.assigns.sort_direction,
-      limit: socket.assigns.limit,
-      page: next_page,
-      chart_view: socket.assigns.chart_view,
-      search: socket.assigns.search,
-      period: socket.assigns.period_days,
-      account_id: socket.assigns.current_account_id
-    }
-
-    {:noreply, push_patch(socket, to: ~p"/dashboard?#{params}")}
+    {:noreply, push_dashboard_patch(socket, %{page: next_page})}
   end
 
   @impl true
@@ -291,36 +271,7 @@ defmodule GscAnalyticsWeb.DashboardLive do
     # Navigate to previous page
     prev_page = max(socket.assigns.page - 1, 1)
 
-    params = %{
-      view_mode: socket.assigns.view_mode,
-      sort_by: socket.assigns.sort_by,
-      sort_direction: socket.assigns.sort_direction,
-      limit: socket.assigns.limit,
-      page: prev_page,
-      chart_view: socket.assigns.chart_view,
-      search: socket.assigns.search,
-      period: socket.assigns.period_days,
-      account_id: socket.assigns.current_account_id
-    }
-
-    {:noreply, push_patch(socket, to: ~p"/dashboard?#{params}")}
-  end
-
-  @impl true
-  def handle_event("change_account", %{"account_id" => account_id}, socket) do
-    params = %{
-      view_mode: socket.assigns.view_mode,
-      sort_by: socket.assigns.sort_by,
-      sort_direction: socket.assigns.sort_direction,
-      limit: socket.assigns.limit,
-      page: socket.assigns.page,
-      chart_view: socket.assigns.chart_view,
-      search: socket.assigns.search,
-      period: socket.assigns.period_days,
-      account_id: account_id
-    }
-
-    {:noreply, push_patch(socket, to: ~p"/dashboard?#{params}")}
+    {:noreply, push_dashboard_patch(socket, %{page: prev_page})}
   end
 
   @impl true
@@ -333,25 +284,61 @@ defmodule GscAnalyticsWeb.DashboardLive do
   def handle_info({:sync_progress, %{type: :finished, job: _job}}, socket) do
     # Sync completed - refresh all dashboard data
     account_id = socket.assigns.current_account_id
+    property = socket.assigns.current_property
+    property_url = property && property.property_url
 
     result =
-      ContentInsights.list_urls(%{
-        limit: socket.assigns.limit,
-        page: socket.assigns.page,
-        sort_by: socket.assigns.sort_by,
-        sort_direction: String.to_existing_atom(socket.assigns.sort_direction),
-        search: socket.assigns.search,
-        period_days: socket.assigns[:period_days] || 30,
-        account_id: account_id
-      })
+      if property_url do
+        ContentInsights.list_urls(%{
+          limit: socket.assigns.limit,
+          page: socket.assigns.page,
+          sort_by: socket.assigns.sort_by,
+          sort_direction: String.to_existing_atom(socket.assigns.sort_direction),
+          search: socket.assigns.search,
+          period_days: socket.assigns[:period_days] || 30,
+          account_id: account_id,
+          property_url: property_url
+        })
+      else
+        %{urls: [], page: 1, total_pages: 1, total_count: 0}
+      end
 
-    stats = SummaryStats.fetch(%{account_id: account_id})
+    stats =
+      if property_url do
+        SummaryStats.fetch(%{account_id: account_id, property_url: property_url})
+      else
+        # Same empty stats structure as in handle_params
+        empty_period_stats = %{
+          total_urls: 0,
+          total_clicks: 0,
+          total_impressions: 0,
+          avg_ctr: 0.0,
+          avg_position: 0.0
+        }
+
+        %{
+          current_month: empty_period_stats,
+          last_month: empty_period_stats,
+          all_time:
+            Map.merge(empty_period_stats, %{
+              earliest_date: nil,
+              latest_date: nil,
+              days_with_data: 0
+            }),
+          month_over_month_change: 0
+        }
+      end
 
     {site_trends, chart_label} =
-      SiteTrends.fetch(socket.assigns.chart_view, %{
-        account_id: account_id,
-        period_days: socket.assigns.period_days
-      })
+      if property_url do
+        SiteTrends.fetch(socket.assigns.chart_view, %{
+          account_id: account_id,
+          property_url: property_url,
+          period_days: socket.assigns.period_days
+        })
+      else
+        {[], "Date"}
+      end
 
     {:noreply,
      socket
@@ -411,6 +398,33 @@ defmodule GscAnalyticsWeb.DashboardLive do
   defp parse_period(_), do: 30
 
   # Display label helpers - extract inline template computations to proper assigns
+  defp build_query_params(socket, overrides) do
+    base = %{
+      view_mode: socket.assigns.view_mode,
+      sort_by: socket.assigns.sort_by,
+      sort_direction: socket.assigns.sort_direction,
+      limit: socket.assigns.limit,
+      page: socket.assigns.page,
+      chart_view: socket.assigns.chart_view,
+      search: socket.assigns.search,
+      period: socket.assigns.period_days,
+      property_id: socket.assigns.current_property_id
+    }
+
+    base
+    |> Map.merge(overrides)
+    |> Enum.reject(fn
+      {_key, value} when value in [nil, ""] -> true
+      _ -> false
+    end)
+    |> Map.new()
+  end
+
+  defp push_dashboard_patch(socket, overrides) do
+    params = build_query_params(socket, overrides)
+    push_patch(socket, to: ~p"/dashboard?#{params}")
+  end
+
   defp assign_display_labels(socket) do
     period_label_text = period_label(socket.assigns.period_days)
 

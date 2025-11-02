@@ -62,6 +62,7 @@ defmodule GscAnalytics.ContentInsights.KeywordAggregator do
 
   def list(opts) when is_map(opts) do
     account_id = Accounts.resolve_account_id(opts)
+    property_url = extract_property_url(opts)
     limit = normalize_limit(Map.get(opts, :limit))
     page = normalize_page(Map.get(opts, :page))
     period_days = Map.get(opts, :period_days, 30)
@@ -75,11 +76,20 @@ defmodule GscAnalytics.ContentInsights.KeywordAggregator do
 
     # First, get total count for pagination metadata
     # This uses the same filtering logic but counts distinct queries
-    total_count = count_keywords(account_id, period_start, search)
+    total_count = count_keywords(account_id, property_url, period_start, search)
 
     # Then, fetch the paginated keywords with full aggregation
     keywords =
-      fetch_keywords(account_id, period_start, search, sort_by, sort_direction, page, limit)
+      fetch_keywords(
+        account_id,
+        property_url,
+        period_start,
+        search,
+        sort_by,
+        sort_direction,
+        page,
+        limit
+      )
 
     end_time = System.monotonic_time()
     duration = System.convert_time_unit(end_time - start_time, :native, :millisecond)
@@ -87,7 +97,7 @@ defmodule GscAnalytics.ContentInsights.KeywordAggregator do
     :telemetry.execute(
       [:gsc_analytics, :keyword_aggregator, :db_aggregation],
       %{duration_ms: duration, rows: length(keywords), total_count: total_count},
-      %{account_id: account_id, period_days: period_days}
+      %{account_id: account_id, property_url: property_url, period_days: period_days}
     )
 
     %{
@@ -100,7 +110,7 @@ defmodule GscAnalytics.ContentInsights.KeywordAggregator do
   end
 
   # ✅ GOOD: Count distinct queries in PostgreSQL
-  defp count_keywords(account_id, period_start, search) do
+  defp count_keywords(account_id, property_url, period_start, search) do
     base_query =
       from(ts in TimeSeries,
         where: ts.account_id == ^account_id,
@@ -111,6 +121,7 @@ defmodule GscAnalytics.ContentInsights.KeywordAggregator do
         # Use COUNT(DISTINCT ...) to count unique queries
         select: fragment("COUNT(DISTINCT ?->>'query')", q)
       )
+      |> maybe_filter_property(property_url)
 
     filtered_query =
       if search && search != "" do
@@ -124,7 +135,16 @@ defmodule GscAnalytics.ContentInsights.KeywordAggregator do
   end
 
   # ✅ GOOD: Fetch and aggregate keywords in PostgreSQL
-  defp fetch_keywords(account_id, period_start, search, sort_by, sort_direction, page, limit) do
+  defp fetch_keywords(
+         account_id,
+         property_url,
+         period_start,
+         search,
+         sort_by,
+         sort_direction,
+         page,
+         limit
+       ) do
     offset = (page - 1) * limit
 
     base_query =
@@ -160,6 +180,7 @@ defmodule GscAnalytics.ContentInsights.KeywordAggregator do
           url_count: fragment("COUNT(DISTINCT ?)", ts.url)
         }
       )
+      |> maybe_filter_property(property_url)
 
     # ✅ GOOD: Filter in PostgreSQL (search)
     filtered_query =
@@ -178,6 +199,30 @@ defmodule GscAnalytics.ContentInsights.KeywordAggregator do
     |> limit(^limit)
     |> offset(^offset)
     |> Repo.all()
+  end
+
+  defp extract_property_url(opts) do
+    opts
+    |> Map.get(:property_url) ||
+      Map.get(opts, "property_url")
+      |> normalize_property_url()
+  end
+
+  defp normalize_property_url(value) when is_binary(value) do
+    value
+    |> String.trim()
+    |> case do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp normalize_property_url(_), do: nil
+
+  defp maybe_filter_property(query, nil), do: query
+
+  defp maybe_filter_property(query, property_url) do
+    where(query, [ts, _q], ts.property_url == ^property_url)
   end
 
   defp apply_sort(query, sort_by, direction) do

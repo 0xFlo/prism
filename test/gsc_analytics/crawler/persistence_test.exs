@@ -7,6 +7,8 @@ defmodule GscAnalytics.Crawler.PersistenceTest do
 
   import Ecto.Query
 
+  @test_property_url "sc-domain:example.com"
+
   setup do
     # Create test performance records
     urls = [
@@ -18,6 +20,7 @@ defmodule GscAnalytics.Crawler.PersistenceTest do
     for url <- urls do
       Repo.insert!(%Performance{
         account_id: 1,
+        property_url: @test_property_url,
         url: url,
         clicks: 100,
         impressions: 1000,
@@ -219,6 +222,7 @@ defmodule GscAnalytics.Crawler.PersistenceTest do
       for url <- bulk_urls do
         Repo.insert!(%Performance{
           account_id: 1,
+          property_url: @test_property_url,
           url: url,
           clicks: 10,
           impressions: 100,

@@ -22,6 +22,8 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
   alias GscAnalytics.Repo
   alias GscAnalytics.Schemas.TimeSeries
 
+  @property_url "sc-domain:example.com"
+
   setup :register_and_log_in_user
 
   describe "URL detail user journey: viewing time series" do
@@ -364,6 +366,7 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
 
     record = %{
       account_id: account_id,
+      property_url: @property_url,
       url: url,
       date: date,
       clicks: clicks,

@@ -6,7 +6,7 @@ defmodule GscAnalytics.DataSources.GSC.Support.RateLimiter do
   """
 
   require Logger
-  alias GscAnalytics.DataSources.GSC.Accounts
+  alias GscAnalytics.Accounts
 
   @queries_per_minute 1_200
   # 1 minute in milliseconds
@@ -57,8 +57,8 @@ defmodule GscAnalytics.DataSources.GSC.Support.RateLimiter do
   defp resolve_site(_account_id, site) when is_binary(site) and site != "", do: {:ok, site}
 
   defp resolve_site(account_id, _site_url) do
-    case Accounts.default_property(account_id) do
-      {:ok, property} -> {:ok, property}
+    case Accounts.get_active_property_url(account_id) do
+      {:ok, property_url} -> {:ok, property_url}
       {:error, reason} -> {:error, reason}
     end
   end

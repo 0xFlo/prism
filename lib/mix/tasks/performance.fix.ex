@@ -51,6 +51,7 @@ defmodule Mix.Tasks.Performance.Fix do
   use Mix.Task
 
   require Logger
+  import Ecto.Query
   alias GscAnalytics.Repo
   alias GscAnalytics.Schemas.Performance
   alias GscAnalytics.DataSources.GSC.Core.Persistence
@@ -83,8 +84,8 @@ defmodule Mix.Tasks.Performance.Fix do
     """)
 
     # Fetch all URLs that need fixing
-    urls = fetch_all_urls(account_id)
-    total = length(urls)
+    url_pairs = fetch_all_urls(account_id)
+    total = length(url_pairs)
 
     Mix.shell().info("📊 Found #{total} Performance records to process\n")
 
@@ -92,25 +93,26 @@ defmodule Mix.Tasks.Performance.Fix do
       Mix.shell().info("✅ No records to process")
       :ok
     else
-      process_urls(urls, account_id, total)
+      process_urls(url_pairs, account_id, total)
     end
   end
 
   defp fetch_all_urls(account_id) do
-    Performance
+    from(p in Performance,
+      where: p.account_id == ^account_id,
+      select: {p.property_url, p.url}
+    )
     |> Repo.all()
-    |> Enum.filter(&(&1.account_id == account_id))
-    |> Enum.map(& &1.url)
   end
 
-  defp process_urls(urls, account_id, total) do
+  defp process_urls(url_pairs, account_id, total) do
     start_time = System.monotonic_time(:millisecond)
 
     results =
-      urls
+      url_pairs
       |> Enum.with_index(1)
-      |> Enum.map(fn {url, index} ->
-        process_url(url, account_id, index, total)
+      |> Enum.map(fn {{property_url, url}, index} ->
+        process_url(property_url, url, account_id, index, total)
       end)
 
     duration = System.monotonic_time(:millisecond) - start_time
@@ -124,13 +126,13 @@ defmodule Mix.Tasks.Performance.Fix do
     print_summary(success_count, error_count, skipped_count, duration)
   end
 
-  defp process_url(url, account_id, index, total) do
+  defp process_url(property_url, url, account_id, index, total) do
     # Show progress
     if rem(index, 10) == 0 or index == 1 do
       Mix.shell().info("Processing #{index}/#{total}...")
     end
 
-    case Persistence.refresh_performance_cache(account_id, url, 30) do
+    case Persistence.refresh_performance_cache(account_id, property_url, url, 30) do
       {:ok, nil} ->
         :skipped
 

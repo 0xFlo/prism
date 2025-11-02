@@ -22,6 +22,7 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregator do
   defp build_aggregation_query(urls, period_type, opts) when is_list(urls) do
     start_date = Map.get(opts, :start_date)
     account_id = Map.get(opts, :account_id)
+    property_url = Map.get(opts, :property_url)
 
     start_time = System.monotonic_time()
 
@@ -29,7 +30,7 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregator do
       TimeSeries
       |> where([ts], ts.url in ^urls)
       |> where([ts], ts.date >= ^start_date)
-      |> maybe_filter_account(account_id)
+      |> maybe_filter_account_and_property(account_id, property_url)
       |> apply_period_aggregation(period_type)
       |> Repo.all()
       # Compute period_end in application layer (not in SQL, avoids GROUP BY issues)
@@ -58,13 +59,14 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregator do
   defp build_site_aggregation_query(period_type, opts) do
     start_date = Map.get(opts, :start_date)
     account_id = Map.get(opts, :account_id)
+    property_url = Map.get(opts, :property_url)
 
     start_time = System.monotonic_time()
 
     result =
       TimeSeries
       |> where([ts], ts.date >= ^start_date)
-      |> maybe_filter_account(account_id)
+      |> maybe_filter_account_and_property(account_id, property_url)
       |> apply_period_aggregation(period_type)
       |> Repo.all()
       # Compute period_end in application layer
@@ -619,10 +621,11 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregator do
   def fetch_site_aggregate(days \\ 30, opts \\ %{}) do
     start_date = Date.add(Date.utc_today(), -days)
     account_id = Map.get(opts, :account_id)
+    property_url = Map.get(opts, :property_url)
 
     TimeSeries
     |> where([ts], ts.date >= ^start_date)
-    |> maybe_filter_account(account_id)
+    |> maybe_filter_account_and_property(account_id, property_url)
     |> group_by([ts], ts.date)
     |> order_by([ts], asc: ts.date)
     |> select([ts], %{
@@ -750,6 +753,24 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregator do
     end
   end
 
+  defp maybe_filter_account_and_property(query, nil, nil), do: query
+
+  defp maybe_filter_account_and_property(query, account_id, nil) when not is_nil(account_id) do
+    where(query, [ts], ts.account_id == ^account_id)
+  end
+
+  defp maybe_filter_account_and_property(query, nil, property_url)
+       when not is_nil(property_url) do
+    where(query, [ts], ts.property_url == ^property_url)
+  end
+
+  defp maybe_filter_account_and_property(query, account_id, property_url) do
+    query
+    |> where([ts], ts.account_id == ^account_id)
+    |> where([ts], ts.property_url == ^property_url)
+  end
+
+  # Legacy functions kept for compatibility
   defp maybe_filter_account(query, nil), do: query
 
   defp maybe_filter_account(query, account_id) do

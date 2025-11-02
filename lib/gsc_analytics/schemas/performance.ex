@@ -18,6 +18,7 @@ defmodule GscAnalytics.Schemas.Performance do
   schema "gsc_performance" do
     field :account_id, :integer
     field :url, :string
+    field :property_url, :string
     field :clicks, :integer, default: 0
     field :impressions, :integer, default: 0
     field :ctr, :float, default: 0.0
@@ -48,7 +49,7 @@ defmodule GscAnalytics.Schemas.Performance do
     timestamps(type: :utc_datetime)
   end
 
-  @required_fields [:account_id, :url]
+  @required_fields [:account_id, :property_url, :url]
   @optional_fields [
     :clicks,
     :impressions,
@@ -76,10 +77,11 @@ defmodule GscAnalytics.Schemas.Performance do
     |> cast(attrs, @required_fields ++ @optional_fields)
     |> validate_required(@required_fields)
     |> validate_url()
+    |> validate_url_lengths()
     |> validate_metrics()
     |> validate_date_range()
     |> put_cache_expiry()
-    |> unique_constraint([:account_id, :url], name: :gsc_performance_account_url_index)
+    |> unique_constraint([:account_id, :property_url, :url], name: :idx_performance_composite)
   end
 
   @doc """
@@ -103,6 +105,22 @@ defmodule GscAnalytics.Schemas.Performance do
           [url: "must be a valid HTTP(S) URL"]
       end
     end)
+  end
+
+  defp validate_url_lengths(changeset) do
+    changeset
+    |> validate_length(:url,
+      max: 2048,
+      message: "URL too long (maximum 2048 characters)"
+    )
+    |> validate_length(:property_url,
+      max: 255,
+      message: "Property URL too long (maximum 255 characters)"
+    )
+    |> validate_length(:redirect_url,
+      max: 2048,
+      message: "Redirect URL too long (maximum 2048 characters)"
+    )
   end
 
   defp validate_metrics(changeset) do
@@ -152,6 +170,24 @@ defmodule GscAnalytics.Schemas.Performance do
   def for_account(query \\ __MODULE__, account_id) do
     from(p in query,
       where: p.account_id == ^account_id
+    )
+  end
+
+  @doc """
+  Query to get performance data for a specific property.
+  """
+  def for_property(query \\ __MODULE__, property_url) do
+    from(p in query,
+      where: p.property_url == ^property_url
+    )
+  end
+
+  @doc """
+  Query to get performance data for an account and property.
+  """
+  def for_account_and_property(query \\ __MODULE__, account_id, property_url) do
+    from(p in query,
+      where: p.account_id == ^account_id and p.property_url == ^property_url
     )
   end
 

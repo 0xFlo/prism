@@ -31,32 +31,66 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
 
     progress_state = SyncProgress.current_state()
 
-    {socket, account} = AccountHelpers.init_account_assigns(socket, params)
+    {socket, account, _property} =
+      AccountHelpers.init_account_and_property_assigns(socket, params)
 
-    socket =
-      socket
-      |> assign(:current_path, "/dashboard/sync")
-      |> assign(:page_title, "Sync Status")
-      |> assign(:day_options, @day_options)
-      |> assign(:form, build_form(@default_days))
-      |> assign(:sync_info, empty_sync_info())
-      |> assign(:sync_info_status, :idle)
-      |> assign(:sync_info_requested_account_id, nil)
-      |> assign(:sync_info_loaded_account_id, nil)
-      |> assign_progress(progress_state)
+    # Redirect to Settings if no workspaces exist
+    if is_nil(account) do
+      {:ok,
+       socket
+       |> put_flash(
+         :info,
+         "Please add a Google Search Console workspace to get started."
+       )
+       |> redirect(to: ~p"/users/settings")}
+    else
+      socket =
+        socket
+        |> assign(:current_path, "/dashboard/sync")
+        |> assign(:page_title, "Sync Status")
+        |> assign(:day_options, @day_options)
+        |> assign(:form, build_form(@default_days))
+        |> assign(:sync_info, empty_sync_info())
+        |> assign(:sync_info_status, :idle)
+        |> assign(:sync_info_requested_account_id, nil)
+        |> assign(:sync_info_loaded_account_id, nil)
+        |> assign(:sync_info_loaded_property_id, nil)
+        |> assign_progress(progress_state)
 
-    socket = maybe_request_sync_info(socket, account.id, force: true)
+      property_url = socket.assigns.current_property && socket.assigns.current_property.property_url
+      socket = maybe_request_sync_info(socket, account.id, property_url, force: true)
 
-    {:ok, socket}
+      {:ok, socket}
+    end
   end
 
   @impl true
   def handle_params(params, _uri, socket) do
-    socket = AccountHelpers.assign_current_account(socket, params)
-    account_id = socket.assigns.current_account_id
+    previous_property_id = socket.assigns[:current_property_id]
 
-    force? = socket.assigns[:sync_info_loaded_account_id] != account_id
-    socket = maybe_request_sync_info(socket, account_id, force: force?)
+    socket =
+      socket
+      |> AccountHelpers.assign_current_account(params)
+      |> AccountHelpers.assign_current_property(params)
+
+    account_id = socket.assigns.current_account_id
+    new_property_id = socket.assigns[:current_property_id]
+    property_url = socket.assigns.current_property && socket.assigns.current_property.property_url
+
+    # Clear progress when property changes
+    socket =
+      if previous_property_id != new_property_id do
+        assign_progress(socket, nil)
+      else
+        socket
+      end
+
+    # Force reload if account or property changed
+    force? =
+      socket.assigns[:sync_info_loaded_account_id] != account_id or
+        socket.assigns[:sync_info_loaded_property_id] != new_property_id
+
+    socket = maybe_request_sync_info(socket, account_id, property_url, force: force?)
 
     {:noreply, socket}
   end
@@ -72,16 +106,20 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
           {:noreply, put_flash(socket, :error, "A sync is already in progress")}
         else
           account_id = socket.assigns.current_account_id
-          case configured_site(socket.assigns.current_scope, account_id) do
+
+          case configured_site(socket.assigns.current_property) do
             {:ok, site_url} ->
               Task.start(fn -> Sync.sync_full_history(site_url, account_id: account_id) end)
 
               form = build_form("full")
+              property_name =
+                socket.assigns.current_property.display_name ||
+                  socket.assigns.current_property.property_url
 
               {:noreply,
                socket
                |> assign(:form, form)
-               |> put_flash(:info, "Full history sync started")}
+               |> put_flash(:info, "Full history sync started for #{property_name}")}
 
             {:error, message} ->
               {:noreply, put_flash(socket, :error, message)}
@@ -93,16 +131,20 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
           {:noreply, put_flash(socket, :error, "A sync is already in progress")}
         else
           account_id = socket.assigns.current_account_id
-          case configured_site(socket.assigns.current_scope, account_id) do
+
+          case configured_site(socket.assigns.current_property) do
             {:ok, site_url} ->
               Task.start(fn -> Sync.sync_last_n_days(site_url, days, account_id: account_id) end)
 
               form = build_form(Integer.to_string(days))
+              property_name =
+                socket.assigns.current_property.display_name ||
+                  socket.assigns.current_property.property_url
 
               {:noreply,
                socket
                |> assign(:form, form)
-               |> put_flash(:info, "Sync started for the last #{days} days")}
+               |> put_flash(:info, "Sync started for #{property_name}: last #{days} days")}
 
             {:error, message} ->
               {:noreply, put_flash(socket, :error, message)}
@@ -119,6 +161,11 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
   @impl true
   def handle_event("change_account", %{"account_id" => account_id}, socket) do
     {:noreply, push_patch(socket, to: ~p"/dashboard/sync?#{[account_id: account_id]}")}
+  end
+
+  @impl true
+  def handle_event("switch_property", %{"property_id" => property_id}, socket) do
+    {:noreply, push_patch(socket, to: ~p"/dashboard/sync?#{[property_id: property_id]}")}
   end
 
   @impl true
@@ -146,7 +193,8 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
     socket =
       case payload.type do
         :finished ->
-          maybe_request_sync_info(socket, socket.assigns.current_account_id, force: true)
+          property_url = socket.assigns.current_property && socket.assigns.current_property.property_url
+          maybe_request_sync_info(socket, socket.assigns.current_account_id, property_url, force: true)
 
         _ ->
           socket
@@ -155,17 +203,18 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
     {:noreply, socket}
   end
 
-  def handle_info({:load_sync_info, account_id, force?}, %{assigns: assigns} = socket) do
+  def handle_info({:load_sync_info, account_id, property_url, force?}, %{assigns: assigns} = socket) do
     cond do
       assigns.current_account_id != account_id and not force? ->
         {:noreply, socket}
 
       true ->
-        info = load_sync_info(assigns.current_scope, account_id)
+        info = load_sync_info(assigns.current_scope, account_id, property_url)
 
         socket =
           if assigns.current_account_id == account_id do
-            assign_sync_info(socket, info, account_id)
+            property_id = assigns.current_property && assigns.current_property.id
+            assign_sync_info(socket, info, account_id, property_id)
           else
             socket
           end
@@ -206,7 +255,14 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
     current_account_id = socket.assigns.current_account_id
     job_account_id = (job.metadata || %{})[:account_id]
 
-    if job_account_id && current_account_id && job_account_id != current_account_id do
+    # Also check if job's property matches current property
+    job_property_url = (job.metadata || %{})[:site_url]
+    current_property = socket.assigns[:current_property]
+    current_property_url = current_property && current_property.property_url
+
+    # Clear progress if account or property mismatch
+    if (job_account_id && current_account_id && job_account_id != current_account_id) or
+         (job_property_url && current_property_url && job_property_url != current_property_url) do
       assign_progress(socket, nil)
     else
       total = job.total_steps || 0
@@ -256,14 +312,14 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
     end
   end
 
-  defp maybe_request_sync_info(socket, account_id, opts)
+  defp maybe_request_sync_info(socket, account_id, property_url, opts)
 
-  defp maybe_request_sync_info(socket, _account_id, _opts)
+  defp maybe_request_sync_info(socket, _account_id, _property_url, _opts)
        when not is_map_key(socket.assigns, :sync_info_status) do
     socket
   end
 
-  defp maybe_request_sync_info(socket, account_id, opts) do
+  defp maybe_request_sync_info(socket, account_id, property_url, opts) do
     force? = Keyword.get(opts, :force?, false)
     requested_account = socket.assigns[:sync_info_requested_account_id]
     loaded_account = socket.assigns[:sync_info_loaded_account_id]
@@ -280,7 +336,7 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
         socket
 
       true ->
-        send(self(), {:load_sync_info, account_id, force?})
+        send(self(), {:load_sync_info, account_id, property_url, force?})
 
         socket
         |> assign(:sync_info_status, :loading)
@@ -297,11 +353,12 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
     end
   end
 
-  defp assign_sync_info(socket, info, account_id) do
+  defp assign_sync_info(socket, info, account_id, property_id) do
     socket
     |> assign(:sync_info, info)
     |> assign(:sync_info_status, :ready)
     |> assign(:sync_info_loaded_account_id, account_id)
+    |> assign(:sync_info_loaded_property_id, property_id)
     |> assign(:sync_info_requested_account_id, nil)
   end
 
@@ -349,61 +406,56 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
     }
   end
 
-  defp configured_site(current_scope, account_id) do
-    case Accounts.gsc_default_property(current_scope, account_id) do
-      {:ok, property} ->
-        {:ok, property}
+  defp configured_site(current_property) do
+    case current_property do
+      %{property_url: property_url} when is_binary(property_url) ->
+        {:ok, property_url}
 
-      {:error, :missing_property} ->
-        {:error, "Select a default Search Console property from Settings before running a sync."}
+      nil ->
+        {:error, "Please select a Search Console property before running a sync."}
 
-      {:error, :unauthorized_account} ->
-        {:error, "You do not have access to manage that workspace."}
-
-      {:error, reason} ->
-        {:error, "Could not determine the Search Console property: #{inspect(reason)}"}
+      _ ->
+        {:error, "Invalid property configuration."}
     end
   end
 
-  defp load_sync_info(_current_scope, account_id) when is_integer(account_id) do
+  defp load_sync_info(_current_scope, account_id, property_url)
+       when is_integer(account_id) and is_binary(property_url) do
+    # Optimized: Fetch all sync info in a single query instead of 4 separate queries
+    result =
+      from(ts in TimeSeries,
+        where: ts.account_id == ^account_id and ts.property_url == ^property_url,
+        select: %{
+          earliest_date: min(ts.date),
+          latest_date: max(ts.date),
+          total_records: count(ts.date)
+        }
+      )
+      |> Repo.one()
+
+    # Last sync from Performance table (separate query needed for different table)
     last_sync =
       from(p in Performance,
-        where: p.account_id == ^account_id,
+        where: p.account_id == ^account_id and p.property_url == ^property_url,
         select: max(p.fetched_at)
       )
       |> Repo.one()
 
-    earliest_date =
-      from(ts in TimeSeries,
-        where: ts.account_id == ^account_id,
-        order_by: [asc: ts.date],
-        select: ts.date,
-        limit: 1
-      )
-      |> Repo.one()
-
-    latest_date =
-      from(ts in TimeSeries,
-        where: ts.account_id == ^account_id,
-        order_by: [desc: ts.date],
-        select: ts.date,
-        limit: 1
-      )
-      |> Repo.one()
-
-    total_records =
-      from(ts in TimeSeries,
-        where: ts.account_id == ^account_id
-      )
-      |> Repo.aggregate(:count, :date)
+    earliest_date = result.earliest_date
+    latest_date = result.latest_date
 
     %{
       last_sync: last_sync,
       earliest_date: earliest_date,
       latest_date: latest_date,
-      total_records: total_records,
+      total_records: result.total_records,
       days_available: calculate_days_available(earliest_date, latest_date)
     }
+  end
+
+  defp load_sync_info(_current_scope, account_id, nil) when is_integer(account_id) do
+    # Return empty sync info if no property selected
+    empty_sync_info()
   end
 
   defp calculate_days_available(%Date{} = min, %Date{} = max) do

@@ -27,6 +27,7 @@ defmodule GscAnalytics.ContentInsights.UrlPerformance do
 
   def list(opts) when is_map(opts) do
     account_id = Accounts.resolve_account_id(opts)
+    property_url = Map.get(opts, :property_url) || raise ArgumentError, "property_url is required"
     limit = normalize_limit(Map.get(opts, :limit))
     page = normalize_page(Map.get(opts, :page))
     period_days = Map.get(opts, :period_days, 30)
@@ -36,7 +37,7 @@ defmodule GscAnalytics.ContentInsights.UrlPerformance do
 
     query =
       account_id
-      |> build_hybrid_query(period_days, opts)
+      |> build_hybrid_query(property_url, period_days, opts)
       |> apply_search_filter(search)
 
     total_count = count_urls(query)
@@ -66,12 +67,14 @@ defmodule GscAnalytics.ContentInsights.UrlPerformance do
     }
   end
 
-  defp build_hybrid_query(account_id, period_days, _opts) do
+  defp build_hybrid_query(account_id, property_url, period_days, _opts) do
     period_start = Date.add(Date.utc_today(), -period_days)
 
     period_query =
       from ts in TimeSeries,
-        where: ts.account_id == ^account_id and ts.date >= ^period_start,
+        where:
+          ts.account_id == ^account_id and ts.property_url == ^property_url and
+            ts.date >= ^period_start,
         group_by: ts.url,
         select: %{
           url: ts.url,
@@ -97,13 +100,13 @@ defmodule GscAnalytics.ContentInsights.UrlPerformance do
         }
 
     from ls in "url_lifetime_stats",
-      where: ls.account_id == ^account_id,
+      where: ls.account_id == ^account_id and ls.property_url == ^property_url,
       left_join: pm in subquery(period_query),
       on: pm.url == ls.url,
       left_join: bl in subquery(backlink_query),
       on: bl.target_url == ls.url,
       left_join: p in Performance,
-      on: p.url == ls.url and p.account_id == ^account_id,
+      on: p.url == ls.url and p.account_id == ^account_id and p.property_url == ^property_url,
       select: %{
         url: ls.url,
         lifetime_clicks: ls.lifetime_clicks,

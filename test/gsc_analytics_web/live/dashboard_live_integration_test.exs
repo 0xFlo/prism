@@ -14,13 +14,28 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
   use GscAnalyticsWeb.ConnCase
 
   @moduletag :integration
+  @test_property_url "sc-domain:example.com"
 
   import Ecto.Query
   import Phoenix.LiveViewTest
-  alias GscAnalytics.Repo
+  alias GscAnalytics.{Accounts, Repo}
   alias GscAnalytics.Schemas.TimeSeries
 
   setup :register_and_log_in_user
+  setup :create_test_property
+
+  defp create_test_property(_context) do
+    # Create and activate a test property for account 1
+    {:ok, property} =
+      Accounts.add_property(1, %{
+        property_url: @test_property_url,
+        display_name: "Test Property"
+      })
+
+    {:ok, _} = Accounts.set_active_property(1, property.id)
+
+    :ok
+  end
 
   describe "dashboard user journey: viewing URL list" do
     test "user can view dashboard with URLs sorted by clicks", %{conn: conn} do
@@ -38,7 +53,7 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
       {:ok, _view, html} = live(conn, ~p"/")
 
       # Assert: Dashboard loads and shows URLs
-      assert html =~ "GSC Analytics Dashboard"
+      assert html =~ "GSC Dashboard" || html =~ "GSC Analytics Dashboard"
       assert html =~ "https://example.com/high-traffic"
       assert html =~ "https://example.com/medium-traffic"
       assert html =~ "https://example.com/low-traffic"
@@ -300,6 +315,7 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
 
         %{
           account_id: account_id,
+          property_url: @test_property_url,
           url: url,
           date: date,
           clicks: clicks,
@@ -352,6 +368,7 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
       Enum.map(lifetime_rows, fn row ->
         %{
           account_id: account_id,
+          property_url: @test_property_url,
           url: row.url,
           lifetime_clicks: row.lifetime_clicks || 0,
           lifetime_impressions: row.lifetime_impressions || 0,

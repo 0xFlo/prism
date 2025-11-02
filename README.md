@@ -31,7 +31,7 @@ Alternatively, you can drop the downloaded Google OAuth JSON bundle into the pro
 Account metadata is driven by `config :gsc_analytics, :gsc_accounts`:
 
 - Account 1 (Scrapfly) always uses the bundled service account located at `priv/production-284316-43f352dd1cda.json`
-- `GSC_ACCOUNT_1_NAME` / `GSC_ACCOUNT_2_NAME` override the display labels shown in settings (defaults: `Primary (Scrapfly)`, `Workspace 2`)
+- `GSC_ACCOUNT_1_NAME` / `GSC_ACCOUNT_2_NAME` override the display labels shown in settings (defaults: `Workspace 1`, `Workspace 2`)
 - `GSC_ACCOUNT_2_SERVICE_ACCOUNT_FILE` (optional) re-enables the legacy service-account fallback for Account 2; leave it unset to require OAuth
 - `GSC_ACCOUNT_2_PROPERTY` seeds the initial default property for Account 2. Once connected via OAuth you can pick (and store) the property from *Settings ▸ Search Console Connections*.
 

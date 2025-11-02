@@ -7,28 +7,6 @@
 # General application configuration
 import Config
 
-project_root = Path.expand("..", __DIR__)
-
-maybe_expand_path = fn
-  nil -> nil
-  path when is_binary(path) ->
-    trimmed = String.trim(path)
-
-    cond do
-      trimmed == "" -> nil
-      Path.type(trimmed) == :absolute -> trimmed
-      true -> Path.expand(trimmed, project_root)
-    end
-end
-
-account_1_service_account_file = Path.expand("../priv/production-284316-43f352dd1cda.json", __DIR__)
-account_1_name = System.get_env("GSC_ACCOUNT_1_NAME") || "Primary (Scrapfly)"
-
-account_2_service_account_file =
-  maybe_expand_path.(System.get_env("GSC_ACCOUNT_2_SERVICE_ACCOUNT_FILE"))
-
-account_2_name = System.get_env("GSC_ACCOUNT_2_NAME") || "Workspace 2"
-
 config :gsc_analytics, :scopes,
   user: [
     default: true,
@@ -100,21 +78,8 @@ config :logger, :default_formatter,
 # Override Phoenix default (Jason) to use Elixir v1.18's built-in JSON module
 config :phoenix, :json_library, JSON
 
-# Configure Google Search Console accounts
-config :gsc_analytics, :gsc_accounts, %{
-  1 => %{
-    name: account_1_name,
-    service_account_file: account_1_service_account_file,
-    default_property: "sc-domain:scrapfly.io",
-    enabled?: true
-  },
-  2 => %{
-    name: account_2_name,
-    service_account_file: account_2_service_account_file,
-    default_property: System.get_env("GSC_ACCOUNT_2_PROPERTY"),
-    enabled?: true
-  }
-}
+# Google Search Console accounts are now managed in the database via workspaces table
+# Users can add/remove workspaces through the Settings UI
 
 # Configure sync behaviour
 config :gsc_analytics, GscAnalytics.GSC.Sync,

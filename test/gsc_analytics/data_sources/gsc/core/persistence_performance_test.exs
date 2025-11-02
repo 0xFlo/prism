@@ -203,6 +203,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.PersistencePerformanceTest do
 
       # Pre-populate some time series data
       account_id = 1
+      property_url = "sc-domain:example.com"
       dates = for i <- 1..30, do: Date.add(~D[2025-10-09], -i)
 
       urls = for i <- 1..100, do: "https://example.com/page-#{i}"
@@ -214,6 +215,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.PersistencePerformanceTest do
         for url <- urls, date <- dates do
           %{
             account_id: account_id,
+            property_url: property_url,
             url: url,
             date: date,
             clicks: :rand.uniform(100),
@@ -228,11 +230,12 @@ defmodule GscAnalytics.DataSources.GSC.Core.PersistencePerformanceTest do
 
       {_count, _} = Repo.insert_all(TimeSeries, time_series_records)
 
-      {:ok, account_id: account_id, urls: urls}
+      {:ok, account_id: account_id, property_url: property_url, urls: urls}
     end
 
     test "efficiently aggregates performance for specific URLs only", %{
       account_id: account_id,
+      property_url: property_url,
       urls: urls
     } do
       # Select a subset of URLs to aggregate
@@ -246,6 +249,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.PersistencePerformanceTest do
         :timer.tc(fn ->
           Persistence.aggregate_performance_for_urls(
             account_id,
+            property_url,
             urls_to_aggregate,
             ~D[2025-10-09]
           )
@@ -268,7 +272,11 @@ defmodule GscAnalytics.DataSources.GSC.Core.PersistencePerformanceTest do
       assert analysis.n_plus_one == [], "Found N+1 queries"
     end
 
-    test "scales linearly with number of URLs", %{account_id: account_id, urls: urls} do
+    test "scales linearly with number of URLs", %{
+      account_id: account_id,
+      property_url: property_url,
+      urls: urls
+    } do
       results =
         for count <- [10, 50, 100] do
           urls_subset = Enum.take(urls, count)
@@ -281,6 +289,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.PersistencePerformanceTest do
             :timer.tc(fn ->
               Persistence.aggregate_performance_for_urls(
                 account_id,
+                property_url,
                 urls_subset,
                 ~D[2025-10-09]
               )
@@ -323,6 +332,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.PersistencePerformanceTest do
 
       # Pre-populate time series records
       account_id = 1
+      property_url = "sc-domain:example.com"
       date = ~D[2025-10-09]
       urls = for i <- 1..100, do: "https://example.com/page-#{i}"
 
@@ -332,6 +342,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.PersistencePerformanceTest do
         for url <- urls do
           %{
             account_id: account_id,
+            property_url: property_url,
             url: url,
             date: date,
             clicks: 100,
@@ -346,10 +357,14 @@ defmodule GscAnalytics.DataSources.GSC.Core.PersistencePerformanceTest do
 
       {_count, _} = Repo.insert_all(TimeSeries, time_series_records)
 
-      {:ok, account_id: account_id, date: date}
+      {:ok, account_id: account_id, property_url: property_url, date: date}
     end
 
-    test "efficiently processes query data with batching", %{account_id: account_id, date: date} do
+    test "efficiently processes query data with batching", %{
+      account_id: account_id,
+      property_url: property_url,
+      date: date
+    } do
       # Generate query data: 50 queries per URL for 100 URLs
       query_rows = generate_query_rows(100, 50)
 
@@ -361,7 +376,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.PersistencePerformanceTest do
         :timer.tc(fn ->
           Persistence.process_query_response(
             account_id,
-            "sc-domain:example.com",
+            property_url,
             date,
             query_rows
           )
@@ -383,6 +398,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.PersistencePerformanceTest do
       sample_record =
         Repo.get_by(TimeSeries,
           account_id: account_id,
+          property_url: property_url,
           url: "https://example.com/page-1",
           date: date
         )

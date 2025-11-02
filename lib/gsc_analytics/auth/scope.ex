@@ -38,6 +38,20 @@ defmodule GscAnalytics.Auth.Scope do
   def for_user(nil), do: nil
 
   @doc """
+  Reloads the scope by refreshing the account_ids from the database.
+
+  This is useful when a new workspace/account is created and needs to be
+  added to the scope's authorized account list.
+  """
+  @spec reload(t()) :: t()
+  def reload(%__MODULE__{user: user} = scope) when not is_nil(user) do
+    account_ids = GscAnalytics.Accounts.account_ids_for_user(user)
+    %{scope | account_ids: account_ids}
+  end
+
+  def reload(nil), do: nil
+
+  @doc """
   Returns true when the given account is accessible for the scope.
 
   Nil scopes are treated as internal callers and bypass checks.

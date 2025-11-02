@@ -13,6 +13,7 @@ defmodule GscAnalyticsWeb.DashboardLivePerformanceTest do
   @account_id 1
   @url_count 250
   @days_of_history 14
+  @property_url "sc-domain:example.com"
 
   setup :register_and_log_in_user
 
@@ -99,6 +100,7 @@ defmodule GscAnalyticsWeb.DashboardLivePerformanceTest do
 
             %{
               account_id: @account_id,
+              property_url: @property_url,
               url: url,
               date: date,
               period_type: :daily,
@@ -134,6 +136,7 @@ defmodule GscAnalyticsWeb.DashboardLivePerformanceTest do
         perf_row = %{
           id: Ecto.UUID.generate(),
           account_id: @account_id,
+          property_url: @property_url,
           url: url,
           clicks: total_clicks,
           impressions: total_impressions,
@@ -150,6 +153,7 @@ defmodule GscAnalyticsWeb.DashboardLivePerformanceTest do
 
         lifetime_row = %{
           account_id: @account_id,
+          property_url: @property_url,
           url: url,
           lifetime_clicks: total_clicks,
           lifetime_impressions: total_impressions,

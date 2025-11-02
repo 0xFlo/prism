@@ -696,6 +696,65 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
   end
 
   @doc """
+  Renders a compact select dropdown for time controls (Datafast-style).
+
+  ## Attributes
+  - `options` - List of option maps with :value and :label keys
+  - `current_value` - The currently selected value
+  - `event_name` - Phoenix event to trigger on change
+  - `value_key` - The parameter key for the phx-value attribute
+  - `class` - Optional additional CSS classes
+
+  ## Example
+      <.compact_select
+        options={[
+          %{value: "daily", label: "Daily"},
+          %{value: "weekly", label: "Weekly"}
+        ]}
+        current_value={@chart_view}
+        event_name="change_chart_view"
+        value_key="chart_view"
+      />
+  """
+  attr :options, :list, required: true
+  attr :current_value, :any, required: true
+  attr :event_name, :string, required: true
+  attr :value_key, :string, required: true
+  attr :class, :string, default: ""
+
+  def compact_select(assigns) do
+    ~H"""
+    <select
+      phx-change={@event_name}
+      name={@value_key}
+      class={["select select-sm select-bordered bg-white", @class]}
+    >
+      <option
+        :for={option <- @options}
+        value={option.value}
+        selected={compact_select_active?(@current_value, option.value)}
+      >
+        {option.label}
+      </option>
+    </select>
+    """
+  end
+
+  defp compact_select_active?(current_value, option_value) do
+    current =
+      case current_value do
+        value when is_binary(value) -> value
+        value when is_integer(value) -> Integer.to_string(value)
+        value -> to_string(value)
+      end
+
+    cond do
+      option_value == "all" and current in ["all", "10000"] -> true
+      true -> current == option_value
+    end
+  end
+
+  @doc """
   Renders a metric card with primary value and secondary stats.
 
   ## Attributes

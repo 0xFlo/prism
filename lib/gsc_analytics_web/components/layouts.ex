@@ -34,6 +34,9 @@ defmodule GscAnalyticsWeb.Layouts do
   attr :current_account, :map, default: nil, doc: "Currently selected GSC account"
   attr :current_account_id, :integer, default: nil, doc: "Current GSC account id"
   attr :account_options, :list, default: [], doc: "Available GSC accounts for selection"
+  attr :current_property, :map, default: nil, doc: "Active workspace property (if any)"
+  attr :current_property_id, :string, default: nil, doc: "Active workspace property id"
+  attr :property_options, :list, default: [], doc: "Saved workspace properties for selection"
 
   slot :inner_block, required: true
 
@@ -56,29 +59,37 @@ defmodule GscAnalyticsWeb.Layouts do
             </.link>
           </div>
           <div class="flex items-center gap-4">
-            <%= if Enum.count(@account_options) > 1 do %>
-              <form phx-change="change_account" class="flex items-center gap-2">
+            <% property_options = @property_options || [] %>
+            <%= if Enum.empty?(property_options) do %>
+              <%= if @current_property do %>
+                <span class="badge badge-outline badge-sm px-3 py-2 text-xs font-medium">
+                  {@current_property.display_name || @current_property.property_url}
+                </span>
+              <% else %>
+                <.link
+                  navigate={account_nav(assigns, :settings)}
+                  class="badge badge-outline badge-sm px-3 py-2 text-xs font-medium"
+                >
+                  Select property
+                </.link>
+              <% end %>
+            <% else %>
+              <form phx-change="switch_property" class="flex items-center gap-2">
                 <label class="hidden text-xs font-semibold uppercase tracking-wide text-base-content/60 sm:block">
-                  Account
+                  Property
                 </label>
                 <select
-                  name="account_id"
+                  name="property_id"
                   class="select select-sm select-bordered bg-base-100 text-sm"
-                  value={@current_account_id}
+                  value={@current_property_id}
                 >
-                  <%= for {label, id} <- @account_options do %>
-                    <option value={id} selected={id == @current_account_id}>
+                  <%= for {label, id} <- property_options do %>
+                    <option value={id} selected={id == @current_property_id}>
                       {label}
                     </option>
                   <% end %>
                 </select>
               </form>
-            <% else %>
-              <%= if @current_account do %>
-                <span class="badge badge-outline badge-sm px-3 py-2 text-xs font-medium">
-                  {@current_account.display_name || @current_account.name}
-                </span>
-              <% end %>
             <% end %>
 
             <div class="flex-none">
@@ -191,12 +202,26 @@ defmodule GscAnalyticsWeb.Layouts do
     end
   end
 
-  defp account_query(assigns) do
-    case Map.get(assigns, :current_account_id) do
-      nil -> []
-      id -> [account_id: id]
+  defp account_nav(assigns, :settings) do
+    case account_query(assigns) do
+      [] -> ~p"/users/settings"
+      params -> ~p"/users/settings?#{params}"
     end
   end
+
+  defp account_query(assigns) do
+    property_id = Map.get(assigns, :current_property_id)
+
+    params =
+      []
+      |> maybe_put(:property_id, property_id)
+
+    Enum.reverse(params)
+  end
+
+  defp maybe_put(params, _key, nil), do: params
+  defp maybe_put(params, _key, ""), do: params
+  defp maybe_put(params, key, value), do: [{key, value} | params]
 
   @doc """
   Shows the flash group with standard titles and content.

@@ -31,22 +31,33 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
 
     {socket, account} = AccountHelpers.init_account_assigns(socket, params)
 
-    problem_urls = fetch_problem_urls(account.id)
-    global_stats = fetch_global_stats(account.id)
+    # Redirect to Settings if no workspaces exist
+    if is_nil(account) do
+      {:ok,
+       socket
+       |> put_flash(
+         :info,
+         "Please add a Google Search Console workspace to get started."
+       )
+       |> redirect(to: ~p"/users/settings")}
+    else
+      problem_urls = fetch_problem_urls(account.id)
+      global_stats = fetch_global_stats(account.id)
 
-    socket =
-      socket
-      |> assign(:current_path, "/dashboard/crawler")
-      |> assign(:page_title, "URL Health Monitor")
-      |> assign(:filter_options, @filter_options)
-      |> assign(:form, build_form("stale"))
-      |> assign(:history, history)
-      |> assign(:problem_urls, problem_urls)
-      |> assign(:selected_status_filter, "all")
-      |> assign(:global_stats, global_stats)
-      |> assign_progress(current_job)
+      socket =
+        socket
+        |> assign(:current_path, "/dashboard/crawler")
+        |> assign(:page_title, "URL Health Monitor")
+        |> assign(:filter_options, @filter_options)
+        |> assign(:form, build_form("stale"))
+        |> assign(:history, history)
+        |> assign(:problem_urls, problem_urls)
+        |> assign(:selected_status_filter, "all")
+        |> assign(:global_stats, global_stats)
+        |> assign_progress(current_job)
 
-    {:ok, socket}
+      {:ok, socket}
+    end
   end
 
   @impl true
@@ -322,11 +333,10 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
     alias GscAnalytics.Repo
     import Ecto.Query
 
-    # Query for status breakdown counts
-    status_stats =
+    # Optimized: Fetch all stats in a single query using COUNT(*) FILTER for both checked and unchecked
+    stats =
       from(p in Performance,
         where: p.account_id == ^account_id,
-        where: not is_nil(p.http_status),
         select: %{
           status_2xx:
             fragment("COUNT(*) FILTER (WHERE ? >= 200 AND ? < 300)", p.http_status, p.http_status),
@@ -335,25 +345,18 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
           status_4xx:
             fragment("COUNT(*) FILTER (WHERE ? >= 400 AND ? < 500)", p.http_status, p.http_status),
           status_5xx: fragment("COUNT(*) FILTER (WHERE ? >= 500)", p.http_status),
-          total_checked: count(p.id)
+          unchecked: fragment("COUNT(*) FILTER (WHERE ? IS NULL)", p.http_status),
+          total_checked: fragment("COUNT(*) FILTER (WHERE ? IS NOT NULL)", p.http_status)
         }
       )
       |> Repo.one()
 
-    # Query for unchecked URLs count
-    unchecked_count =
-      from(p in Performance,
-        where: p.account_id == ^account_id,
-        where: is_nil(p.http_status),
-        select: count(p.id)
-      )
-      |> Repo.one()
-
-    total_checked = status_stats.total_checked
-    status_2xx = status_stats.status_2xx
-    status_3xx = status_stats.status_3xx
-    status_4xx = status_stats.status_4xx
-    status_5xx = status_stats.status_5xx
+    total_checked = stats.total_checked
+    status_2xx = stats.status_2xx
+    status_3xx = stats.status_3xx
+    status_4xx = stats.status_4xx
+    status_5xx = stats.status_5xx
+    unchecked_count = stats.unchecked
 
     # Calculate percentages (avoid division by zero)
     percent_2xx =

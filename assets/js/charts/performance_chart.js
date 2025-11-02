@@ -303,10 +303,11 @@ class PerformanceChartController {
     ctx.restore()
 
     ctx.save()
-    ctx.font = "bold 12px Inter, system-ui, sans-serif"
+    ctx.font = "600 11px Inter, system-ui, sans-serif"
     ctx.fillStyle = color
     ctx.textAlign = alignRight ? "right" : "left"
-    ctx.fillText(label, axisX + direction * 10, padding.top - 14)
+    ctx.textBaseline = "top"
+    ctx.fillText(label, axisX + direction * 10, padding.top - 8)
     ctx.restore()
   }
 
@@ -763,6 +764,14 @@ class PerformanceChartController {
 
     ctx.save()
     ctx.globalAlpha = opacity
+
+    // Subtle scale animation on appear
+    const scale = 0.92 + (opacity * 0.08)
+    const centerX = tooltipX + tooltipWidth / 2
+    const centerY = tooltipY + tooltipHeight / 2
+    ctx.translate(centerX, centerY)
+    ctx.scale(scale, scale)
+    ctx.translate(-centerX, -centerY)
 
     ctx.shadowColor = "rgba(0, 0, 0, 0.1)"
     ctx.shadowBlur = 8

@@ -6,6 +6,7 @@ defmodule GscAnalytics.ContentInsights.UrlInsightsTest do
   alias GscAnalytics.Schemas.{Performance, TimeSeries}
 
   @account_id 1
+  @property_url "sc-domain:example.com"
 
   setup do
     old_url = "https://example.com/blog/how-to-scrape"
@@ -13,6 +14,7 @@ defmodule GscAnalytics.ContentInsights.UrlInsightsTest do
 
     old_attrs = %{
       account_id: @account_id,
+      property_url: @property_url,
       url: old_url,
       http_status: 301,
       redirect_url: new_url,
@@ -21,6 +23,7 @@ defmodule GscAnalytics.ContentInsights.UrlInsightsTest do
 
     new_attrs = %{
       account_id: @account_id,
+      property_url: @property_url,
       url: new_url,
       http_status: 200,
       http_checked_at: ~U[2025-02-02 00:00:00Z]
@@ -174,6 +177,7 @@ defmodule GscAnalytics.ContentInsights.UrlInsightsTest do
 
     %TimeSeries{
       account_id: @account_id,
+      property_url: @property_url,
       url: url,
       date: date,
       period_type: :daily,

@@ -31,7 +31,8 @@ defmodule GscAnalytics.Analytics.SiteTrends do
 
   def fetch("weekly", opts) do
     account_id = Accounts.resolve_account_id(opts)
-    first_date = get_first_data_date(account_id)
+    property_url = Map.get(opts, :property_url) || raise ArgumentError, "property_url is required"
+    first_date = get_first_data_date(account_id, property_url)
 
     today = Date.utc_today()
     days_available = max(Date.diff(today, first_date), 0)
@@ -51,14 +52,18 @@ defmodule GscAnalytics.Analytics.SiteTrends do
       end
 
     series =
-      TimeSeriesAggregator.fetch_site_aggregate_by_week(weeks, %{account_id: account_id})
+      TimeSeriesAggregator.fetch_site_aggregate_by_week(weeks, %{
+        account_id: account_id,
+        property_url: property_url
+      })
 
     {series, "Week Starting"}
   end
 
   def fetch("monthly", opts) do
     account_id = Accounts.resolve_account_id(opts)
-    first_date = get_first_data_date(account_id)
+    property_url = Map.get(opts, :property_url) || raise ArgumentError, "property_url is required"
+    first_date = get_first_data_date(account_id, property_url)
 
     today = Date.utc_today()
     months_available = max(months_between(first_date, today) + 1, 1)
@@ -77,14 +82,18 @@ defmodule GscAnalytics.Analytics.SiteTrends do
       end
 
     series =
-      TimeSeriesAggregator.fetch_site_aggregate_by_month(months, %{account_id: account_id})
+      TimeSeriesAggregator.fetch_site_aggregate_by_month(months, %{
+        account_id: account_id,
+        property_url: property_url
+      })
 
     {series, "Month"}
   end
 
   def fetch(_view_mode, opts) do
     account_id = Accounts.resolve_account_id(opts)
-    first_date = get_first_data_date(account_id)
+    property_url = Map.get(opts, :property_url) || raise ArgumentError, "property_url is required"
+    first_date = get_first_data_date(account_id, property_url)
 
     days_available =
       Date.utc_today()
@@ -105,14 +114,21 @@ defmodule GscAnalytics.Analytics.SiteTrends do
       end
 
     series =
-      TimeSeriesAggregator.fetch_site_aggregate(days, %{account_id: account_id})
+      TimeSeriesAggregator.fetch_site_aggregate(days, %{
+        account_id: account_id,
+        property_url: property_url
+      })
 
     {series, "Date"}
   end
 
-  defp get_first_data_date(account_id) do
+  defp get_first_data_date(account_id, property_url) do
     TimeSeries
-    |> where([ts], ts.account_id == ^account_id and ts.data_available == true)
+    |> where(
+      [ts],
+      ts.account_id == ^account_id and ts.property_url == ^property_url and
+        ts.data_available == true
+    )
     |> select([ts], min(ts.date))
     |> Repo.one()
     |> case do

@@ -298,6 +298,42 @@ defmodule GscAnalytics.Auth do
   end
 
   @doc """
+  Batch retrieves OAuth tokens for multiple accounts.
+  Returns a map of account_id => token (with decrypted fields).
+  Only includes tokens for authorized accounts.
+  """
+  def batch_get_oauth_tokens(current_scope, account_ids) when is_list(account_ids) do
+    import Ecto.Query
+
+    # Filter to only authorized account IDs
+    authorized_ids =
+      Enum.filter(account_ids, fn account_id ->
+        case normalize_account_id(account_id) do
+          {:ok, normalized_id} ->
+            case Scope.authorize_account(current_scope, normalized_id) do
+              :ok -> true
+              _ -> false
+            end
+
+          _ ->
+            false
+        end
+      end)
+
+    # Batch load all OAuth tokens in a single query
+    tokens =
+      from(t in OAuthToken,
+        where: t.account_id in ^authorized_ids
+      )
+      |> Repo.all()
+
+    # Return as a map of account_id => decrypted_token
+    Map.new(tokens, fn token ->
+      {token.account_id, OAuthToken.with_decrypted_tokens(token)}
+    end)
+  end
+
+  @doc """
   Stores or updates OAuth tokens for an account.
   Returns the freshly decrypted token on success.
   """

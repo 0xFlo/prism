@@ -7,19 +7,25 @@ defmodule GscAnalyticsWeb.GoogleAuth do
 
   alias GscAnalytics.Auth
   alias GscAnalytics.Auth.Scope
+  alias GscAnalytics.Workspaces
 
   @google_auth_url "https://accounts.google.com/o/oauth2/v2/auth"
   @google_token_url "https://oauth2.googleapis.com/token"
   @oauth_scope "https://www.googleapis.com/auth/webmasters.readonly email openid"
   @state_max_age 600
 
-  def request(conn, account_id) when is_integer(account_id) do
+  @doc """
+  Initiates OAuth flow for a workspace.
+
+  - If `workspace_id` is provided, reconnects existing workspace
+  - If `workspace_id` is "new", creates a new workspace on callback
+  """
+  def request(conn, workspace_id) when is_integer(workspace_id) or workspace_id == "new" do
     current_scope = conn.assigns.current_scope
 
     with %Scope{} = scope <- current_scope,
-         :ok <- Scope.authorize_account(scope, account_id),
          {:ok, oauth_config} <- oauth_config() do
-      state = generate_state(scope, account_id)
+      state = generate_state(scope, workspace_id)
       callback_url = url(~p"/auth/google/callback")
 
       query =
@@ -39,9 +45,6 @@ defmodule GscAnalyticsWeb.GoogleAuth do
       nil ->
         unauthorized_redirect(conn)
 
-      {:error, :unauthorized_account} ->
-        unauthorized_redirect(conn)
-
       {:error, :missing_oauth_config} ->
         conn
         |> put_flash(
@@ -58,14 +61,15 @@ defmodule GscAnalyticsWeb.GoogleAuth do
     with %Scope{} = scope <- current_scope,
          {:ok, state_token} <- fetch_state_param(params),
          {:ok, state_data} <- verify_state(state_token, scope),
-         {:ok, account_id} <- normalize_account_id(state_data.account_id),
-         :ok <- Scope.authorize_account(scope, account_id),
          {:ok, code} <- fetch_code_param(params),
          {:ok, tokens} <- exchange_code_for_tokens(code),
-         {:ok, stored_token} <- store_tokens(scope, account_id, tokens) do
+         google_email <- extract_email_safely(tokens),
+         {:ok, workspace} <- ensure_workspace_exists(scope, state_data, google_email),
+         refreshed_scope <- Scope.reload(scope),
+         {:ok, _stored_token} <- store_tokens(refreshed_scope, workspace.id, tokens) do
       conn
-      |> put_flash(:info, success_message(stored_token.google_email))
-      |> redirect(to: ~p"/accounts")
+      |> put_flash(:info, success_message(google_email))
+      |> redirect(to: ~p"/")
     else
       nil ->
         unauthorized_redirect(conn)
@@ -76,22 +80,22 @@ defmodule GscAnalyticsWeb.GoogleAuth do
       {:error, :missing_state} ->
         conn
         |> put_flash(:error, "OAuth callback is missing the required state parameter.")
-        |> redirect(to: ~p"/accounts")
+        |> redirect(to: ~p"/")
 
       {:error, :invalid_state} ->
         conn
         |> put_flash(:error, "Invalid OAuth state. Please start the connection again.")
-        |> redirect(to: ~p"/accounts")
+        |> redirect(to: ~p"/")
 
       {:error, :state_mismatch} ->
         conn
         |> put_flash(:error, "OAuth session has expired. Please try again.")
-        |> redirect(to: ~p"/accounts")
+        |> redirect(to: ~p"/")
 
       {:error, :missing_code} ->
         conn
         |> put_flash(:error, "Google did not return an authorization code.")
-        |> redirect(to: ~p"/accounts")
+        |> redirect(to: ~p"/")
 
       {:error, :missing_oauth_config} ->
         conn
@@ -99,12 +103,12 @@ defmodule GscAnalyticsWeb.GoogleAuth do
           :error,
           "Google OAuth configuration is missing. Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET, then restart the server."
         )
-        |> redirect(to: ~p"/accounts")
+        |> redirect(to: ~p"/")
 
       {:error, {:http_error, status, body}} ->
         conn
         |> put_flash(:error, "Google OAuth failed (status #{status}): #{inspect(body)}")
-        |> redirect(to: ~p"/accounts")
+        |> redirect(to: ~p"/")
 
       {:error, :missing_refresh_token} ->
         conn
@@ -112,23 +116,21 @@ defmodule GscAnalyticsWeb.GoogleAuth do
           :error,
           "Google did not provide a refresh token. Please grant offline access."
         )
-        |> redirect(to: ~p"/accounts")
+        |> redirect(to: ~p"/")
 
       {:error, reason} ->
         conn
         |> put_flash(:error, "Google OAuth failed: #{inspect(reason)}")
-        |> redirect(to: ~p"/accounts")
+        |> redirect(to: ~p"/")
     end
   end
 
-  def generate_state(current_scope, account_id) do
-    Scope.authorize_account!(current_scope, account_id)
-
+  def generate_state(current_scope, workspace_id) do
     Phoenix.Token.sign(
       GscAnalyticsWeb.Endpoint,
       "oauth_state",
       %{
-        account_id: account_id,
+        workspace_id: workspace_id,
         user_id: current_scope.user.id
       }
     )
@@ -152,18 +154,35 @@ defmodule GscAnalyticsWeb.GoogleAuth do
 
   def verify_state(_state_token, _current_scope), do: {:error, :missing_state}
 
-  defp normalize_account_id(account_id) when is_integer(account_id) and account_id > 0 do
-    {:ok, account_id}
+  defp ensure_workspace_exists(current_scope, %{workspace_id: "new"}, google_email) do
+    # Create new workspace
+    user_id = current_scope.user.id
+
+    Workspaces.create_workspace(user_id, %{
+      name: google_email,
+      google_account_email: google_email,
+      enabled: true
+    })
   end
 
-  defp normalize_account_id(account_id) when is_binary(account_id) do
-    case Integer.parse(account_id) do
-      {value, ""} when value > 0 -> {:ok, value}
-      _ -> {:error, :invalid_account_id}
+  defp ensure_workspace_exists(current_scope, %{workspace_id: workspace_id}, google_email)
+       when is_integer(workspace_id) do
+    # Reconnect existing workspace - verify ownership and update email
+    user_id = current_scope.user.id
+
+    case Workspaces.fetch_workspace(user_id, workspace_id) do
+      {:ok, workspace} ->
+        # Update google_account_email in case it changed
+        Workspaces.update_workspace(workspace, %{google_account_email: google_email})
+
+      {:error, :not_found} ->
+        {:error, :workspace_not_found}
     end
   end
 
-  defp normalize_account_id(_), do: {:error, :invalid_account_id}
+  defp ensure_workspace_exists(_scope, _state_data, _email) do
+    {:error, :invalid_workspace_id}
+  end
 
   defp fetch_state_param(%{"state" => state}) when is_binary(state), do: {:ok, state}
   defp fetch_state_param(%{state: state}) when is_binary(state), do: {:ok, state}
@@ -272,12 +291,21 @@ defmodule GscAnalyticsWeb.GoogleAuth do
 
   defp build_scope_list(_tokens), do: []
 
+  defp normalize_state_data(%{workspace_id: workspace_id, user_id: user_id}) do
+    %{workspace_id: workspace_id, user_id: user_id}
+  end
+
+  defp normalize_state_data(%{"workspace_id" => workspace_id, "user_id" => user_id}) do
+    %{workspace_id: workspace_id, user_id: user_id}
+  end
+
+  # Legacy support for account_id (migrate to workspace_id)
   defp normalize_state_data(%{account_id: account_id, user_id: user_id}) do
-    %{account_id: account_id, user_id: user_id}
+    %{workspace_id: account_id, user_id: user_id}
   end
 
   defp normalize_state_data(%{"account_id" => account_id, "user_id" => user_id}) do
-    %{account_id: account_id, user_id: user_id}
+    %{workspace_id: account_id, user_id: user_id}
   end
 
   defp http_client do
@@ -287,7 +315,7 @@ defmodule GscAnalyticsWeb.GoogleAuth do
   defp unauthorized_redirect(conn) do
     conn
     |> put_flash(:error, "You are not authorized to manage that account.")
-    |> redirect(to: ~p"/accounts")
+    |> redirect(to: ~p"/")
   end
 
   defp success_message(email) when is_binary(email) do

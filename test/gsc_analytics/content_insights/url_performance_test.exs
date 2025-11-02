@@ -6,6 +6,7 @@ defmodule GscAnalytics.ContentInsights.UrlPerformanceTest do
   alias GscAnalytics.Schemas.{Backlink, Performance, TimeSeries}
 
   @account_id 1
+  @property_url "sc-domain:example.com"
 
   setup do
     Repo.delete_all("url_lifetime_stats")
@@ -15,6 +16,7 @@ defmodule GscAnalytics.ContentInsights.UrlPerformanceTest do
     Repo.insert_all("url_lifetime_stats", [
       %{
         account_id: @account_id,
+        property_url: @property_url,
         url: "https://example.com/a",
         lifetime_clicks: 120,
         lifetime_impressions: 1000,
@@ -27,6 +29,7 @@ defmodule GscAnalytics.ContentInsights.UrlPerformanceTest do
       },
       %{
         account_id: @account_id,
+        property_url: @property_url,
         url: "https://example.com/b",
         lifetime_clicks: 80,
         lifetime_impressions: 600,
@@ -155,6 +158,7 @@ defmodule GscAnalytics.ContentInsights.UrlPerformanceTest do
   defp insert_time_series(account_id, url, date, attrs) do
     %TimeSeries{
       account_id: account_id,
+      property_url: @property_url,
       url: url,
       date: date,
       period_type: :daily,
@@ -171,6 +175,7 @@ defmodule GscAnalytics.ContentInsights.UrlPerformanceTest do
     %Performance{}
     |> Performance.changeset(%{
       account_id: account_id,
+      property_url: @property_url,
       url: url,
       clicks: 0,
       impressions: 0,

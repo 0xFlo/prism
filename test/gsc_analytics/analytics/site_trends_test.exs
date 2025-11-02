@@ -6,6 +6,7 @@ defmodule GscAnalytics.Analytics.SiteTrendsTest do
   alias GscAnalytics.Schemas.TimeSeries
 
   @account_id 1
+  @property_url "sc-domain:example.com"
 
   setup do
     Repo.delete_all(TimeSeries)
@@ -26,9 +27,10 @@ defmodule GscAnalytics.Analytics.SiteTrendsTest do
     end)
 
     # Noise from another account should be ignored
-    insert_time_series(2, today, 99, 200, 1.5)
+    insert_time_series(2, today, 99, 200, 1.5, "sc-domain:othersite.com")
 
-    {series, label} = SiteTrends.fetch("daily", %{account_id: @account_id})
+    {series, label} =
+      SiteTrends.fetch("daily", %{account_id: @account_id, property_url: @property_url})
 
     assert label == "Date"
     assert length(series) == 5
@@ -42,7 +44,8 @@ defmodule GscAnalytics.Analytics.SiteTrendsTest do
       insert_time_series(@account_id, Date.add(today, -offset), 5, 50, 4.0)
     end)
 
-    {series, label} = SiteTrends.fetch("weekly", %{account_id: @account_id})
+    {series, label} =
+      SiteTrends.fetch("weekly", %{account_id: @account_id, property_url: @property_url})
 
     assert label == "Week Starting"
     assert Enum.all?(series, fn %{date: date} -> Date.day_of_week(date) == 1 end)
@@ -58,18 +61,27 @@ defmodule GscAnalytics.Analytics.SiteTrendsTest do
     insert_time_series(@account_id, current_month, 30, 300, 2.5)
     insert_time_series(@account_id, previous_month, 25, 250, 3.0)
 
-    {series, label} = SiteTrends.fetch("monthly", %{account_id: @account_id})
+    {series, label} =
+      SiteTrends.fetch("monthly", %{account_id: @account_id, property_url: @property_url})
 
     assert label == "Month"
     refute series == []
     assert Enum.all?(series, fn %{date: date} -> date.day == 1 end)
   end
 
-  defp insert_time_series(account_id, date, clicks, impressions, position) do
+  defp insert_time_series(
+         account_id,
+         date,
+         clicks,
+         impressions,
+         position,
+         property_url \\ @property_url
+       ) do
     ctr = if impressions > 0, do: clicks / impressions, else: 0.0
 
     %TimeSeries{
       account_id: account_id,
+      property_url: property_url,
       url: "https://example.com/#{account_id}/#{Date.to_iso8601(date)}",
       date: date,
       period_type: :daily,

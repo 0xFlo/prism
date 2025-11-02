@@ -8,6 +8,8 @@ defmodule GscAnalytics.Crawler.BatchProcessorTest do
 
   import Ecto.Query
 
+  @property_url "sc-domain:example.com"
+
   setup do
     # Ensure inets and ssl are started for HTTP requests
     :inets.start()
@@ -30,6 +32,7 @@ defmodule GscAnalytics.Crawler.BatchProcessorTest do
     for url <- urls do
       Repo.insert!(%Performance{
         account_id: 1,
+        property_url: @property_url,
         url: url,
         clicks: 100,
         impressions: 1000,
@@ -227,6 +230,7 @@ defmodule GscAnalytics.Crawler.BatchProcessorTest do
       for i <- 1..150 do
         Repo.insert!(%Performance{
           account_id: 1,
+          property_url: @property_url,
           url: "https://example.com/page-#{i}",
           clicks: 10,
           impressions: 100,
@@ -262,6 +266,7 @@ defmodule GscAnalytics.Crawler.BatchProcessorTest do
 
       Repo.insert!(%Performance{
         account_id: 1,
+        property_url: @property_url,
         url: "https://high-traffic.com",
         clicks: 10_000,
         impressions: 50_000,
@@ -275,6 +280,7 @@ defmodule GscAnalytics.Crawler.BatchProcessorTest do
 
       Repo.insert!(%Performance{
         account_id: 1,
+        property_url: @property_url,
         url: "https://low-traffic.com",
         clicks: 10,
         impressions: 100,
@@ -341,6 +347,7 @@ defmodule GscAnalytics.Crawler.BatchProcessorTest do
 
       Repo.insert!(%Performance{
         account_id: 1,
+        property_url: @property_url,
         url: "https://scrapfly.io",
         clicks: 100,
         impressions: 1000,

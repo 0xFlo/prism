@@ -6,7 +6,7 @@
  * Calculate default padding for chart area
  */
 export function getDefaultPadding() {
-  return { top: 20, right: 48, bottom: 75, left: 64 }
+  return { top: 32, right: 48, bottom: 75, left: 64 }
 }
 
 /**

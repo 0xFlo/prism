@@ -36,15 +36,16 @@ defmodule DataPopulator do
         Repo.delete_all(Performance)
       end
 
-      # Query time series data grouped by account_id and URL
+      # Query time series data grouped by account_id, property, and URL
       IO.puts("📈 Aggregating time series data...")
 
       aggregated_data =
         from(ts in TimeSeries,
           where: ts.data_available == true,
-          group_by: [ts.account_id, ts.url],
+          group_by: [ts.account_id, ts.property_url, ts.url],
           select: %{
             account_id: ts.account_id,
+            property_url: ts.property_url,
             url: ts.url,
             total_clicks: sum(ts.clicks),
             total_impressions: sum(ts.impressions),
@@ -74,6 +75,7 @@ defmodule DataPopulator do
 
           %{
             account_id: data.account_id,
+            property_url: data.property_url,
             url: data.url,
             clicks: data.total_clicks,
             impressions: data.total_impressions,

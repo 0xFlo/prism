@@ -4,6 +4,8 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorWoWTest do
   alias GscAnalytics.Analytics.TimeSeriesAggregator
   alias GscAnalytics.Schemas.TimeSeries
 
+  @property_url "sc-domain:example.com"
+
   describe "batch_calculate_wow_growth/2 with window functions" do
     setup do
       account_id = 1
@@ -31,6 +33,7 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorWoWTest do
           Map.merge(data, %{
             url: url,
             account_id: account_id,
+            property_url: @property_url,
             ctr: data.clicks / data.impressions,
             position: 5.0
           })
@@ -95,6 +98,7 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorWoWTest do
           Map.merge(data, %{
             url: url2,
             account_id: account_id,
+            property_url: @property_url,
             ctr: data.clicks / data.impressions,
             position: 3.0
           })
@@ -154,6 +158,7 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorWoWTest do
           Map.merge(data, %{
             url: url_zero,
             account_id: account_id,
+            property_url: @property_url,
             ctr: 0.0,
             position: 5.0
           })
@@ -202,6 +207,7 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorWoWTest do
       |> TimeSeries.changeset(%{
         url: url2,
         account_id: account_id,
+        property_url: @property_url,
         date: ~D[2025-01-06],
         clicks: 50,
         impressions: 500,
@@ -272,6 +278,7 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorWoWTest do
           Map.merge(data, %{
             url: url,
             account_id: account_id,
+            property_url: @property_url,
             ctr: data.clicks / data.impressions,
             position: 5.0
           })

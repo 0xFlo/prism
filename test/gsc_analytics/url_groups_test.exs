@@ -7,6 +7,7 @@ defmodule GscAnalytics.UrlGroupsTest do
   alias GscAnalytics.Test.QueryCounter
 
   @account_id 1
+  @property_url "sc-domain:example.com"
 
   setup do
     {:ok, _} = QueryCounter.start()
@@ -128,6 +129,7 @@ defmodule GscAnalytics.UrlGroupsTest do
 
     defaults = %{
       account_id: @account_id,
+      property_url: @property_url,
       url: url,
       redirect_url: redirect_url,
       http_status: (redirect_url && redirect_url != "" && 301) || 200,
@@ -144,6 +146,7 @@ defmodule GscAnalytics.UrlGroupsTest do
   defp insert_time_series(url, date) do
     %TimeSeries{
       account_id: @account_id,
+      property_url: @property_url,
       url: url,
       date: date,
       period_type: :daily,

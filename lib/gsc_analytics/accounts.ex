@@ -11,13 +11,15 @@ defmodule GscAnalytics.Accounts do
   import Ecto.Query
 
   alias GscAnalytics.Auth.Scope
+  alias GscAnalytics.Auth.User
   alias GscAnalytics.Accounts.AccountSetting
-  alias GscAnalytics.DataSources.GSC.Accounts, as: GSCAccounts
+  alias GscAnalytics.Schemas.WorkspaceProperty
+  alias GscAnalytics.Schemas.Workspace
+  alias GscAnalytics.Workspaces
   alias GscAnalytics.DataSources.GSC.Core.Client, as: GSCClient
-  alias GscAnalytics.DataSources.GSC.Core.Config, as: GSCConfig
   alias GscAnalytics.Repo
 
-  @type account_id :: GSCAccounts.account_id()
+  @type account_id :: pos_integer()
 
   @doc """
   Returns the list of account identifiers accessible to the given user.
@@ -26,22 +28,31 @@ defmodule GscAnalytics.Accounts do
   are exposed by default.
   """
   @spec account_ids_for_user(term()) :: [account_id()]
-  def account_ids_for_user(_user) do
-    list_gsc_accounts()
+  def account_ids_for_user(%User{id: user_id}) do
+    Workspaces.list_workspaces(user_id, enabled_only: true)
     |> Enum.map(& &1.id)
   end
 
+  def account_ids_for_user(nil), do: []
+
   @doc """
-  Returns the configured default GSC account identifier.
+  Returns the default workspace ID for the user (first enabled workspace).
   """
-  @spec default_account_id() :: account_id()
+  @spec default_account_id() :: account_id() | nil
   def default_account_id do
-    GSCConfig.default_account_id()
+    # Without a scope, we can't determine the user, so return nil
+    nil
   end
 
-  @spec default_account_id(Scope.t() | nil) :: account_id()
-  def default_account_id(%Scope{}), do: default_account_id()
-  def default_account_id(nil), do: default_account_id()
+  @spec default_account_id(Scope.t() | nil) :: account_id() | nil
+  def default_account_id(%Scope{user: %{id: user_id}}) do
+    case Workspaces.get_default_workspace(user_id) do
+      %Workspace{id: id} -> id
+      nil -> nil
+    end
+  end
+
+  def default_account_id(nil), do: nil
 
   @doc """
   Resolves the requested account identifier from assorted option structures.
@@ -68,58 +79,71 @@ defmodule GscAnalytics.Accounts do
   def resolve_account_id(_), do: default_account_id()
 
   @doc """
-  Proxy to the configured GSC account registry, enriched with runtime overrides.
+  Lists workspaces for the current user, transformed into account maps.
   """
   @spec list_gsc_accounts() :: [map()]
   def list_gsc_accounts do
-    GSCAccounts.list_accounts([])
-    |> enrich_accounts()
+    # Without scope, return empty list (can't determine user)
+    []
   end
 
   @spec list_gsc_accounts(keyword()) :: [map()]
   def list_gsc_accounts(opts) when is_list(opts) do
-    GSCAccounts.list_accounts(opts)
-    |> enrich_accounts()
+    # Without scope, return empty list
+    []
   end
 
   @spec list_gsc_accounts(Scope.t() | nil) :: [map()]
-  def list_gsc_accounts(%Scope{} = scope) do
-    GSCAccounts.list_accounts([])
-    |> filter_accounts_by_scope(scope)
+  def list_gsc_accounts(%Scope{user: %{id: user_id}} = _scope) do
+    user_id
+    |> Workspaces.list_workspaces(enabled_only: true)
+    |> Enum.map(&workspace_to_account_map/1)
     |> enrich_accounts()
   end
 
   def list_gsc_accounts(nil) do
-    list_gsc_accounts()
+    []
   end
 
   @spec list_gsc_accounts(Scope.t() | nil, keyword()) :: [map()]
-  def list_gsc_accounts(%Scope{} = scope, opts) when is_list(opts) do
-    GSCAccounts.list_accounts(opts)
-    |> filter_accounts_by_scope(scope)
+  def list_gsc_accounts(%Scope{user: %{id: user_id}} = _scope, opts) when is_list(opts) do
+    # Extract enabled_only from opts, default to false
+    enabled_only = Keyword.get(opts, :enabled_only, false)
+
+    user_id
+    |> Workspaces.list_workspaces(enabled_only: enabled_only)
+    |> Enum.map(&workspace_to_account_map/1)
     |> enrich_accounts()
   end
 
   def list_gsc_accounts(nil, opts) when is_list(opts) do
-    GSCAccounts.list_accounts(opts)
-    |> enrich_accounts()
+    []
   end
 
   @doc """
-  Fetch a single GSC account definition.
+  Fetch a single workspace by ID and convert to account map.
   """
-  @spec fetch_gsc_account(account_id()) ::
-          {:ok, GSCAccounts.account_config()} | {:error, term()}
+  @spec fetch_gsc_account(account_id()) :: {:ok, map()} | {:error, term()}
   def fetch_gsc_account(account_id) do
-    GSCAccounts.fetch_account(account_id)
+    case Workspaces.get_workspace(account_id) do
+      %Workspace{} = workspace ->
+        account_map = workspace_to_account_map(workspace)
+        {:ok, account_map}
+
+      nil ->
+        {:error, :not_found}
+    end
   end
 
   @doc """
-  Fetch a single GSC account definition, raising when unavailable.
+  Fetch a single workspace by ID, raising when unavailable.
   """
-  @spec fetch_gsc_account!(account_id()) :: GSCAccounts.account_config()
+  @spec fetch_gsc_account!(account_id()) :: map()
   def fetch_gsc_account!(account_id) do
-    GSCAccounts.fetch_account!(account_id)
+    case fetch_gsc_account(account_id) do
+      {:ok, account} -> account
+      {:error, :not_found} -> raise "Workspace #{account_id} not found"
+    end
   end
 
   @doc """
@@ -139,78 +163,210 @@ defmodule GscAnalytics.Accounts do
 
   def gsc_account_options(nil), do: gsc_account_options()
 
-  @doc """
-  Retrieve the default property for a GSC account.
-  """
-  @spec gsc_default_property(account_id()) ::
-          {:ok, String.t()} | {:error, term()}
-  def gsc_default_property(account_id) do
-    with {:ok, account} <- GSCAccounts.fetch_account(account_id) do
-      setting = Repo.get(AccountSetting, account_id)
+  # Legacy gsc_default_property functions removed - use get_active_property_url instead
 
-      case effective_default_property(setting, account.default_property) do
-        nil -> {:error, :missing_property}
-        property -> {:ok, property}
+  # ---------------------------------------------------------------------------
+  # Multi-property management
+  # ---------------------------------------------------------------------------
+
+  @doc """
+  List all properties for a workspace, ordered by is_active desc, then display_name.
+  """
+  @spec list_properties(account_id()) :: [WorkspaceProperty.t()]
+  def list_properties(account_id) do
+    WorkspaceProperty
+    |> where(workspace_id: ^account_id)
+    |> order_by([p], desc: p.is_active, asc: p.display_name)
+    |> Repo.all()
+  end
+
+  @doc """
+  List active properties for a workspace ordered by most recently updated.
+  """
+  @spec list_active_properties(account_id()) :: [WorkspaceProperty.t()]
+  def list_active_properties(account_id) do
+    WorkspaceProperty
+    |> where([p], p.workspace_id == ^account_id and p.is_active == true)
+    |> order_by([p], desc: p.updated_at, desc: p.inserted_at)
+    |> Repo.all()
+  end
+
+  @doc """
+  Add a new property to a workspace.
+  Properties are activated by default unless explicitly set to inactive.
+  Returns {:ok, property} or {:error, changeset}.
+  """
+  @spec add_property(account_id(), map()) ::
+          {:ok, WorkspaceProperty.t()} | {:error, Ecto.Changeset.t()}
+  def add_property(account_id, attrs) do
+    # Auto-activate properties by default for better UX
+    attrs_with_defaults = Map.put_new(attrs, :is_active, true)
+
+    %WorkspaceProperty{}
+    |> WorkspaceProperty.changeset(Map.merge(attrs_with_defaults, %{workspace_id: account_id}))
+    |> Repo.insert()
+  end
+
+  @doc """
+  Mark a property as active for the workspace. Multiple properties may be active at once.
+  Returns {:ok, property} or {:error, reason}.
+  """
+  @spec set_active_property(account_id(), String.t()) ::
+          {:ok, WorkspaceProperty.t()} | {:error, term()}
+  def set_active_property(account_id, property_id) do
+    update_property_active(account_id, property_id, true)
+  end
+
+  @doc """
+  Update the active flag for a workspace property.
+  """
+  @spec update_property_active(account_id(), String.t(), boolean()) ::
+          {:ok, WorkspaceProperty.t()} | {:error, term()}
+  def update_property_active(account_id, property_id, active?) when is_boolean(active?) do
+    with {:ok, uuid} <- validate_uuid(property_id),
+         %WorkspaceProperty{} = property <-
+           Repo.get_by(WorkspaceProperty, id: uuid, workspace_id: account_id) do
+      property
+      |> WorkspaceProperty.changeset(%{is_active: active?})
+      |> Repo.update()
+    else
+      nil -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Remove a property from a workspace.
+  Returns {:ok, property} or {:error, reason}.
+  """
+  @spec remove_property(account_id(), String.t()) ::
+          {:ok, WorkspaceProperty.t()} | {:error, term()}
+  def remove_property(account_id, property_id) do
+    with {:ok, uuid} <- validate_uuid(property_id) do
+      property = Repo.get_by(WorkspaceProperty, id: uuid, workspace_id: account_id)
+
+      case property do
+        nil -> {:error, :not_found}
+        property -> Repo.delete(property)
+      end
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Get the active property for a workspace.
+  Returns property struct or nil.
+  """
+  @spec get_active_property(account_id()) :: WorkspaceProperty.t() | nil
+  def get_active_property(account_id) do
+    account_id
+    |> list_active_properties()
+    |> List.first()
+  end
+
+  @doc """
+  Get the active property URL for a workspace.
+  Returns error if no active property is set.
+  """
+  @spec get_active_property_url(account_id()) :: {:ok, String.t()} | {:error, term()}
+  def get_active_property_url(account_id) do
+    case get_active_property(account_id) do
+      nil ->
+        {:error, :no_active_property}
+
+      property ->
+        {:ok, property.property_url}
+    end
+  end
+
+  @doc """
+  Find a property by its property_url.
+  Returns property struct or nil.
+  """
+  @spec get_property_by_url(account_id(), String.t()) :: WorkspaceProperty.t() | nil
+  def get_property_by_url(account_id, property_url) do
+    Repo.get_by(WorkspaceProperty, workspace_id: account_id, property_url: property_url)
+  end
+
+  @doc """
+  Returns the list of Search Console properties available to the given account.
+  Enriches the response with saved property information.
+
+  Returns both:
+  1. Properties currently available via GSC API (can sync)
+  2. Saved properties without API access (historical data only)
+  """
+  @spec list_property_options(Scope.t() | nil, account_id(), [WorkspaceProperty.t()] | nil) ::
+          {:ok, [map()]} | {:error, term()}
+  def list_property_options(scope, account_id, preloaded_properties \\ nil) do
+    with {:ok, account_id} <- normalize_account_id(account_id),
+         :ok <- Scope.authorize_account(scope, account_id) do
+      # Use preloaded properties if provided, otherwise query database
+      saved_properties = preloaded_properties || list_properties(account_id)
+      saved_urls = MapSet.new(saved_properties, & &1.property_url)
+
+      # Get properties from GSC API
+      case GSCClient.list_sites(account_id) do
+        {:ok, sites} ->
+          # Build a set of API-available property URLs
+          api_urls = MapSet.new(sites, & &1.site_url)
+
+          # Process API properties - mark which ones are saved
+          api_properties =
+            sites
+            |> Enum.map(&build_property_option/1)
+            |> Enum.map(fn opt ->
+              opt
+              |> Map.put(:is_saved, MapSet.member?(saved_urls, opt.value))
+              |> Map.put(:has_api_access, true)
+            end)
+
+          # Find saved properties that DON'T have API access anymore
+          # These are historical properties we want to preserve access to
+          historical_properties =
+            saved_properties
+            |> Enum.reject(fn prop -> MapSet.member?(api_urls, prop.property_url) end)
+            |> Enum.map(fn prop ->
+              %{
+                value: prop.property_url,
+                label: prop.display_name || infer_property_label(prop.property_url),
+                is_saved: true,
+                is_active: prop.is_active,
+                permission_level: "historical",
+                has_api_access: false
+              }
+            end)
+
+          # Combine both lists and sort
+          all_properties =
+            (api_properties ++ historical_properties)
+            |> Enum.sort_by(&property_option_sort_key/1)
+
+          {:ok, all_properties}
+
+        {:error, _error} ->
+          # If API fails, return saved properties with no API access flag
+          saved =
+            saved_properties
+            |> Enum.map(fn prop ->
+              %{
+                value: prop.property_url,
+                label: prop.display_name || infer_property_label(prop.property_url),
+                is_saved: true,
+                is_active: prop.is_active,
+                permission_level: "unknown",
+                has_api_access: false
+              }
+            end)
+            |> Enum.sort_by(&property_option_sort_key/1)
+
+          {:ok, saved}
       end
     end
   end
 
-  @spec gsc_default_property(Scope.t() | nil, account_id()) ::
-          {:ok, String.t()} | {:error, term()}
-  def gsc_default_property(%Scope{}, account_id), do: gsc_default_property(account_id)
-  def gsc_default_property(nil, account_id), do: gsc_default_property(account_id)
-
-  @spec gsc_default_property!(account_id()) :: String.t()
-  def gsc_default_property!(account_id) do
-    case gsc_default_property(account_id) do
-      {:ok, property} ->
-        property
-
-      {:error, reason} ->
-        raise ArgumentError,
-              "GSC account #{inspect(account_id)} is missing a default property (reason: #{inspect(reason)}). " <>
-                "Set one from Settings ▸ Search Console Connections."
-    end
-  end
-
-  @spec gsc_default_property!(Scope.t() | nil, account_id()) :: String.t()
-  def gsc_default_property!(%Scope{}, account_id), do: gsc_default_property!(account_id)
-  def gsc_default_property!(nil, account_id), do: gsc_default_property!(account_id)
-
-  @doc """
-  Returns the list of Search Console properties available to the given account.
-  """
-  @spec list_property_options(Scope.t() | nil, account_id()) ::
-          {:ok, [map()]} | {:error, term()}
-  def list_property_options(scope, account_id) do
-    with {:ok, account_id} <- normalize_account_id(account_id),
-         :ok <- Scope.authorize_account(scope, account_id),
-         {:ok, sites} <- GSCClient.list_sites(account_id) do
-      {:ok,
-       sites
-       |> Enum.map(&build_property_option/1)
-       |> Enum.sort_by(&property_option_sort_key/1)}
-    end
-  end
-
-  @doc """
-  Persist the chosen default property for the given account.
-  """
-  @spec set_default_property(Scope.t() | nil, account_id(), String.t()) ::
-          {:ok, AccountSetting.t()} | {:error, term()}
-  def set_default_property(scope, account_id, property) do
-    with {:ok, account_id} <- normalize_account_id(account_id),
-         :ok <- Scope.authorize_account(scope, account_id),
-         property when is_binary(property) <- normalize_property(property) do
-      upsert_account_setting(account_id, %{default_property: property})
-    else
-      nil ->
-        {:error, :invalid_property}
-
-      {:error, _} = error ->
-        error
-    end
-  end
+  # Legacy set_default_property removed - use add_property and set_active_property instead
 
   @doc """
   Update the display name shown for an account (optional quality-of-life tweak).
@@ -237,13 +393,18 @@ defmodule GscAnalytics.Accounts do
   # Private helpers
   # ---------------------------------------------------------------------------
 
-  defp filter_accounts_by_scope(accounts, %Scope{account_ids: account_ids})
-       when is_list(account_ids) and account_ids != [] do
-    ids = MapSet.new(account_ids)
-    Enum.filter(accounts, fn %{id: id} -> MapSet.member?(ids, id) end)
+  # Convert a Workspace struct to an account map for backward compatibility
+  defp workspace_to_account_map(%Workspace{} = workspace) do
+    %{
+      id: workspace.id,
+      name: workspace.google_account_email,
+      display_name: workspace.name || workspace.google_account_email,
+      enabled?: workspace.enabled,
+      oauth: %{
+        google_email: workspace.google_account_email
+      }
+    }
   end
-
-  defp filter_accounts_by_scope(accounts, _scope), do: accounts
 
   defp enrich_accounts(accounts) do
     ids = Enum.map(accounts, & &1.id)
@@ -264,21 +425,8 @@ defmodule GscAnalytics.Accounts do
       setting = Map.get(settings_by_id, account.id)
       display_name = compute_display_name(account, setting)
 
-      effective_property =
-        effective_default_property(setting, account.default_property)
-
-      property_source =
-        case {normalize_property(setting && setting.default_property),
-              normalize_property(account.default_property)} do
-          {value, _} when is_binary(value) -> :user
-          {_, value} when is_binary(value) -> :config
-          _ -> :none
-        end
-
       account
       |> Map.put(:display_name, display_name)
-      |> Map.put(:default_property, effective_property)
-      |> Map.put(:default_property_source, property_source)
     end)
   end
 
@@ -294,24 +442,6 @@ defmodule GscAnalytics.Accounts do
         "Workspace #{account.id}"
     end
   end
-
-  defp effective_default_property(nil, config_property), do: normalize_property(config_property)
-
-  defp effective_default_property(%AccountSetting{} = setting, config_property) do
-    normalize_property(setting.default_property) ||
-      normalize_property(config_property)
-  end
-
-  defp normalize_property(nil), do: nil
-
-  defp normalize_property(property) when is_binary(property) do
-    case String.trim(property) do
-      "" -> nil
-      value -> value
-    end
-  end
-
-  defp normalize_property(_), do: nil
 
   defp upsert_account_setting(account_id, attrs) do
     case Repo.get(AccountSetting, account_id) do
@@ -381,4 +511,13 @@ defmodule GscAnalytics.Accounts do
   end
 
   defp normalize_account_id(_), do: {:error, :invalid_account_id}
+
+  defp validate_uuid(uuid) when is_binary(uuid) do
+    case Ecto.UUID.cast(uuid) do
+      {:ok, valid_uuid} -> {:ok, valid_uuid}
+      :error -> {:error, :invalid_uuid}
+    end
+  end
+
+  defp validate_uuid(_), do: {:error, :invalid_uuid}
 end

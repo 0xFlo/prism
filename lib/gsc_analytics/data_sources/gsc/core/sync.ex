@@ -494,7 +494,12 @@ defmodule GscAnalytics.DataSources.GSC.Core.Sync do
   # Private - Utilities
   # ============================================================================
 
-  defp get_default_site_url(account_id), do: Accounts.gsc_default_property!(account_id)
+  defp get_default_site_url(account_id) do
+    case Accounts.get_active_property_url(account_id) do
+      {:ok, url} -> url
+      {:error, _} -> raise "No active property set for account #{account_id}"
+    end
+  end
 
   defp format_error(reason) when is_atom(reason), do: to_string(reason)
   defp format_error(reason) when is_binary(reason), do: reason

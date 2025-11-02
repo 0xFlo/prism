@@ -124,7 +124,8 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
 
         %{
           account_id: account_id,
-          url: url,
+          url: safe_truncate(url, 2048),
+          property_url: safe_truncate(site_url, 255),
           date: date,
           clicks: row["clicks"] || 0,
           impressions: row["impressions"] || 0,
@@ -147,7 +148,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
         {inserted, _} =
           Repo.insert_all(GscAnalytics.Schemas.TimeSeries, chunk,
             on_conflict: {:replace_all_except, [:inserted_at]},
-            conflict_target: [:account_id, :url, :date]
+            conflict_target: [:account_id, :property_url, :url, :date]
           )
 
         Logger.debug("Inserted #{inserted} time_series records (chunk of #{length(chunk)})")
@@ -160,7 +161,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
 
     # Refresh materialized view for these URLs only
     urls_to_refresh = Enum.map(rows, fn row -> get_in(row, ["keys", Access.at(0)]) end)
-    refresh_lifetime_stats_incrementally(account_id, urls_to_refresh)
+    refresh_lifetime_stats_incrementally(account_id, site_url, urls_to_refresh)
 
     url_count
   end
@@ -178,7 +179,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
   Process and store query data for URLs.
   Returns the count of query-URL pairs processed.
   """
-  def process_query_response(account_id, _site_url, date, query_rows) do
+  def process_query_response(account_id, site_url, date, query_rows) do
     # Group queries by URL and take top 20 per URL
     queries_by_url =
       query_rows
@@ -213,6 +214,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
       Enum.map(queries_by_url, fn {url, queries} ->
         %{
           account_id: account_id,
+          property_url: site_url,
           url: url,
           date: date,
           top_queries: queries,
@@ -231,7 +233,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
         GscAnalytics.Schemas.TimeSeries,
         chunk,
         on_conflict: {:replace, [:top_queries]},
-        conflict_target: [:account_id, :url, :date]
+        conflict_target: [:account_id, :property_url, :url, :date]
       )
     end)
 
@@ -251,11 +253,11 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
   - Reduce transaction lock time (smaller transactions = better concurrency)
   - Prevent memory pressure on large datasets
   """
-  def refresh_lifetime_stats_incrementally(_account_id, urls) when urls == [] do
+  def refresh_lifetime_stats_incrementally(_account_id, _property_url, urls) when urls == [] do
     :ok
   end
 
-  def refresh_lifetime_stats_incrementally(account_id, urls) when is_list(urls) do
+  def refresh_lifetime_stats_incrementally(account_id, property_url, urls) when is_list(urls) do
     batch_size = Config.lifetime_stats_batch_size()
     total_urls = length(urls)
     total_batches = ceil(total_urls / batch_size)
@@ -269,7 +271,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
     |> Enum.chunk_every(batch_size)
     |> Enum.with_index(1)
     |> Enum.each(fn {url_batch, batch_num} ->
-      refresh_url_batch(account_id, url_batch, batch_num, total_batches)
+      refresh_url_batch(account_id, property_url, url_batch, batch_num, total_batches)
     end)
 
     :ok
@@ -279,7 +281,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
       {:error, e}
   end
 
-  defp refresh_url_batch(account_id, urls, batch_num, total_batches) do
+  defp refresh_url_batch(account_id, property_url, urls, batch_num, total_batches) do
     batch_start = System.monotonic_time(:millisecond)
 
     Repo.transaction(fn ->
@@ -288,9 +290,9 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
         Repo.query!(
           """
           DELETE FROM url_lifetime_stats
-          WHERE account_id = $1 AND url = ANY($2::text[])
+          WHERE account_id = $1 AND property_url = $2 AND url = ANY($3::text[])
           """,
-          [account_id, urls]
+          [account_id, property_url, urls]
         )
 
       # Step 2: Recalculate and insert fresh stats for this batch
@@ -298,14 +300,14 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
         Repo.query!(
           """
           INSERT INTO url_lifetime_stats (
-            account_id, url,
+            account_id, property_url, url,
             lifetime_clicks, lifetime_impressions,
             avg_position, avg_ctr,
             first_seen_date, last_seen_date,
             days_with_data, refreshed_at
           )
           SELECT
-            account_id, url,
+            account_id, property_url, url,
             SUM(clicks) as lifetime_clicks,
             SUM(impressions) as lifetime_impressions,
             CASE
@@ -324,11 +326,12 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
             NOW() as refreshed_at
           FROM gsc_time_series
           WHERE account_id = $1
-            AND url = ANY($2::text[])
+            AND property_url = $2
+            AND url = ANY($3::text[])
             AND data_available = true
-          GROUP BY account_id, url
+          GROUP BY account_id, property_url, url
           """,
-          [account_id, urls]
+          [account_id, property_url, urls]
         )
 
       batch_duration = System.monotonic_time(:millisecond) - batch_start
@@ -345,12 +348,12 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
   # ============================================================================
 
   @doc """
-  Aggregate performance metrics for specific URLs that were just synced.
+  Aggregate performance metrics for specific URLs within a property that were just synced.
   This is optimized to only process the URLs that changed, not all URLs.
 
   DEPRECATED: This function is being replaced by refresh_lifetime_stats_incrementally/2
   """
-  def aggregate_performance_for_urls(account_id, urls, date) when is_list(urls) do
+  def aggregate_performance_for_urls(account_id, property_url, urls, date) when is_list(urls) do
     if urls == [] do
       :ok
     else
@@ -360,7 +363,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
       urls
       |> Enum.chunk_every(batch_size)
       |> Enum.each(fn url_chunk ->
-        aggregate_url_chunk(account_id, url_chunk, date)
+        aggregate_url_chunk(account_id, property_url, url_chunk, date)
       end)
 
       :ok
@@ -371,7 +374,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
   Refresh performance cache for a single URL.
   Recalculates aggregated metrics for the last N days.
   """
-  def refresh_performance_cache(account_id, url, days \\ nil) do
+  def refresh_performance_cache(account_id, property_url, url, days \\ nil) do
     days = days || Config.performance_aggregation_days()
     start_date = Date.add(Date.utc_today(), -days)
 
@@ -380,6 +383,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
       from(ts in GscAnalytics.Schemas.TimeSeries,
         where:
           ts.account_id == ^account_id and
+            ts.property_url == ^property_url and
             ts.url == ^url and
             ts.date >= ^start_date,
         select: %{
@@ -399,6 +403,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
           from(ts in GscAnalytics.Schemas.TimeSeries,
             where:
               ts.account_id == ^account_id and
+                ts.property_url == ^property_url and
                 ts.url == ^url and
                 ts.date >= ^start_date,
             select:
@@ -415,6 +420,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
 
         attrs = %{
           account_id: account_id,
+          property_url: property_url,
           url: url,
           clicks: clicks,
           impressions: impressions,
@@ -427,7 +433,11 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
         }
 
         # Upsert Performance record
-        case Repo.get_by(GscAnalytics.Schemas.Performance, account_id: account_id, url: url) do
+        case Repo.get_by(GscAnalytics.Schemas.Performance,
+               account_id: account_id,
+               property_url: property_url,
+               url: url
+             ) do
           nil ->
             %GscAnalytics.Schemas.Performance{}
             |> GscAnalytics.Schemas.Performance.changeset(attrs)
@@ -451,10 +461,11 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
   @doc """
   Get time-series data for a URL within a date range.
   """
-  def get_time_series(account_id, url, start_date, end_date) do
+  def get_time_series(account_id, property_url, url, start_date, end_date) do
     from(ts in GscAnalytics.Schemas.TimeSeries,
       where:
         ts.account_id == ^account_id and
+          ts.property_url == ^property_url and
           ts.url == ^url and
           ts.date >= ^start_date and
           ts.date <= ^end_date,
@@ -466,15 +477,19 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
   @doc """
   Get aggregated performance for a URL.
   """
-  def get_performance(account_id, url) do
-    Repo.get_by(GscAnalytics.Schemas.Performance, account_id: account_id, url: url)
+  def get_performance(account_id, property_url, url) do
+    Repo.get_by(GscAnalytics.Schemas.Performance,
+      account_id: account_id,
+      property_url: property_url,
+      url: url
+    )
   end
 
   # ============================================================================
   # Private Helpers
   # ============================================================================
 
-  defp aggregate_url_chunk(account_id, url_chunk, date) do
+  defp aggregate_url_chunk(account_id, property_url, url_chunk, date) do
     days_ago = Config.performance_aggregation_days()
     start_date = Date.add(date, -days_ago)
 
@@ -483,6 +498,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
       from(ts in GscAnalytics.Schemas.TimeSeries,
         where:
           ts.account_id == ^account_id and
+            ts.property_url == ^property_url and
             ts.url in ^url_chunk and
             ts.date >= ^start_date and
             ts.date <= ^date,
@@ -514,6 +530,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
         %{
           id: Ecto.UUID.generate(),
           account_id: account_id,
+          property_url: property_url,
           url: url,
           clicks: metrics.clicks || 0,
           impressions: metrics.impressions || 0,
@@ -545,7 +562,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
              :cache_expires_at,
              :updated_at
            ]},
-        conflict_target: [:account_id, :url]
+        conflict_target: [:account_id, :property_url, :url]
       )
     end
   end
@@ -568,4 +585,24 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
   end
 
   defp ensure_float(_), do: 0.0
+
+  # Safely truncate strings to avoid database length constraint errors
+  # Logs a warning if truncation occurs
+  defp safe_truncate(nil, _max_length), do: nil
+
+  defp safe_truncate(string, max_length) when is_binary(string) do
+    if String.length(string) > max_length do
+      truncated = String.slice(string, 0, max_length)
+
+      Logger.warning(
+        "Truncated overly long string from #{String.length(string)} to #{max_length} characters: #{String.slice(string, 0, 100)}..."
+      )
+
+      truncated
+    else
+      string
+    end
+  end
+
+  defp safe_truncate(value, _max_length), do: value
 end

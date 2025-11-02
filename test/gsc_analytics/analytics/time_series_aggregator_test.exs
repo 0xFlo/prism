@@ -23,6 +23,7 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorTest do
   alias GscAnalytics.Repo
 
   @account_id 1
+  @test_property_url "sc-domain:example.com"
 
   describe "week-over-week growth calculation" do
     test "calculates positive growth correctly" do
@@ -48,7 +49,11 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorTest do
         {~D[2025-11-24], 150}
       ])
 
-      growth = TimeSeriesAggregator.calculate_wow_growth(url, 4, %{account_id: @account_id})
+      growth =
+        TimeSeriesAggregator.calculate_wow_growth(url, 4, %{
+          account_id: @account_id,
+          property_url: @test_property_url
+        })
 
       # (600 - 400) / 400 * 100 = 50%
       assert growth == 50.0
@@ -74,7 +79,11 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorTest do
         {~D[2025-11-24], 100}
       ])
 
-      growth = TimeSeriesAggregator.calculate_wow_growth(url, 4, %{account_id: @account_id})
+      growth =
+        TimeSeriesAggregator.calculate_wow_growth(url, 4, %{
+          account_id: @account_id,
+          property_url: @test_property_url
+        })
 
       # (400 - 800) / 800 * 100 = -50%
       assert growth == -50.0
@@ -91,7 +100,11 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorTest do
         {~D[2025-11-24], 100}
       ])
 
-      growth = TimeSeriesAggregator.calculate_wow_growth(url, 4, %{account_id: @account_id})
+      growth =
+        TimeSeriesAggregator.calculate_wow_growth(url, 4, %{
+          account_id: @account_id,
+          property_url: @test_property_url
+        })
 
       assert growth == 0.0
     end
@@ -114,7 +127,11 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorTest do
         {~D[2025-11-24], 100}
       ])
 
-      growth = TimeSeriesAggregator.calculate_wow_growth(url, 4, %{account_id: @account_id})
+      growth =
+        TimeSeriesAggregator.calculate_wow_growth(url, 4, %{
+          account_id: @account_id,
+          property_url: @test_property_url
+        })
 
       assert growth == 0.0
     end
@@ -135,7 +152,11 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorTest do
         {~D[2025-12-01], 150}
       ])
 
-      growth = TimeSeriesAggregator.calculate_wow_growth(url, 2, %{account_id: @account_id})
+      growth =
+        TimeSeriesAggregator.calculate_wow_growth(url, 2, %{
+          account_id: @account_id,
+          property_url: @test_property_url
+        })
 
       assert growth == 50.0
     end
@@ -212,7 +233,11 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorTest do
         # Sun
       ])
 
-      weekly = TimeSeriesAggregator.aggregate_by_week(url, 2, %{account_id: @account_id})
+      weekly =
+        TimeSeriesAggregator.aggregate_by_week(url, 2, %{
+          account_id: @account_id,
+          property_url: @test_property_url
+        })
 
       assert length(weekly) == 1
       [week] = weekly
@@ -237,7 +262,11 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorTest do
         {~D[2025-11-12], 10}
       ])
 
-      weekly = TimeSeriesAggregator.aggregate_by_week(url, 2, %{account_id: @account_id})
+      weekly =
+        TimeSeriesAggregator.aggregate_by_week(url, 2, %{
+          account_id: @account_id,
+          property_url: @test_property_url
+        })
 
       [week] = weekly
 
@@ -261,7 +290,11 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorTest do
         {~D[2025-11-11], 20, 100}
       ])
 
-      weekly = TimeSeriesAggregator.aggregate_by_week(url, 2, %{account_id: @account_id})
+      weekly =
+        TimeSeriesAggregator.aggregate_by_week(url, 2, %{
+          account_id: @account_id,
+          property_url: @test_property_url
+        })
 
       [week] = weekly
 
@@ -285,7 +318,11 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorTest do
         {~D[2025-11-12], 10, 100, 15.0}
       ])
 
-      weekly = TimeSeriesAggregator.aggregate_by_week(url, 2, %{account_id: @account_id})
+      weekly =
+        TimeSeriesAggregator.aggregate_by_week(url, 2, %{
+          account_id: @account_id,
+          property_url: @test_property_url
+        })
 
       [week] = weekly
 
@@ -304,7 +341,11 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorTest do
         {~D[2025-11-12], 10, 100, 15.0}
       ])
 
-      weekly = TimeSeriesAggregator.aggregate_by_week(url, 2, %{account_id: @account_id})
+      weekly =
+        TimeSeriesAggregator.aggregate_by_week(url, 2, %{
+          account_id: @account_id,
+          property_url: @test_property_url
+        })
 
       [week] = weekly
 
@@ -326,7 +367,11 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorTest do
         {~D[2025-11-30], 10}
       ])
 
-      monthly = TimeSeriesAggregator.aggregate_by_month(url, 2, %{account_id: @account_id})
+      monthly =
+        TimeSeriesAggregator.aggregate_by_month(url, 2, %{
+          account_id: @account_id,
+          property_url: @test_property_url
+        })
 
       [month] = monthly
 
@@ -352,7 +397,11 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorTest do
       ])
 
       # Request 12 months to ensure Feb/Mar are included (today is Oct 2025)
-      monthly = TimeSeriesAggregator.aggregate_by_month(url, 12, %{account_id: @account_id})
+      monthly =
+        TimeSeriesAggregator.aggregate_by_month(url, 12, %{
+          account_id: @account_id,
+          property_url: @test_property_url
+        })
 
       feb = Enum.find(monthly, &(&1.date == ~D[2025-02-01]))
       mar = Enum.find(monthly, &(&1.date == ~D[2025-03-01]))
@@ -375,7 +424,11 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorTest do
         {~D[2025-11-30], 30, 100}
       ])
 
-      monthly = TimeSeriesAggregator.aggregate_by_month(url, 2, %{account_id: @account_id})
+      monthly =
+        TimeSeriesAggregator.aggregate_by_month(url, 2, %{
+          account_id: @account_id,
+          property_url: @test_property_url
+        })
 
       [month] = monthly
 
@@ -392,7 +445,11 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorTest do
       # Nov 10, 2025 is a Monday
       populate_daily_data(url, [{~D[2025-11-10], 10}])
 
-      weekly = TimeSeriesAggregator.aggregate_by_week(url, 2, %{account_id: @account_id})
+      weekly =
+        TimeSeriesAggregator.aggregate_by_week(url, 2, %{
+          account_id: @account_id,
+          property_url: @test_property_url
+        })
 
       [week] = weekly
 
@@ -407,7 +464,11 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorTest do
       # Nov 16, 2025 is a Sunday (day 7 of week Nov 10-16)
       populate_daily_data(url, [{~D[2025-11-16], 10}])
 
-      weekly = TimeSeriesAggregator.aggregate_by_week(url, 2, %{account_id: @account_id})
+      weekly =
+        TimeSeriesAggregator.aggregate_by_week(url, 2, %{
+          account_id: @account_id,
+          property_url: @test_property_url
+        })
 
       [week] = weekly
 
@@ -423,7 +484,11 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorTest do
       # Nov 12, 2025 is a Wednesday (day 3 of week Nov 10-16)
       populate_daily_data(url, [{~D[2025-11-12], 10}])
 
-      weekly = TimeSeriesAggregator.aggregate_by_week(url, 2, %{account_id: @account_id})
+      weekly =
+        TimeSeriesAggregator.aggregate_by_week(url, 2, %{
+          account_id: @account_id,
+          property_url: @test_property_url
+        })
 
       [week] = weekly
 
@@ -547,7 +612,11 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorTest do
 
       url = "https://example.com/no-data"
 
-      weekly = TimeSeriesAggregator.aggregate_by_week(url, 4, %{account_id: @account_id})
+      weekly =
+        TimeSeriesAggregator.aggregate_by_week(url, 4, %{
+          account_id: @account_id,
+          property_url: @test_property_url
+        })
 
       assert weekly == []
     end
@@ -558,7 +627,11 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorTest do
       url = "https://example.com/single-day"
       populate_daily_data(url, [{~D[2025-11-15], 10}])
 
-      weekly = TimeSeriesAggregator.aggregate_by_week(url, 2, %{account_id: @account_id})
+      weekly =
+        TimeSeriesAggregator.aggregate_by_week(url, 2, %{
+          account_id: @account_id,
+          property_url: @test_property_url
+        })
 
       assert length(weekly) == 1
     end
@@ -569,7 +642,11 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorTest do
       url = "https://example.com/zero-impressions"
       populate_daily_data(url, [{~D[2025-11-15], 10, 0}])
 
-      weekly = TimeSeriesAggregator.aggregate_by_week(url, 2, %{account_id: @account_id})
+      weekly =
+        TimeSeriesAggregator.aggregate_by_week(url, 2, %{
+          account_id: @account_id,
+          property_url: @test_property_url
+        })
 
       [week] = weekly
 
@@ -584,7 +661,11 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorTest do
       # CTR = 33/100 = 0.33, but should round to 4 decimals
       populate_daily_data(url, [{~D[2025-11-15], 33, 100}])
 
-      weekly = TimeSeriesAggregator.aggregate_by_week(url, 2, %{account_id: @account_id})
+      weekly =
+        TimeSeriesAggregator.aggregate_by_week(url, 2, %{
+          account_id: @account_id,
+          property_url: @test_property_url
+        })
 
       [week] = weekly
 
@@ -612,6 +693,7 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorTest do
 
           %{
             account_id: @account_id,
+            property_url: @test_property_url,
             url: url,
             date: date,
             clicks: day_clicks,
@@ -636,6 +718,7 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorTest do
         {date, clicks, impressions} ->
           %{
             account_id: @account_id,
+            property_url: @test_property_url,
             url: url,
             date: date,
             clicks: clicks,
@@ -652,6 +735,7 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorTest do
 
           %{
             account_id: @account_id,
+            property_url: @test_property_url,
             url: url,
             date: date,
             clicks: clicks,
@@ -674,6 +758,7 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorTest do
       Enum.map(days, fn {date, clicks, impressions, position} ->
         %{
           account_id: @account_id,
+          property_url: @test_property_url,
           url: url,
           date: date,
           clicks: clicks,

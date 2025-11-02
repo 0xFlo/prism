@@ -1,32 +1,39 @@
 defmodule GscAnalytics.DataSources.GSC.Support.Authenticator do
   @moduledoc """
-  Manages Google Search Console API authentication using service accounts.
+  Manages Google Search Console API authentication using OAuth 2.0.
 
-  The authenticator now supports multiple service accounts by keeping a per-account
-  credential and token cache. Tokens are refreshed proactively and retries are
-  automatically scheduled when refreshes fail.
+  The authenticator maintains a per-workspace token cache with automatic refresh.
+  Tokens are refreshed proactively before expiration to ensure uninterrupted API access.
+
+  ## Architecture
+
+  Workspaces are stored in the database (see `GscAnalytics.Schemas.Workspace`).
+  OAuth tokens are managed by `GscAnalytics.Auth` module.
+  This GenServer provides a caching layer to minimize database lookups.
+
+  ## Token Management
+
+  - Tokens are cached in memory with expiry tracking
+  - Auto-refresh is scheduled 5 minutes before token expiration
+  - Failed refreshes trigger automatic retries
   """
 
   use GenServer
   require Logger
 
   alias GscAnalytics.Auth
-  alias GscAnalytics.DataSources.GSC.Accounts
   alias GscAnalytics.DataSources.GSC.Telemetry.AuditLogger
+  alias GscAnalytics.Workspaces
 
-  @google_token_url "https://oauth2.googleapis.com/token"
-  @google_auth_scope "https://www.googleapis.com/auth/webmasters.readonly"
-
-  @type account_id :: Accounts.account_id()
+  @type workspace_id :: Workspaces.workspace_id()
 
   @refresh_leading_time 300_000
 
-  @type account_state :: %{
-          credentials: map() | nil,
+  @type workspace_state :: %{
           token: String.t() | nil,
           expires_at: DateTime.t() | nil,
           refresh_timer: reference() | nil,
-          retry_timers: %{optional(atom()) => reference()},
+          retry_timer: reference() | nil,
           last_error: term() | nil
         }
 
@@ -38,293 +45,105 @@ defmodule GscAnalytics.DataSources.GSC.Support.Authenticator do
   end
 
   @doc """
-  Retrieve a valid OAuth token for the given account.
+  Retrieve a valid OAuth token for the given workspace.
+
+  Returns `{:ok, token}` if available, `{:error, reason}` otherwise.
   """
-  @spec get_token(account_id()) ::
-          {:ok, String.t()} | {:error, :no_token | :account_disabled | :unknown_account | term()}
-  def get_token(account_id) when is_integer(account_id) do
-    GenServer.call(__MODULE__, {:get_token, account_id})
+  @spec get_token(workspace_id()) ::
+          {:ok, String.t()} | {:error, :no_token | :workspace_not_found | term()}
+  def get_token(workspace_id) when is_integer(workspace_id) do
+    GenServer.call(__MODULE__, {:get_token, workspace_id})
   end
 
   @doc """
-  Force a token refresh for the given account.
+  Force a token refresh for the given workspace.
   """
-  @spec refresh_token(account_id()) ::
-          {:ok, String.t()} | {:error, :missing_credentials | :unknown_account | term()}
-  def refresh_token(account_id) when is_integer(account_id) do
-    GenServer.call(__MODULE__, {:refresh_token, account_id})
-  end
-
-  @doc """
-  Load new credentials from a JSON string for the given account.
-  Primarily used in tests or when rotating keys without disk access.
-  """
-  @spec load_credentials(account_id(), String.t()) ::
-          :ok | {:error, term()}
-  def load_credentials(account_id, credentials_json)
-      when is_integer(account_id) and is_binary(credentials_json) do
-    GenServer.call(__MODULE__, {:load_credentials, account_id, credentials_json})
+  @spec refresh_token(workspace_id()) :: {:ok, String.t()} | {:error, term()}
+  def refresh_token(workspace_id) when is_integer(workspace_id) do
+    GenServer.call(__MODULE__, {:refresh_token, workspace_id})
   end
 
   # GenServer callbacks -------------------------------------------------------
 
   @impl true
   def init(_opts) do
-    state = %{accounts: %{}}
-    {:ok, state, {:continue, :bootstrap_accounts}}
+    state = %{workspaces: %{}}
+    {:ok, state}
   end
 
   @impl true
-  def handle_continue(:bootstrap_accounts, state) do
-    new_state =
-      Accounts.list_accounts()
-      |> Enum.reduce(state, fn account, acc ->
-        acc_with_creds =
-          acc
-          |> ensure_account_entry(account.id)
-          |> maybe_load_credentials_from_disk(account.id, account.service_account_file)
-
-        # Handle the tuple return from maybe_fetch_token
-        case maybe_fetch_token(acc_with_creds, account.id) do
-          {updated_state, _result} -> updated_state
+  def handle_call({:get_token, workspace_id}, _from, state) do
+    case get_workspace_state(state, workspace_id) do
+      nil ->
+        # Workspace not in cache, try to fetch from database
+        case fetch_token(state, workspace_id) do
+          {new_state, {:ok, token}} -> {:reply, {:ok, token}, new_state}
+          {new_state, {:error, reason}} -> {:reply, {:error, reason}, new_state}
         end
-      end)
 
-    {:noreply, new_state}
-  end
+      %{token: token, expires_at: expires_at} ->
+        cond do
+          is_nil(token) || token_expired?(expires_at) ->
+            case fetch_token(state, workspace_id, force?: true) do
+              {new_state, {:ok, new_token}} -> {:reply, {:ok, new_token}, new_state}
+              {new_state, {:error, reason}} -> {:reply, {:error, reason}, new_state}
+            end
 
-  @impl true
-  def handle_call({:get_token, account_id}, _from, state) do
-    with {:ok, _account} <- Accounts.fetch_account(account_id) do
-      case Map.get(state.accounts, account_id) do
-        nil ->
-          {:reply, {:error, :unknown_account}, state}
-
-        %{token: token, expires_at: expires_at} ->
-          cond do
-            is_nil(token) ->
-              case maybe_fetch_token(state, account_id) do
-                {new_state, {:ok, new_token}} -> {:reply, {:ok, new_token}, new_state}
-                {new_state, {:error, reason}} -> {:reply, {:error, reason}, new_state}
-              end
-
-            token_expired?(expires_at) ->
-              case maybe_fetch_token(state, account_id, force?: true) do
-                {new_state, {:ok, new_token}} -> {:reply, {:ok, new_token}, new_state}
-                {new_state, {:error, reason}} -> {:reply, {:error, reason}, new_state}
-              end
-
-            true ->
-              {:reply, {:ok, token}, state}
-          end
-      end
-    else
-      {:error, reason} ->
-        {:reply, {:error, reason}, state}
+          true ->
+            {:reply, {:ok, token}, state}
+        end
     end
   end
 
   @impl true
-  def handle_call({:refresh_token, account_id}, _from, state) do
-    case maybe_fetch_token(state, account_id, force?: true) do
+  def handle_call({:refresh_token, workspace_id}, _from, state) do
+    case fetch_token(state, workspace_id, force?: true) do
       {new_state, {:ok, token}} -> {:reply, {:ok, token}, new_state}
       {new_state, {:error, reason}} -> {:reply, {:error, reason}, new_state}
     end
   end
 
   @impl true
-  def handle_call({:load_credentials, account_id, credentials_json}, _from, state) do
-    with {:ok, credentials} <- JSON.decode(credentials_json) do
-      state =
-        state
-        |> ensure_account_entry(account_id)
-        |> put_account(account_id, %{
-          credentials: credentials,
-          last_error: nil
-        })
-        |> cancel_retry(account_id, :load_credentials)
-
-      case maybe_fetch_token(state, account_id, force?: true) do
-        {new_state, {:ok, _token}} -> {:reply, :ok, new_state}
-        {new_state, {:error, reason}} -> {:reply, {:error, reason}, new_state}
-      end
-    else
-      {:error, reason} ->
-        {:reply, {:error, reason}, state}
-    end
-  end
-
-  @impl true
-  def handle_info({:retry, :load_credentials, account_id}, state) do
-    with {:ok, account} <- Accounts.fetch_account(account_id) do
-      state_with_creds =
-        state
-        |> ensure_account_entry(account_id)
-        |> maybe_load_credentials_from_disk(account_id, account.service_account_file)
-
-      # Handle the tuple return from maybe_fetch_token
-      {new_state, _result} = maybe_fetch_token(state_with_creds, account_id)
-
-      {:noreply, new_state}
-    else
-      {:error, reason} ->
-        Logger.error("GSC account #{account_id} unavailable during retry: #{inspect(reason)}")
-        {:noreply, state}
-    end
-  end
-
-  @impl true
-  def handle_info({:retry, :fetch_token, account_id}, state) do
-    {new_state, _result} = maybe_fetch_token(state, account_id, force?: true)
-    {:noreply, new_state}
-  end
-
-  @impl true
-  def handle_info({:refresh_token, account_id}, state) do
-    case maybe_fetch_token(state, account_id, force?: true) do
+  def handle_info({:refresh_oauth_token, workspace_id}, state) do
+    case refresh_oauth_token(state, workspace_id) do
       {new_state, {:ok, _token}} ->
         {:noreply, new_state}
 
       {new_state, {:error, reason}} ->
-        Logger.error("Failed to refresh GSC token for account #{account_id}: #{inspect(reason)}")
-
-        {:noreply, new_state}
-    end
-  end
-
-  @impl true
-  def handle_info({:refresh_oauth_token, account_id}, state) do
-    case refresh_oauth_token(state, account_id) do
-      {new_state, {:ok, _token}} ->
-        {:noreply, new_state}
-
-      {new_state, {:error, reason}} ->
-        Logger.warning(
-          "Proactive OAuth token refresh failed for account #{account_id}: #{inspect(reason)}"
+        Logger.error(
+          "Failed to refresh OAuth token for workspace #{workspace_id}: #{inspect(reason)}"
         )
 
         {:noreply, new_state}
     end
+  end
+
+  @impl true
+  def handle_info({:retry, :fetch_token, workspace_id}, state) do
+    {new_state, _result} = fetch_token(state, workspace_id, force?: true)
+    {:noreply, new_state}
   end
 
   # Internal helpers ----------------------------------------------------------
 
-  defp get_auth_method(account_id) when is_integer(account_id) do
-    case Auth.has_oauth_token?(nil, account_id) do
-      true -> :oauth
-      {:error, _reason} -> :service_account
-      _ -> :service_account
-    end
-  end
+  defp fetch_token(state, workspace_id, opts \\ []) do
+    force_refresh? = Keyword.get(opts, :force?, false)
 
-  defp maybe_load_credentials_from_disk(state, account_id, nil) do
-    Logger.warning(
-      "GSC account #{account_id} is enabled but no service account file is configured"
-    )
-
-    put_account(state, account_id, %{credentials: nil, last_error: :missing_credentials})
-    |> schedule_retry(account_id, :load_credentials, 60_000)
-  end
-
-  defp maybe_load_credentials_from_disk(state, account_id, path) when is_binary(path) do
-    case File.read(path) do
-      {:ok, content} ->
-        case JSON.decode(content) do
-          {:ok, credentials} ->
-            Logger.info("Loaded GSC credentials for account #{account_id}")
-
-            state
-            |> put_account(account_id, %{credentials: credentials, last_error: nil})
-            |> cancel_retry(account_id, :load_credentials)
-
-          {:error, reason} ->
-            Logger.error(
-              "Failed to decode GSC credentials for account #{account_id}: #{inspect(reason)}"
-            )
-
-            state
-            |> put_account(account_id, %{credentials: nil, last_error: reason})
-            |> schedule_retry(account_id, :load_credentials, 30_000)
+    case Auth.get_oauth_token(nil, workspace_id) do
+      {:ok, oauth_token} ->
+        if needs_oauth_refresh?(oauth_token, force_refresh?) do
+          refresh_oauth_token(state, workspace_id)
+        else
+          handle_oauth_success(state, workspace_id, oauth_token)
         end
 
-      {:error, reason} ->
-        Logger.error(
-          "Failed to read GSC credentials for account #{account_id} from #{path}: #{inspect(reason)}"
-        )
-
-        state
-        |> put_account(account_id, %{credentials: nil, last_error: reason})
-        |> schedule_retry(account_id, :load_credentials, 30_000)
-    end
-  end
-
-  defp maybe_fetch_token(state, account_id, opts \\ []) do
-    state = ensure_account_entry(state, account_id)
-
-    case get_auth_method(account_id) do
-      :oauth ->
-        fetch_oauth_token(state, account_id, opts)
-
-      :service_account ->
-        fetch_service_account_token(state, account_id, opts)
-    end
-  end
-
-  defp fetch_service_account_token(state, account_id, opts) do
-    with {:ok, %{credentials: credentials}} when is_map(credentials) <-
-           fetch_account_state(state, account_id) do
-      fetch_service_account_with_credentials(state, account_id, credentials, opts)
-    else
-      {:ok, %{credentials: nil}} ->
-        {state, {:error, :missing_credentials}}
+      {:error, :not_found} ->
+        Logger.warning("No OAuth token found for workspace #{workspace_id}")
+        {state, {:error, :oauth_not_configured}}
 
       {:error, reason} ->
-        {state, {:error, reason}}
-    end
-  end
-
-  defp fetch_service_account_with_credentials(state, account_id, credentials, _opts) do
-    case fetch_access_token(credentials) do
-      {:ok, token, expires_in} ->
-        expires_at = DateTime.add(DateTime.utc_now(), expires_in, :second)
-
-        AuditLogger.log_auth_event("token_refresh_success", %{
-          account_id: account_id,
-          expires_at: DateTime.to_iso8601(expires_at),
-          expires_in_seconds: expires_in
-        })
-
-        Logger.info(
-          "Authenticated with GSC for account #{account_id}; token expires #{format_expiry_window(expires_in)}"
-        )
-
-        state =
-          state
-          |> put_account(account_id, %{
-            token: token,
-            expires_at: expires_at,
-            last_error: nil
-          })
-          |> cancel_retry(account_id, :fetch_token)
-          |> schedule_service_account_refresh(account_id, expires_in)
-
-        {state, {:ok, token}}
-
-      {:error, reason} ->
-        AuditLogger.log_auth_event("token_refresh_failed", %{
-          account_id: account_id,
-          error: inspect(reason),
-          retry_in_seconds: 30
-        })
-
-        Logger.error("Failed to obtain GSC token for account #{account_id}: #{inspect(reason)}")
-
-        state =
-          state
-          |> put_account(account_id, %{last_error: reason, token: nil, expires_at: nil})
-          |> schedule_retry(account_id, :fetch_token, 30_000)
-
-        {state, {:error, reason}}
+        Logger.error("OAuth error for workspace #{workspace_id}: #{inspect(reason)}")
+        {state, {:error, {:oauth_error, reason}}}
     end
   end
 
@@ -334,278 +153,145 @@ defmodule GscAnalytics.DataSources.GSC.Support.Authenticator do
       not present_access_token?(oauth_token.access_token)
   end
 
-  defp refresh_oauth_token(state, account_id) do
-    case Auth.refresh_oauth_access_token(nil, account_id) do
+  defp refresh_oauth_token(state, workspace_id) do
+    case Auth.refresh_oauth_access_token(nil, workspace_id) do
       {:ok, refreshed} ->
-        handle_oauth_success(state, account_id, refreshed)
+        handle_oauth_success(state, workspace_id, refreshed)
 
       {:error, reason} ->
-        Logger.error("OAuth token refresh failed for account #{account_id}: #{inspect(reason)}")
+        Logger.error(
+          "OAuth token refresh failed for workspace #{workspace_id}: #{inspect(reason)}"
+        )
 
         state =
           state
-          |> cancel_refresh(account_id)
-          |> put_account(account_id, %{last_error: reason, token: nil, expires_at: nil})
+          |> cancel_refresh(workspace_id)
+          |> put_workspace(workspace_id, %{last_error: reason, token: nil, expires_at: nil})
 
         {state, {:error, {:oauth_refresh_failed, reason}}}
     end
   end
 
-  defp handle_oauth_success(state, account_id, %{access_token: access_token} = token)
+  defp handle_oauth_success(state, workspace_id, %{access_token: access_token} = token)
        when is_binary(access_token) and access_token != "" do
     expires_at = token.expires_at
 
     AuditLogger.log_auth_event("oauth_token_available", %{
-      account_id: account_id,
+      account_id: workspace_id,
       expires_at: maybe_iso8601(expires_at)
     })
 
     Logger.info(
-      "Using OAuth token for account #{account_id}; token expires #{format_expiry_from_datetime(expires_at)}"
+      "Using OAuth token for workspace #{workspace_id}; token expires #{format_expiry_from_datetime(expires_at)}"
     )
 
     state =
       state
-      |> put_account(account_id, %{
+      |> put_workspace(workspace_id, %{
         token: access_token,
         expires_at: expires_at,
         last_error: nil
       })
-      |> cancel_retry(account_id, :fetch_token)
-      |> schedule_oauth_refresh(account_id, expires_at)
+      |> cancel_retry(workspace_id)
+      |> schedule_oauth_refresh(workspace_id, expires_at)
 
     {state, {:ok, access_token}}
   end
 
-  defp handle_oauth_success(state, account_id, _token) do
-    Logger.error("OAuth token for account #{account_id} is missing an access token")
+  defp handle_oauth_success(state, workspace_id, _token) do
+    Logger.error("OAuth token for workspace #{workspace_id} is missing an access token")
 
     state =
       state
-      |> cancel_refresh(account_id)
-      |> put_account(account_id, %{last_error: :missing_access_token, token: nil, expires_at: nil})
+      |> cancel_refresh(workspace_id)
+      |> put_workspace(workspace_id, %{
+        last_error: :missing_access_token,
+        token: nil,
+        expires_at: nil
+      })
 
     {state, {:error, :missing_access_token}}
   end
 
-  defp fetch_oauth_token(state, account_id, opts) do
-    force_refresh? = Keyword.get(opts, :force?, false)
+  # State management helpers --------------------------------------------------
 
-    case Auth.get_oauth_token(nil, account_id) do
-      {:ok, oauth_token} ->
-        if needs_oauth_refresh?(oauth_token, force_refresh?) do
-          refresh_oauth_token(state, account_id)
-        else
-          handle_oauth_success(state, account_id, oauth_token)
-        end
-
-      {:error, :not_found} ->
-        {state, {:error, :oauth_not_configured}}
-
-      {:error, reason} ->
-        {state, {:error, {:oauth_error, reason}}}
-    end
+  defp get_workspace_state(state, workspace_id) do
+    Map.get(state.workspaces, workspace_id)
   end
 
-  defp fetch_account_state(state, account_id) do
-    case Map.fetch(state.accounts, account_id) do
-      {:ok, account_state} -> {:ok, account_state}
-      :error -> {:error, :unknown_account}
-    end
-  end
-
-  defp ensure_account_entry(state, account_id) do
-    Map.update(state, :accounts, %{}, fn accounts ->
-      Map.put_new(accounts, account_id, %{
-        credentials: nil,
-        token: nil,
-        expires_at: nil,
-        refresh_timer: nil,
-        retry_timers: %{},
-        last_error: nil
-      })
-    end)
-  end
-
-  defp put_account(state, account_id, updates) do
-    update_in(state, [:accounts, account_id], fn existing ->
+  defp put_workspace(state, workspace_id, updates) do
+    update_in(state, [:workspaces, workspace_id], fn existing ->
       (existing ||
          %{
-           credentials: nil,
            token: nil,
            expires_at: nil,
            refresh_timer: nil,
-           retry_timers: %{},
+           retry_timer: nil,
            last_error: nil
          })
       |> Map.merge(updates)
     end)
   end
 
-  defp schedule_service_account_refresh(state, account_id, expires_in) do
-    refresh_in = max((expires_in - 600) * 1000, 60_000)
-
-    state
-    |> cancel_refresh(account_id)
-    |> put_account(account_id, %{
-      refresh_timer: Process.send_after(self(), {:refresh_token, account_id}, refresh_in)
-    })
-  end
-
-  defp schedule_oauth_refresh(state, account_id, %DateTime{} = expires_at) do
+  defp schedule_oauth_refresh(state, workspace_id, %DateTime{} = expires_at) do
     now = DateTime.utc_now()
     time_until_expiry = max(DateTime.diff(expires_at, now, :millisecond), 0)
     refresh_in = max(time_until_expiry - @refresh_leading_time, 0)
 
     state
-    |> cancel_refresh(account_id)
-    |> put_account(account_id, %{
-      refresh_timer: Process.send_after(self(), {:refresh_oauth_token, account_id}, refresh_in)
+    |> cancel_refresh(workspace_id)
+    |> put_workspace(workspace_id, %{
+      refresh_timer: Process.send_after(self(), {:refresh_oauth_token, workspace_id}, refresh_in)
     })
   end
 
-  defp schedule_oauth_refresh(state, _account_id, _expires_at), do: state
+  defp schedule_oauth_refresh(state, _workspace_id, _expires_at), do: state
 
-  defp cancel_refresh(state, account_id) do
-    case get_in(state, [:accounts, account_id, :refresh_timer]) do
+  defp cancel_refresh(state, workspace_id) do
+    case get_in(state, [:workspaces, workspace_id, :refresh_timer]) do
       nil ->
         state
 
       timer ->
         Process.cancel_timer(timer)
-        put_account(state, account_id, %{refresh_timer: nil})
+        put_workspace(state, workspace_id, %{refresh_timer: nil})
     end
   end
 
-  defp schedule_retry(state, account_id, type, delay_ms) when is_atom(type) do
-    state_after_cancel = cancel_retry(state, account_id, type)
-    retry_timers = get_in(state_after_cancel, [:accounts, account_id, :retry_timers]) || %{}
-
-    timer = Process.send_after(self(), {:retry, type, account_id}, delay_ms)
-
-    put_account(state_after_cancel, account_id, %{
-      retry_timers: Map.put(retry_timers, type, timer)
-    })
-  end
-
-  defp cancel_retry(state, account_id, type) when is_atom(type) do
-    retry_timers = get_in(state, [:accounts, account_id, :retry_timers]) || %{}
-
-    case Map.pop(retry_timers, type) do
-      {nil, _rest} ->
+  defp cancel_retry(state, workspace_id) do
+    case get_in(state, [:workspaces, workspace_id, :retry_timer]) do
+      nil ->
         state
 
-      {timer, rest} ->
+      timer ->
         Process.cancel_timer(timer)
-        put_account(state, account_id, %{retry_timers: rest})
+        put_workspace(state, workspace_id, %{retry_timer: nil})
     end
   end
+
+  # Token validation helpers --------------------------------------------------
 
   defp token_expired?(nil), do: true
 
-  defp token_expired?(expires_at) do
-    DateTime.compare(DateTime.utc_now(), expires_at) == :gt
+  defp token_expired?(%DateTime{} = expires_at) do
+    DateTime.compare(expires_at, DateTime.utc_now()) == :lt
   end
 
-  defp present_access_token?(token) when is_binary(token), do: String.trim(token) != ""
-  defp present_access_token?(_), do: false
+  defp present_access_token?(nil), do: false
+  defp present_access_token?(""), do: false
+  defp present_access_token?(token) when is_binary(token), do: true
 
-  defp format_expiry_from_datetime(nil), do: "at an unknown time"
+  # Formatting helpers --------------------------------------------------------
 
-  defp format_expiry_from_datetime(%DateTime{} = expires_at) do
-    seconds = DateTime.diff(expires_at, DateTime.utc_now(), :second)
-    format_expiry_window(seconds)
-  end
+  defp format_expiry_from_datetime(nil), do: "never"
 
-  defp maybe_iso8601(%DateTime{} = datetime), do: DateTime.to_iso8601(datetime)
-  defp maybe_iso8601(_), do: nil
-
-  # OAuth helpers -------------------------------------------------------------
-
-  defp fetch_access_token(credentials) do
-    with {:ok, jwt} <- generate_jwt_assertion(credentials) do
-      request_access_token(jwt)
+  defp format_expiry_from_datetime(datetime) do
+    case DateTime.compare(datetime, DateTime.utc_now()) do
+      :lt -> "expired"
+      _ -> "at #{DateTime.to_iso8601(datetime)}"
     end
   end
 
-  defp generate_jwt_assertion(credentials) do
-    now = System.os_time(:second)
-
-    claims = %{
-      "iss" => credentials["client_email"],
-      "scope" => @google_auth_scope,
-      "aud" => @google_token_url,
-      "iat" => now,
-      "exp" => now + 3600
-    }
-
-    sign_jwt(claims, credentials["private_key"])
-  end
-
-  defp sign_jwt(claims, private_key_pem) do
-    try do
-      jwk = JOSE.JWK.from_pem(private_key_pem)
-      {_, jwt} = JOSE.JWT.sign(jwk, %{"alg" => "RS256"}, claims) |> JOSE.JWS.compact()
-      {:ok, jwt}
-    rescue
-      error -> {:error, error}
-    end
-  end
-
-  defp request_access_token(jwt) do
-    body =
-      URI.encode_query(%{
-        "grant_type" => "urn:ietf:params:oauth:grant-type:jwt-bearer",
-        "assertion" => jwt
-      })
-
-    headers = [
-      {"Content-Type", "application/x-www-form-urlencoded"},
-      {"Accept", "application/json"}
-    ]
-
-    request = {
-      String.to_charlist(@google_token_url),
-      Enum.map(headers, fn {k, v} -> {String.to_charlist(k), String.to_charlist(v)} end),
-      ~c"application/x-www-form-urlencoded",
-      body
-    }
-
-    case :httpc.request(:post, request, [], []) do
-      {:ok, {{_, 200, _}, _, response_body}} ->
-        case JSON.decode(to_string(response_body)) do
-          {:ok, %{"access_token" => token, "expires_in" => expires_in}} ->
-            {:ok, token, expires_in}
-
-          {:ok, response} ->
-            {:error, {:unexpected_response, response}}
-
-          {:error, reason} ->
-            {:error, {:decode_error, reason}}
-        end
-
-      {:ok, {{_, status, _}, _, response_body}} ->
-        {:error, {:oauth_error, status, to_string(response_body)}}
-
-      {:error, reason} ->
-        {:error, {:request_failed, reason}}
-    end
-  end
-
-  defp format_expiry_window(expires_in) when is_integer(expires_in) and expires_in > 0 do
-    cond do
-      expires_in < 60 ->
-        "in ~#{expires_in}s"
-
-      expires_in < 3600 ->
-        minutes = Float.round(expires_in / 60, 1)
-        "in ~#{minutes} min"
-
-      true ->
-        hours = Float.round(expires_in / 3600, 2)
-        "in ~#{hours} h"
-    end
-  end
-
-  defp format_expiry_window(_), do: "at an unknown time"
+  defp maybe_iso8601(nil), do: nil
+  defp maybe_iso8601(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
 end

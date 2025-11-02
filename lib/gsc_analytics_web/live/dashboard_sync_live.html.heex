@@ -4,6 +4,9 @@
   current_account={@current_account}
   current_account_id={@current_account_id}
   account_options={@account_options}
+  current_property={@current_property}
+  current_property_id={@current_property_id}
+  property_options={@property_options}
 >
   <div class="mx-auto w-full max-w-7xl px-6 py-10">
     <div class="flex flex-wrap items-end justify-between gap-6">
@@ -38,6 +41,44 @@
         </div>
       </div>
 
+      <div class="mt-4 rounded-2xl border border-sky-200 bg-sky-50/80 p-4">
+        <div class="flex items-start gap-3">
+          <.icon name="hero-globe-alt" class="h-6 w-6 flex-shrink-0 text-sky-600" />
+          <div class="flex-1">
+            <label for="property-selector" class="text-xs font-semibold uppercase tracking-wider text-sky-600">
+              Select Property to Sync
+            </label>
+            <%= if @property_options && length(@property_options) > 0 do %>
+              <select
+                id="property-selector"
+                name="property_id"
+                phx-change="switch_property"
+                class="mt-2 w-full rounded-lg border-sky-300 bg-white text-base font-medium text-slate-900 shadow-sm focus:border-sky-500 focus:ring-sky-500"
+              >
+                <option value="" disabled={!is_nil(@current_property)}>
+                  -- Select a property --
+                </option>
+                <%= for {label, value} <- @property_options do %>
+                  <option value={value} selected={@current_property_id == value}>
+                    {label}
+                  </option>
+                <% end %>
+              </select>
+              <%= if @current_property do %>
+                <p class="mt-2 flex items-center gap-2 text-xs text-sky-700">
+                  <.icon name="hero-check-circle" class="h-4 w-4" />
+                  Ready to sync
+                </p>
+              <% end %>
+            <% else %>
+              <p class="mt-2 text-sm text-amber-700">
+                No properties available. Please add a property in Settings.
+              </p>
+            <% end %>
+          </div>
+        </div>
+      </div>
+
       <.form
         for={@form}
         id="gsc-manual-sync"
@@ -56,8 +97,9 @@
           type="submit"
           class={[
             "btn btn-primary w-full gap-2 text-base",
-            @progress.active? && "btn-disabled opacity-70"
+            (@progress.active? || is_nil(@current_property)) && "btn-disabled opacity-70"
           ]}
+          disabled={is_nil(@current_property)}
           phx-disable-with="Starting…"
         >
           <.icon
@@ -72,6 +114,10 @@
             end}
           </span>
         </button>
+        <p :if={is_nil(@current_property)} class="text-sm text-rose-600">
+          <.icon name="hero-exclamation-circle" class="inline h-4 w-4" />
+          Select a property above to enable sync
+        </p>
       </.form>
     </section>
 

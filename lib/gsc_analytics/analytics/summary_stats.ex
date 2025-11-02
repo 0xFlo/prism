@@ -20,15 +20,16 @@ defmodule GscAnalytics.Analytics.SummaryStats do
   """
   def fetch(opts \\ %{}) do
     account_id = Accounts.resolve_account_id(opts)
+    property_url = Map.get(opts, :property_url) || raise ArgumentError, "property_url is required"
     today = Date.utc_today()
 
     current_month_start = Date.beginning_of_month(today)
     last_month_end = Date.add(current_month_start, -1)
     last_month_start = Date.beginning_of_month(last_month_end)
 
-    current_month = aggregate_period(account_id, current_month_start, today)
-    last_month = aggregate_period(account_id, last_month_start, last_month_end)
-    all_time = aggregate_lifetime_from_table(account_id)
+    current_month = aggregate_period(account_id, property_url, current_month_start, today)
+    last_month = aggregate_period(account_id, property_url, last_month_start, last_month_end)
+    all_time = aggregate_lifetime_from_table(account_id, property_url)
 
     mom_change = calculate_percentage_change(last_month.total_clicks, current_month.total_clicks)
 
@@ -40,12 +41,13 @@ defmodule GscAnalytics.Analytics.SummaryStats do
     }
   end
 
-  defp aggregate_period(account_id, start_date, end_date) do
+  defp aggregate_period(account_id, property_url, start_date, end_date) do
     result =
       TimeSeries
       |> where(
         [ts],
-        ts.account_id == ^account_id and ts.date >= ^start_date and ts.date <= ^end_date and
+        ts.account_id == ^account_id and ts.property_url == ^property_url and
+          ts.date >= ^start_date and ts.date <= ^end_date and
           ts.data_available == true
       )
       |> select([ts], %{
@@ -72,9 +74,9 @@ defmodule GscAnalytics.Analytics.SummaryStats do
     Map.put(result, :period_label, format_period_label(start_date, end_date))
   end
 
-  defp aggregate_lifetime_from_table(account_id) do
+  defp aggregate_lifetime_from_table(account_id, property_url) do
     from(ls in "url_lifetime_stats",
-      where: ls.account_id == ^account_id,
+      where: ls.account_id == ^account_id and ls.property_url == ^property_url,
       select: %{
         total_urls: count(ls.url),
         total_clicks: sum(ls.lifetime_clicks),
