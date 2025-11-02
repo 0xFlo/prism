@@ -164,4 +164,58 @@ defmodule GscAnalytics.Analytics.SiteTrends do
     total_months = (end_date.year - start_date.year) * 12 + (end_date.month - start_date.month)
     max(total_months, 0)
   end
+
+  @doc """
+  Fetch aggregated totals for the selected period.
+
+  Returns a map with:
+  - `total_clicks`: Sum of all clicks in the period
+  - `total_impressions`: Sum of all impressions in the period
+  - `avg_ctr`: Average CTR (weighted by impressions)
+  - `avg_position`: Average position (weighted by impressions)
+  """
+  def fetch_period_totals(opts \\ %{}) do
+    account_id = Accounts.resolve_account_id(opts)
+    property_url = Map.get(opts, :property_url) || raise ArgumentError, "property_url is required"
+    period_days = requested_period_days(opts)
+
+    start_date =
+      case period_days do
+        nil ->
+          get_first_data_date(account_id, property_url)
+
+        days when days >= 10_000 ->
+          get_first_data_date(account_id, property_url)
+
+        days ->
+          Date.utc_today() |> Date.add(-days)
+      end
+
+    TimeSeries
+    |> where(
+      [ts],
+      ts.date >= ^start_date and
+        ts.account_id == ^account_id and
+        ts.property_url == ^property_url
+    )
+    |> select([ts], %{
+      total_clicks: sum(ts.clicks),
+      total_impressions: sum(ts.impressions),
+      avg_ctr: fragment("CAST(SUM(?) AS FLOAT) / NULLIF(SUM(?), 0)", ts.clicks, ts.impressions),
+      avg_position: avg(ts.position)
+    })
+    |> Repo.one()
+    |> case do
+      nil ->
+        %{total_clicks: 0, total_impressions: 0, avg_ctr: 0.0, avg_position: 0.0}
+
+      result ->
+        %{
+          total_clicks: result.total_clicks || 0,
+          total_impressions: result.total_impressions || 0,
+          avg_ctr: result.avg_ctr || 0.0,
+          avg_position: result.avg_position || 0.0
+        }
+    end
+  end
 end

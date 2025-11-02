@@ -42,7 +42,7 @@ defmodule GscAnalyticsWeb.Layouts do
 
   def app(assigns) do
     ~H"""
-    <div class="drawer lg:drawer-open">
+    <div class="drawer lg:drawer-open" id="main-drawer">
       <input id="app-drawer" type="checkbox" class="drawer-toggle" />
       <div class="drawer-content flex flex-col">
         <!-- Header with hamburger menu for mobile -->
@@ -52,51 +52,24 @@ defmodule GscAnalyticsWeb.Layouts do
               <.icon name="hero-bars-3" class="h-6 w-6" />
             </label>
           </div>
-          <div class="flex-1">
-            <.link navigate={account_nav(assigns, :root)} class="flex items-center gap-2">
-              <.icon name="hero-chart-bar-square" class="h-8 w-8 text-primary" />
-              <span class="text-xl font-semibold">GSC Analytics</span>
-            </.link>
-          </div>
+          <div class="flex-1"></div>
           <div class="flex items-center gap-4">
-            <% property_options = @property_options || [] %>
-            <%= if Enum.empty?(property_options) do %>
-              <%= if @current_property do %>
-                <span class="badge badge-outline badge-sm px-3 py-2 text-xs font-medium">
-                  {@current_property.display_name || @current_property.property_url}
-                </span>
-              <% else %>
-                <.link
-                  navigate={account_nav(assigns, :settings)}
-                  class="badge badge-outline badge-sm px-3 py-2 text-xs font-medium"
-                >
-                  Select property
-                </.link>
-              <% end %>
-            <% else %>
-              <form phx-change="switch_property" class="flex items-center gap-2">
-                <label class="hidden text-xs font-semibold uppercase tracking-wide text-base-content/60 sm:block">
-                  Property
-                </label>
-                <select
-                  name="property_id"
-                  class="select select-sm select-bordered bg-base-100 text-sm"
-                  value={@current_property_id}
-                >
-                  <%= for {label, id} <- property_options do %>
-                    <option value={id} selected={id == @current_property_id}>
-                      {label}
-                    </option>
-                  <% end %>
-                </select>
-              </form>
-            <% end %>
-
             <div class="flex-none">
               <.theme_toggle />
             </div>
           </div>
         </header>
+        
+    <!-- Floating toggle button (shows when sidebar is collapsed on desktop) -->
+        <button
+          type="button"
+          id="sidebar-expand-btn"
+          class="hidden fixed left-4 top-20 z-50 btn btn-circle btn-primary shadow-lg"
+          aria-label="expand sidebar"
+          phx-click={expand_sidebar()}
+        >
+          <.icon name="hero-chevron-right" class="h-5 w-5" />
+        </button>
         
     <!-- Main content area -->
         <main class="flex-1 bg-base-100">
@@ -111,13 +84,21 @@ defmodule GscAnalyticsWeb.Layouts do
     <!-- Sidebar -->
       <div class="drawer-side z-40">
         <label for="app-drawer" aria-label="close sidebar" class="drawer-overlay"></label>
-        <aside class="bg-base-200 min-h-full w-64 p-4">
-          <!-- Sidebar header -->
-          <div class="mb-8 px-2">
+        <aside class="bg-base-200 min-h-full w-52 p-3">
+          <!-- Sidebar header with toggle -->
+          <div class="mb-6 px-1 flex items-center justify-between">
             <.link navigate={account_nav(assigns, :root)} class="flex items-center gap-2">
               <.icon name="hero-chart-bar-square" class="h-8 w-8 text-primary" />
               <span class="text-lg font-bold">GSC Analytics</span>
             </.link>
+            <button
+              type="button"
+              class="hidden lg:flex btn btn-square btn-ghost btn-sm"
+              aria-label="collapse sidebar"
+              phx-click={toggle_sidebar()}
+            >
+              <.icon name="hero-chevron-left" class="h-5 w-5" />
+            </button>
           </div>
           
     <!-- Navigation menu -->
@@ -301,5 +282,23 @@ defmodule GscAnalyticsWeb.Layouts do
       </button>
     </div>
     """
+  end
+
+  @doc """
+  Toggles the sidebar visibility on desktop screens (collapse).
+  """
+  def toggle_sidebar do
+    JS.remove_class("lg:drawer-open", to: "#main-drawer")
+    |> JS.remove_class("hidden", to: "#sidebar-expand-btn")
+    |> JS.add_class("flex", to: "#sidebar-expand-btn")
+  end
+
+  @doc """
+  Expands the sidebar on desktop screens.
+  """
+  def expand_sidebar do
+    JS.add_class("lg:drawer-open", to: "#main-drawer")
+    |> JS.remove_class("flex", to: "#sidebar-expand-btn")
+    |> JS.add_class("hidden", to: "#sidebar-expand-btn")
   end
 end

@@ -44,7 +44,11 @@ defmodule GscAnalyticsWeb.DashboardLive do
      |> assign_new(:view_mode, fn -> "basic" end)
      |> assign_new(:search, fn -> "" end)
      |> assign_new(:page_title, fn -> "GSC Analytics Dashboard" end)
-     |> assign_new(:property_label, fn -> nil end)}
+     |> assign_new(:property_label, fn -> nil end)
+     |> assign_new(:total_clicks, fn -> 0 end)
+     |> assign_new(:total_impressions, fn -> 0 end)
+     |> assign_new(:avg_ctr, fn -> 0.0 end)
+     |> assign_new(:avg_position, fn -> 0.0 end)}
   end
 
   @impl true
@@ -71,7 +75,7 @@ defmodule GscAnalyticsWeb.DashboardLive do
     current_path = URI.parse(uri).path || "/"
 
     # Only fetch data if we have a property selected
-    {result, stats, site_trends, chart_label, socket} =
+    {result, stats, site_trends, chart_label, period_totals, socket} =
       if property_url do
         # Fetch data with pagination and search, filtering by property
         result =
@@ -96,7 +100,15 @@ defmodule GscAnalyticsWeb.DashboardLive do
             period_days: period_days
           })
 
-        {result, stats, site_trends, chart_label, socket}
+        # Fetch aggregated totals for the selected period
+        period_totals =
+          SiteTrends.fetch_period_totals(%{
+            account_id: account_id,
+            property_url: property_url,
+            period_days: period_days
+          })
+
+        {result, stats, site_trends, chart_label, period_totals, socket}
       else
         # Empty state when no property selected
         # Only show warning flash if we haven't already
@@ -134,7 +146,14 @@ defmodule GscAnalyticsWeb.DashboardLive do
           month_over_month_change: 0
         }
 
-        {empty_result, empty_stats, [], "Date", socket}
+        empty_period_totals = %{
+          total_clicks: 0,
+          total_impressions: 0,
+          avg_ctr: 0.0,
+          avg_position: 0.0
+        }
+
+        {empty_result, empty_stats, [], "Date", empty_period_totals, socket}
       end
 
     {:noreply,
@@ -156,6 +175,10 @@ defmodule GscAnalyticsWeb.DashboardLive do
      |> assign(:search, search)
      |> assign(:period_days, period_days)
      |> assign(:property_label, property_label)
+     |> assign(:total_clicks, period_totals.total_clicks)
+     |> assign(:total_impressions, period_totals.total_impressions)
+     |> assign(:avg_ctr, period_totals.avg_ctr)
+     |> assign(:avg_position, period_totals.avg_position)
      |> assign(
        :page_title,
        if(property_label,
@@ -340,6 +363,17 @@ defmodule GscAnalyticsWeb.DashboardLive do
         {[], "Date"}
       end
 
+    period_totals =
+      if property_url do
+        SiteTrends.fetch_period_totals(%{
+          account_id: account_id,
+          property_url: property_url,
+          period_days: socket.assigns.period_days
+        })
+      else
+        %{total_clicks: 0, total_impressions: 0, avg_ctr: 0.0, avg_position: 0.0}
+      end
+
     {:noreply,
      socket
      |> assign(:sync_running, false)
@@ -351,6 +385,10 @@ defmodule GscAnalyticsWeb.DashboardLive do
      |> assign(:site_trends, site_trends)
      |> assign(:site_trends_json, ChartDataPresenter.encode_time_series(site_trends))
      |> assign(:chart_label, chart_label)
+     |> assign(:total_clicks, period_totals.total_clicks)
+     |> assign(:total_impressions, period_totals.total_impressions)
+     |> assign(:avg_ctr, period_totals.avg_ctr)
+     |> assign(:avg_position, period_totals.avg_position)
      |> put_flash(:info, "Dashboard updated with latest sync data ✨")}
   end
 

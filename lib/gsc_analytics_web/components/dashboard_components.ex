@@ -727,7 +727,10 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
     <select
       phx-change={@event_name}
       name={@value_key}
-      class={["select select-sm select-bordered bg-white", @class]}
+      class={[
+        "select select-sm select-bordered bg-white dark:bg-slate-800 dark:border-slate-600 dark:text-slate-200",
+        @class
+      ]}
     >
       <option
         :for={option <- @options}
