@@ -9,8 +9,7 @@ defmodule GscAnalyticsWeb.DashboardLive do
   alias GscAnalyticsWeb.Dashboard.Columns
   alias GscAnalyticsWeb.Presenters.ChartDataPresenter
 
-  # Import helper functions for template formatting
-  import GscAnalyticsWeb.Dashboard.HTMLHelpers
+  # Import component functions for template
   import GscAnalyticsWeb.Components.DashboardComponents
 
   @impl true
@@ -32,7 +31,7 @@ defmodule GscAnalyticsWeb.DashboardLive do
        %{total_urls: 0, total_clicks: 0, total_impressions: 0, avg_ctr: 0, avg_position: 0}
      end)
      |> assign_new(:site_trends, fn -> [] end)
-     |> assign_new(:show_impressions, fn -> true end)
+     |> assign_new(:visible_series, fn -> [:clicks, :impressions] end)
      |> assign_new(:chart_label, fn -> "Date" end)
      |> assign_new(:chart_view, fn -> "daily" end)
      |> assign_new(:sort_by, fn -> "clicks" end)
@@ -60,7 +59,11 @@ defmodule GscAnalyticsWeb.DashboardLive do
     account_id = socket.assigns.current_account_id
     property = socket.assigns.current_property
     property_url = property && property.property_url
-    property_label = property && (property.display_name || property.property_url)
+
+    property_label =
+      property &&
+        (property.display_name || AccountHelpers.display_property_label(property.property_url))
+
     property_favicon_url = property && property.favicon_url
 
     limit = DashboardUtils.normalize_limit(params["limit"])
@@ -72,6 +75,8 @@ defmodule GscAnalyticsWeb.DashboardLive do
     search = params["search"] || ""
     # Parse period parameter for v2 functions (default to 30 days)
     period_days = parse_period(params["period"])
+    # Parse visible series for chart (default to clicks + impressions)
+    visible_series = parse_visible_series(params["series"])
 
     # Extract path from URI for active nav detection
     current_path = URI.parse(uri).path || "/"
@@ -169,6 +174,7 @@ defmodule GscAnalyticsWeb.DashboardLive do
      |> assign(:site_trends, site_trends)
      |> assign(:site_trends_json, ChartDataPresenter.encode_time_series(site_trends))
      |> assign(:chart_label, chart_label)
+     |> assign(:visible_series, visible_series)
      |> assign(:chart_view, chart_view)
      |> assign(:sort_by, sort_by)
      |> assign(:sort_direction, Atom.to_string(sort_direction))
@@ -239,8 +245,23 @@ defmodule GscAnalyticsWeb.DashboardLive do
   end
 
   @impl true
-  def handle_event("toggle_impressions", _params, socket) do
-    {:noreply, assign(socket, :show_impressions, !socket.assigns.show_impressions)}
+  def handle_event("toggle_series", %{"metric" => metric_str}, socket) do
+    metric = String.to_existing_atom(metric_str)
+    current_series = socket.assigns.visible_series
+
+    new_series =
+      if metric in current_series do
+        # Remove the series
+        List.delete(current_series, metric)
+      else
+        # Add the series
+        [metric | current_series]
+      end
+
+    # Enforce at least one series visible
+    new_series = if Enum.empty?(new_series), do: [metric], else: new_series
+
+    {:noreply, push_dashboard_patch(socket, %{series: encode_series(new_series)})}
   end
 
   @impl true
@@ -438,6 +459,31 @@ defmodule GscAnalyticsWeb.DashboardLive do
 
   defp parse_period(_), do: 30
 
+  # Parse visible series from URL param (comma-separated string to list of atoms)
+  defp parse_visible_series(nil), do: [:clicks, :impressions]
+  defp parse_visible_series(""), do: [:clicks, :impressions]
+
+  defp parse_visible_series(series_str) when is_binary(series_str) do
+    series_str
+    |> String.split(",")
+    |> Enum.map(&String.trim/1)
+    |> Enum.map(&String.to_atom/1)
+    |> Enum.filter(&(&1 in [:clicks, :impressions, :ctr, :position]))
+    |> case do
+      [] -> [:clicks, :impressions]
+      list -> list
+    end
+  end
+
+  defp parse_visible_series(_), do: [:clicks, :impressions]
+
+  # Encode visible series list to comma-separated string for URL
+  defp encode_series(series) when is_list(series) do
+    series
+    |> Enum.map(&Atom.to_string/1)
+    |> Enum.join(",")
+  end
+
   # Display label helpers - extract inline template computations to proper assigns
   defp build_query_params(socket, overrides) do
     base = %{
@@ -449,7 +495,8 @@ defmodule GscAnalyticsWeb.DashboardLive do
       chart_view: socket.assigns.chart_view,
       search: socket.assigns.search,
       period: socket.assigns.period_days,
-      property_id: socket.assigns.current_property_id
+      property_id: socket.assigns.current_property_id,
+      series: encode_series(socket.assigns.visible_series)
     }
 
     base

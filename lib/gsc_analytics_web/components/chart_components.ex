@@ -5,12 +5,13 @@ defmodule GscAnalyticsWeb.ChartComponents do
   use Phoenix.Component
 
   @doc """
-  Renders a dual-axis line chart for clicks and impressions.
+  Renders a multi-series line chart for clicks, impressions, and CTR.
 
   ## Attributes
     * `id` - Unique ID for the chart canvas (required)
     * `time_series` - List of time series data with clicks, impressions, ctr, position (required)
     * `x_label` - Label for x-axis (default: "Date")
+    * `visible_series` - List of atoms indicating which series to show (default: [:clicks, :impressions])
   """
   attr :id, :string, required: true
   attr :time_series, :list, required: true
@@ -18,7 +19,7 @@ defmodule GscAnalyticsWeb.ChartComponents do
   attr :events, :list, default: []
   attr :time_series_json, :string, default: nil
   attr :events_json, :string, default: nil
-  attr :show_impressions, :boolean, default: true
+  attr :visible_series, :list, default: [:clicks, :impressions]
 
   def performance_chart(assigns) do
     ~H"""
@@ -30,7 +31,7 @@ defmodule GscAnalyticsWeb.ChartComponents do
         data-x-label={@x_label}
         data-time-series={encoded_time_series(@time_series, @time_series_json)}
         data-events={encoded_events(@events, @events_json)}
-        data-show-impressions={if @show_impressions, do: "true", else: "false"}
+        data-visible-series={encode_visible_series(@visible_series)}
         class="relative h-96"
       >
         <canvas id={@id} class="absolute inset-0 w-full h-full"></canvas>
@@ -83,4 +84,10 @@ defmodule GscAnalyticsWeb.ChartComponents do
 
   defp encoded_events(_events, json) when is_binary(json), do: json
   defp encoded_events(events, _json), do: JSON.encode!(events)
+
+  defp encode_visible_series(series) when is_list(series) do
+    series
+    |> Enum.map(&Atom.to_string/1)
+    |> JSON.encode!()
+  end
 end

@@ -869,24 +869,117 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
                 %{label: l, id: i, favicon_url: f} -> {l, i, f}
                 {l, i} -> {l, i, nil}
               end %>
-            <li>
-              <button
-                phx-click="switch_property"
-                phx-value-property_id={id}
-                class={[@current_property_id == id && "active", "flex items-center gap-2"]}
-              >
-                <%= if favicon_url do %>
-                  <img src={favicon_url} alt="" class="w-4 h-4 flex-shrink-0" />
-                <% else %>
-                  <.icon name="hero-globe-alt" class="w-4 h-4 flex-shrink-0" />
-                <% end %>
-                <span class="truncate">{label}</span>
-              </button>
-            </li>
+            <%= if id != @current_property_id do %>
+              <li>
+                <button
+                  phx-click="switch_property"
+                  phx-value-property_id={id}
+                  class="flex items-center gap-2"
+                >
+                  <%= if favicon_url do %>
+                    <img src={favicon_url} alt="" class="w-4 h-4 flex-shrink-0" />
+                  <% else %>
+                    <.icon name="hero-globe-alt" class="w-4 h-4 flex-shrink-0" />
+                  <% end %>
+                  <span class="truncate">{label}</span>
+                </button>
+              </li>
+            <% end %>
           <% end %>
         </ul>
       </div>
     <% end %>
     """
   end
+
+  @doc """
+  Renders an interactive metric card that toggles chart series visibility.
+
+  ## Attributes
+  - `metric` - The metric identifier (:clicks, :impressions, or :ctr)
+  - `value` - The metric value (number or string)
+  - `label` - The metric label/name
+  - `subtitle` - Description text (e.g., "Last 7 days")
+  - `active` - Boolean indicating if this series is visible in the chart
+  - `interactive` - Boolean indicating if this card is clickable (default: true)
+
+  ## Example
+      <.interactive_metric_card
+        metric={:clicks}
+        value={8144}
+        label="Clicks"
+        subtitle="Last 7 days"
+        active={:clicks in @visible_series}
+        interactive={true}
+      />
+  """
+  attr :metric, :atom, required: true
+  attr :value, :any, required: true
+  attr :label, :string, required: true
+  attr :subtitle, :string, required: true
+  attr :active, :boolean, required: true
+  attr :interactive, :boolean, default: true
+
+  def interactive_metric_card(assigns) do
+    ~H"""
+    <div
+      class={[
+        "relative rounded-lg p-5 transition-all duration-200",
+        @interactive && "cursor-pointer hover:shadow-lg hover:scale-[1.02]",
+        @interactive && @active && "border-2 border-blue-500 bg-slate-800 shadow-md",
+        @interactive && !@active && "border border-slate-600 bg-slate-800/70",
+        !@interactive && "border border-slate-600 bg-slate-800/70"
+      ]}
+      phx-click={@interactive && "toggle_series"}
+      phx-value-metric={@interactive && Atom.to_string(@metric)}
+      role={@interactive && "button"}
+      aria-pressed={@interactive && @active}
+      tabindex={@interactive && "0"}
+      aria-label={@interactive && "Toggle #{@label} series"}
+    >
+      <div class="flex items-start justify-between">
+        <div class="flex-1">
+          <h3 class="text-sm font-medium text-slate-400">
+            {@label}
+          </h3>
+          <p class="mt-2 text-3xl font-semibold text-white">
+            {format_metric_value(@metric, @value)}
+          </p>
+          <p class="mt-1 text-sm text-slate-400">
+            {@subtitle}
+          </p>
+        </div>
+        <%= if @interactive && @active do %>
+          <div class="flex-shrink-0">
+            <.icon name="hero-check-circle-solid" class="h-6 w-6 text-blue-400" />
+          </div>
+        <% end %>
+      </div>
+    </div>
+    """
+  end
+
+  # Format metric value for display based on metric type
+  defp format_metric_value(:ctr, value) when is_float(value) do
+    # CTR - show as percentage
+    format_percentage(value * 100)
+  end
+
+  defp format_metric_value(:position, value) when is_float(value) do
+    # Position - show with 1 decimal place
+    Float.round(value, 1) |> Float.to_string()
+  end
+
+  defp format_metric_value(_metric, value) when is_integer(value) do
+    # Clicks, Impressions - format with commas
+    format_number(value)
+  end
+
+  defp format_metric_value(_metric, value) when is_float(value) do
+    # Generic float - show with 2 decimals
+    Float.round(value, 2) |> Float.to_string()
+  end
+
+  defp format_metric_value(_metric, value) when is_binary(value), do: value
+  defp format_metric_value(_metric, value), do: to_string(value)
 end

@@ -42,7 +42,17 @@ class PerformanceChartController {
     this.cachedPadding = {top: 20, right: 48, bottom: 75, left: 64}
     this.cachedMaxClicks = 1
     this.cachedMaxImpressions = 1
-    this.showImpressions = true
+    this.cachedMaxCtr = 0.02 // 2% max for CTR scale
+    this.cachedMaxPosition = 100 // Fixed scale for position (1-100)
+    this.visibleSeries = ["clicks", "impressions"]
+
+    // Series configuration
+    this.seriesConfig = {
+      clicks: {label: "Clicks", color: "#6366f1", axis: "left"},
+      impressions: {label: "Impressions", color: "#10b981", axis: "left"},
+      ctr: {label: "CTR", color: "#a855f7", axis: "right", formatter: (v) => `${(v * 100).toFixed(2)}%`},
+      position: {label: "Avg Position", color: "#ef4444", axis: "none", inverted: true, formatter: (v) => v.toFixed(1)}
+    }
   }
 
   mount() {
@@ -88,9 +98,19 @@ class PerformanceChartController {
   update() {
     this.series = this.readSeries()
     this.events = this.readEvents()
-    this.showImpressions = this.parseBoolean(this.el.dataset.showImpressions)
+    this.visibleSeries = this.readVisibleSeries()
     this.xLabel = this.el.dataset.xLabel || "Date"
     this.drawChart()
+  }
+
+  readVisibleSeries() {
+    try {
+      const raw = JSON.parse(this.el.dataset.visibleSeries || '["clicks","impressions"]')
+      if (!Array.isArray(raw)) return ["clicks", "impressions"]
+      return raw.filter(s => this.seriesConfig[s])
+    } catch (_err) {
+      return ["clicks", "impressions"]
+    }
   }
 
   readSeries() {
@@ -141,56 +161,93 @@ class PerformanceChartController {
     const padding = getDefaultPadding()
     const {plotWidth, plotHeight, plotBottom} = calculatePlotDimensions(width, height, padding)
 
-    const clicks = series.map(point => Number(point.clicks) || 0)
-    const impressions = series.map(point => Number(point.impressions) || 0)
-
-    const clicksAxis = this.buildYAxisMeta(clicks)
-    const impressionsAxis =
-      this.showImpressions ? this.buildYAxisMeta(impressions) : null
-
-    const xForIndex = createXScaler(series.length, plotWidth, padding.left)
-    const yForClicks = createYScaler(clicksAxis.domainMax, plotHeight, padding.top)
-    const yForImpressions =
-      impressionsAxis && this.showImpressions
-        ? createYScaler(impressionsAxis.domainMax, plotHeight, padding.top)
-        : null
-
-    this.cachedPadding = padding
-    this.cachedMaxClicks = clicksAxis.domainMax
-    this.cachedMaxImpressions = impressionsAxis ? impressionsAxis.domainMax : 1
-
-    this.drawAxes(width, height, padding, series, xForIndex, {
-      primary: {
-        label: "Clicks",
-        color: "#6366f1",
-        meta: clicksAxis,
-        yForValue: yForClicks,
-      },
-      secondary:
-        impressionsAxis && this.showImpressions
-          ? {
-              label: "Impressions",
-              color: "#10b981",
-              meta: impressionsAxis,
-              yForValue: yForImpressions,
-            }
-          : null,
-    })
-
-    this.drawLine(clicks, "#6366f1", xForIndex, yForClicks, padding, plotBottom)
-    if (this.showImpressions && yForImpressions) {
-      this.drawLine(
-        impressions,
-        "#10b981",
-        xForIndex,
-        yForImpressions,
-        padding,
-        plotBottom,
-      )
+    // Extract data for each series type
+    const seriesData = {
+      clicks: series.map(point => Number(point.clicks) || 0),
+      impressions: series.map(point => Number(point.impressions) || 0),
+      ctr: series.map(point => Number(point.ctr) || 0),
+      position: series.map(point => Number(point.position) || 0)
     }
 
-    const legendItems = [["Clicks", "#6366f1"]]
-    if (this.showImpressions) legendItems.push(["Impressions", "#10b981"])
+    // Determine which series use left vs right axis
+    const leftAxisSeries = this.visibleSeries.filter(s => this.seriesConfig[s]?.axis === "left")
+    const rightAxisSeries = this.visibleSeries.filter(s => this.seriesConfig[s]?.axis === "right")
+
+    // Build axis metadata for visible series
+    let leftAxisMeta = null
+    let rightAxisMeta = null
+
+    if (leftAxisSeries.length > 0) {
+      // Combine all left-axis series data to find the max
+      const allLeftValues = leftAxisSeries.flatMap(s => seriesData[s])
+      leftAxisMeta = this.buildYAxisMeta(allLeftValues)
+    }
+
+    if (rightAxisSeries.length > 0 && rightAxisSeries.includes("ctr")) {
+      // CTR uses a fixed percentage scale (0-2%)
+      rightAxisMeta = this.buildYAxisMeta(seriesData.ctr, 0.02) // Max 2%
+    }
+
+    const xForIndex = createXScaler(series.length, plotWidth, padding.left)
+    const yForLeftAxis = leftAxisMeta ? createYScaler(leftAxisMeta.domainMax, plotHeight, padding.top) : null
+    const yForRightAxis = rightAxisMeta ? createYScaler(rightAxisMeta.domainMax, plotHeight, padding.top) : null
+
+    // Cache for interactive elements
+    this.cachedPadding = padding
+    this.cachedMaxClicks = leftAxisMeta ? leftAxisMeta.domainMax : 1
+    this.cachedMaxImpressions = leftAxisMeta ? leftAxisMeta.domainMax : 1
+    this.cachedMaxCtr = rightAxisMeta ? rightAxisMeta.domainMax : 0.02
+
+    // Draw axes
+    const primaryAxis = leftAxisMeta && leftAxisSeries.length > 0 ? {
+      label: leftAxisSeries.length === 1 ? this.seriesConfig[leftAxisSeries[0]].label : "Count",
+      color: this.seriesConfig[leftAxisSeries[0]].color,
+      meta: leftAxisMeta,
+      yForValue: yForLeftAxis,
+    } : null
+
+    const secondaryAxis = rightAxisMeta && rightAxisSeries.length > 0 ? {
+      label: this.seriesConfig[rightAxisSeries[0]].label,
+      color: this.seriesConfig[rightAxisSeries[0]].color,
+      meta: rightAxisMeta,
+      yForValue: yForRightAxis,
+    } : null
+
+    this.drawAxes(width, height, padding, series, xForIndex, {
+      primary: primaryAxis,
+      secondary: secondaryAxis,
+    })
+
+    // Draw lines for each visible series
+    this.visibleSeries.forEach(seriesKey => {
+      const config = this.seriesConfig[seriesKey]
+      const data = seriesData[seriesKey]
+
+      // Determine Y-scaler based on axis type
+      let yScaler
+      if (config.axis === "left") {
+        yScaler = yForLeftAxis
+      } else if (config.axis === "right") {
+        yScaler = yForRightAxis
+      } else if (config.axis === "none") {
+        // Create custom scaler for axis-less series (like position)
+        const maxValue = seriesKey === "position" ? 100 : Math.max(...data)
+
+        if (config.inverted) {
+          // Inverted Y-axis: lower values appear higher (position 1 at top, 100 at bottom)
+          yScaler = value => padding.top + (value / maxValue) * plotHeight
+        } else {
+          yScaler = createYScaler(maxValue, plotHeight, padding.top)
+        }
+      }
+
+      if (yScaler) {
+        this.drawLine(data, config.color, xForIndex, yScaler, padding, plotBottom)
+      }
+    })
+
+    // Build legend dynamically
+    const legendItems = this.visibleSeries.map(s => [this.seriesConfig[s].label, this.seriesConfig[s].color])
     this.drawLegend(width, padding, legendItems)
     this.drawEvents(series, xForIndex, padding, plotBottom)
 
@@ -233,31 +290,35 @@ class PerformanceChartController {
     ctx.stroke()
     ctx.restore()
 
-    if (axes?.primary) {
-      this.drawYAxisTicks(
-        padding.left,
-        padding,
-        height,
-        axes.primary.meta,
-        axes.primary.color,
-        axes.primary.label,
-        false,
-        axes.primary.yForValue,
-      )
-    }
+    // Y-axis tick labels removed for cleaner axis-free design
+    // With multiple series (clicks, impressions, CTR %, position rank) using different scales,
+    // axis labels are misleading. Users rely on legend and tooltips for values.
 
-    if (axes?.secondary) {
-      this.drawYAxisTicks(
-        width - padding.right,
-        padding,
-        height,
-        axes.secondary.meta,
-        axes.secondary.color,
-        axes.secondary.label,
-        true,
-        axes.secondary.yForValue,
-      )
-    }
+    // if (axes?.primary) {
+    //   this.drawYAxisTicks(
+    //     padding.left,
+    //     padding,
+    //     height,
+    //     axes.primary.meta,
+    //     axes.primary.color,
+    //     axes.primary.label,
+    //     false,
+    //     axes.primary.yForValue,
+    //   )
+    // }
+
+    // if (axes?.secondary) {
+    //   this.drawYAxisTicks(
+    //     width - padding.right,
+    //     padding,
+    //     height,
+    //     axes.secondary.meta,
+    //     axes.secondary.color,
+    //     axes.secondary.label,
+    //     true,
+    //     axes.secondary.yForValue,
+    //   )
+    // }
 
     this.drawXAxisLabels(series, xForIndex, padding, width, height, plotWidth)
   }
@@ -679,48 +740,50 @@ class PerformanceChartController {
 
   drawHighlightPoints(dataPoint, xPos, padding, height, opacity = 1) {
     const ctx = this.ctx
-    const clicks = Number(dataPoint.clicks) || 0
-
-    const maxClicks = this.cachedMaxClicks
     const plotHeight = height - padding.top - padding.bottom
 
-    const yClicks = padding.top + (1 - clicks / maxClicks) * plotHeight
+    // Draw highlight points for each visible series
+    this.visibleSeries.forEach(seriesKey => {
+      const config = this.seriesConfig[seriesKey]
+      const value = Number(dataPoint[seriesKey]) || 0
 
-    ctx.save()
-    ctx.globalAlpha = opacity
-    ctx.fillStyle = this.hexToRgba("#6366f1", 0.2)
-    ctx.beginPath()
-    ctx.arc(xPos, yClicks, 10, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.fillStyle = "#6366f1"
-    ctx.strokeStyle = "#ffffff"
-    ctx.lineWidth = 2.5
-    ctx.beginPath()
-    ctx.arc(xPos, yClicks, 7, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.stroke()
-    ctx.restore()
+      // Get the appropriate max value and calculate Y position
+      let maxValue, yPos
 
-    if (!this.showImpressions) return
+      if (config.axis === "left") {
+        maxValue = this.cachedMaxClicks // Use cached left axis max
+        yPos = padding.top + (1 - value / maxValue) * plotHeight
+      } else if (config.axis === "right") {
+        maxValue = this.cachedMaxCtr // Use cached CTR max
+        yPos = padding.top + (1 - value / maxValue) * plotHeight
+      } else if (config.axis === "none") {
+        maxValue = seriesKey === "position" ? this.cachedMaxPosition : 100
+        if (config.inverted) {
+          // Inverted Y-axis for position
+          yPos = padding.top + (value / maxValue) * plotHeight
+        } else {
+          yPos = padding.top + (1 - value / maxValue) * plotHeight
+        }
+      }
 
-    const impressions = Number(dataPoint.impressions) || 0
-    const maxImpressions = this.cachedMaxImpressions
-    const yImpressions = padding.top + (1 - impressions / maxImpressions) * plotHeight
+      // Draw outer glow
+      ctx.save()
+      ctx.globalAlpha = opacity
+      ctx.fillStyle = this.hexToRgba(config.color, 0.2)
+      ctx.beginPath()
+      ctx.arc(xPos, yPos, 10, 0, Math.PI * 2)
+      ctx.fill()
 
-    ctx.save()
-    ctx.globalAlpha = opacity
-    ctx.fillStyle = this.hexToRgba("#10b981", 0.2)
-    ctx.beginPath()
-    ctx.arc(xPos, yImpressions, 10, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.fillStyle = "#10b981"
-    ctx.strokeStyle = "#ffffff"
-    ctx.lineWidth = 2.5
-    ctx.beginPath()
-    ctx.arc(xPos, yImpressions, 7, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.stroke()
-    ctx.restore()
+      // Draw main circle
+      ctx.fillStyle = config.color
+      ctx.strokeStyle = "#ffffff"
+      ctx.lineWidth = 2.5
+      ctx.beginPath()
+      ctx.arc(xPos, yPos, 7, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+      ctx.restore()
+    })
   }
 
   drawTooltip(dataPoint, chartX, mouseY, opacity = 1) {
@@ -728,15 +791,26 @@ class PerformanceChartController {
     const width = this.el.clientWidth || 640
 
     const dateHeader = formatTooltipHeading(dataPoint, this.formatters)
-    const clicks = formatNumber(dataPoint.clicks || 0)
-    const impressions = formatNumber(dataPoint.impressions || 0)
+
+    // Build metrics list from visible series
+    const metrics = this.visibleSeries.map(seriesKey => {
+      const config = this.seriesConfig[seriesKey]
+      const value = dataPoint[seriesKey] || 0
+
+      // Format value based on series type
+      let formattedValue
+      if (config.formatter) {
+        formattedValue = config.formatter(value)
+      } else {
+        formattedValue = formatNumber(value)
+      }
+
+      return {label: config.label, value: formattedValue, color: config.color}
+    })
+
+    // Always show CTR and Position at the bottom
     const ctr = `${((dataPoint.ctr || 0) * 100).toFixed(2)}%`
     const position = (dataPoint.position || 0).toFixed(1)
-
-    const metrics = [{label: "Clicks", value: clicks, color: "#6366f1"}]
-    if (this.showImpressions) {
-      metrics.push({label: "Impressions", value: impressions, color: "#10b981"})
-    }
 
     const tooltipPadding = 14
     const lineHeight = 24

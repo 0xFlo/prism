@@ -180,63 +180,42 @@
             </li>
           </ul>
         </div>
-
-        <button
-          type="button"
-          phx-click="toggle_impressions"
-          class="btn btn-sm btn-circle btn-ghost"
-          title="Refresh"
-        >
-          <.icon name="hero-arrow-path" class="h-4 w-4" />
-        </button>
       </div>
     </div>
-    <%!-- Metric cards --%>
+    <%!-- Interactive Metric Cards - Click to toggle chart series --%>
     <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-        <h3 class="text-sm font-medium text-slate-600 dark:text-slate-400">Clicks</h3>
-        <p class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">
-          {format_number(@total_clicks || 0)}
-        </p>
-        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-          {@period_label}
-        </p>
-      </div>
-      <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-        <h3 class="text-sm font-medium text-slate-600 dark:text-slate-400">Impressions</h3>
-        <p class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">
-          {format_number(@total_impressions || 0)}
-        </p>
-        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{@period_label}</p>
-      </div>
-      <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-        <h3 class="text-sm font-medium text-slate-600 dark:text-slate-400">CTR</h3>
-        <p class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">
-          {format_percentage((@avg_ctr || 0) * 100)}
-        </p>
-        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Click-through rate</p>
-      </div>
-      <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-        <div class="flex items-center gap-2">
-          <div class={[
-            "h-2 w-2 rounded-full",
-            if(@sync_running, do: "bg-emerald-500", else: "bg-slate-400")
-          ]}>
-          </div>
-          <h3 class="text-sm font-medium text-slate-600 dark:text-slate-400">Sync Status</h3>
-        </div>
-        <p class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">
-          {if @sync_running, do: "Active", else: "Idle"}
-        </p>
-        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-          <.link
-            navigate={~p"/dashboard/sync"}
-            class="text-indigo-600 hover:underline dark:text-indigo-400"
-          >
-            View status
-          </.link>
-        </p>
-      </div>
+      <.interactive_metric_card
+        metric={:clicks}
+        value={@total_clicks || 0}
+        label="Clicks"
+        subtitle={@period_label}
+        active={:clicks in @visible_series}
+        interactive={true}
+      />
+      <.interactive_metric_card
+        metric={:impressions}
+        value={@total_impressions || 0}
+        label="Impressions"
+        subtitle={@period_label}
+        active={:impressions in @visible_series}
+        interactive={true}
+      />
+      <.interactive_metric_card
+        metric={:ctr}
+        value={@avg_ctr || 0.0}
+        label="CTR"
+        subtitle="Click-through rate"
+        active={:ctr in @visible_series}
+        interactive={true}
+      />
+      <.interactive_metric_card
+        metric={:position}
+        value={@avg_position || 0.0}
+        label="Avg Position"
+        subtitle="Search ranking"
+        active={:position in @visible_series}
+        interactive={true}
+      />
     </div>
 
     <%!-- Main chart --%>
@@ -246,7 +225,7 @@
           id="sitePerformanceChart"
           time_series={@site_trends}
           time_series_json={@site_trends_json}
-          show_impressions={@show_impressions}
+          visible_series={@visible_series}
           x_label={@chart_label}
         />
       </div>
