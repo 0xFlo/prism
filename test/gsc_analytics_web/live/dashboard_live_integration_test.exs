@@ -11,36 +11,34 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
   - Tests should survive refactoring (don't test internal state)
   """
 
-  use GscAnalyticsWeb.ConnCase
+  use GscAnalyticsWeb.ConnCase, async: false
 
   @moduletag :integration
   @test_property_url "sc-domain:example.com"
 
   import Ecto.Query
   import Phoenix.LiveViewTest
-  alias GscAnalytics.{Accounts, Repo}
+  import GscAnalytics.WorkspaceTestHelper
+
+  alias GscAnalytics.Repo
   alias GscAnalytics.Schemas.TimeSeries
 
   setup :register_and_log_in_user
-  setup :create_test_property
 
-  defp create_test_property(_context) do
-    # Create and activate a test property for account 1
-    {:ok, property} =
-      Accounts.add_property(1, %{
-        property_url: @test_property_url,
-        display_name: "Test Property"
-      })
+  setup %{user: user} do
+    {workspace, property} =
+      setup_workspace_with_property(user: user, property_url: @test_property_url)
 
-    {:ok, _} = Accounts.set_active_property(1, property.id)
-
-    :ok
+    %{workspace: workspace, property: property, account_id: workspace.id}
   end
 
   describe "dashboard user journey: viewing URL list" do
-    test "user can view dashboard with URLs sorted by clicks", %{conn: conn} do
+    test "user can view dashboard with URLs sorted by clicks", %{
+      conn: conn,
+      account_id: account_id
+    } do
       # Setup: Create test data via database (not factories - real data flow)
-      account_id = 1
+      # account_id from setup
       date = ~D[2025-10-15]
 
       populate_time_series_data(account_id, date, [
@@ -63,7 +61,7 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
       assert html =~ ~r/high-traffic.*medium-traffic.*low-traffic/s
     end
 
-    test "user sees empty state when no data exists", %{conn: conn} do
+    test "user sees empty state when no data exists", %{conn: conn, account_id: account_id} do
       # No data setup - fresh database
 
       # Action: Visit dashboard
@@ -73,9 +71,12 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
       assert html =~ "No URLs found"
     end
 
-    test "user can view URLs with lifetime and period metrics", %{conn: conn} do
+    test "user can view URLs with lifetime and period metrics", %{
+      conn: conn,
+      account_id: account_id
+    } do
       # Setup: Create data with identifiable metrics
-      account_id = 1
+      # account_id from setup
 
       # Create 30 days of data to ensure lifetime stats exist
       for days_ago <- 0..30 do
@@ -101,9 +102,9 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
   end
 
   describe "dashboard user journey: search and filtering" do
-    test "user can search for specific URLs", %{conn: conn} do
+    test "user can search for specific URLs", %{conn: conn, account_id: account_id} do
       # Setup: Create URLs with distinct patterns
-      account_id = 1
+      # account_id from setup
       date = ~D[2025-10-15]
 
       populate_time_series_data(account_id, date, [
@@ -127,9 +128,12 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
       refute html =~ "docs/guide"
     end
 
-    test "user sees 'no results' when search has no matches", %{conn: conn} do
+    test "user sees 'no results' when search has no matches", %{
+      conn: conn,
+      account_id: account_id
+    } do
       # Setup
-      populate_time_series_data(1, ~D[2025-10-15], [
+      populate_time_series_data(account_id, ~D[2025-10-15], [
         {"https://example.com/page", 100, 1000}
       ])
 
@@ -145,9 +149,9 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
       assert html =~ "No URLs found for the current filters"
     end
 
-    test "search state persists in URL params", %{conn: conn} do
+    test "search state persists in URL params", %{conn: conn, account_id: account_id} do
       # Setup
-      populate_time_series_data(1, ~D[2025-10-15], [
+      populate_time_series_data(account_id, ~D[2025-10-15], [
         {"https://example.com/test", 100, 1000}
       ])
 
@@ -163,9 +167,9 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
   end
 
   describe "dashboard user journey: pagination" do
-    test "user can navigate through pages of results", %{conn: conn} do
+    test "user can navigate through pages of results", %{conn: conn, account_id: account_id} do
       # Setup: Create more URLs than fit on one page
-      account_id = 1
+      # account_id from setup
       date = ~D[2025-10-15]
 
       urls = for i <- 1..150, do: {"https://example.com/page-#{i}", 100, 1000}
@@ -191,9 +195,9 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
       assert html =~ "page-51"
     end
 
-    test "user can change page size", %{conn: conn} do
+    test "user can change page size", %{conn: conn, account_id: account_id} do
       # Setup
-      account_id = 1
+      # account_id from setup
       date = ~D[2025-10-15]
 
       urls = for i <- 1..200, do: {"https://example.com/page-#{i}", 100, 1000}
@@ -213,9 +217,12 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
       assert has_element?(view, "button.btn-active[phx-value-page=\"2\"]")
     end
 
-    test "pagination state persists across sorts and filters", %{conn: conn} do
+    test "pagination state persists across sorts and filters", %{
+      conn: conn,
+      account_id: account_id
+    } do
       # Setup
-      account_id = 1
+      # account_id from setup
       date = ~D[2025-10-15]
 
       urls = for i <- 1..100, do: {"https://example.com/page-#{i}", i * 10, i * 100}
@@ -233,9 +240,12 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
   end
 
   describe "dashboard user journey: combined interactions" do
-    test "user can sort, search, and paginate in one session", %{conn: conn} do
+    test "user can sort, search, and paginate in one session", %{
+      conn: conn,
+      account_id: account_id
+    } do
       # Setup: Realistic dataset
-      account_id = 1
+      # account_id from setup
       date = ~D[2025-10-15]
 
       urls = [
@@ -275,9 +285,9 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
       refute html =~ "python-1"
     end
 
-    test "dashboard remains responsive with complex state", %{conn: conn} do
+    test "dashboard remains responsive with complex state", %{conn: conn, account_id: account_id} do
       # Setup: Large dataset
-      account_id = 1
+      # account_id from setup
       date = ~D[2025-10-15]
 
       urls = for i <- 1..500, do: {"https://example.com/page-#{i}", i, i * 10}

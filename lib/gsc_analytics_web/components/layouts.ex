@@ -183,13 +183,6 @@ defmodule GscAnalyticsWeb.Layouts do
     end
   end
 
-  defp account_nav(assigns, :settings) do
-    case account_query(assigns) do
-      [] -> ~p"/users/settings"
-      params -> ~p"/users/settings?#{params}"
-    end
-  end
-
   defp account_query(assigns) do
     property_id = Map.get(assigns, :current_property_id)
 

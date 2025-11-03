@@ -6,6 +6,7 @@ defmodule GscAnalytics.ContentInsights.KeywordAggregatorTest do
   alias GscAnalytics.Schemas.TimeSeries
 
   @account_id 1
+  @property_url "sc-domain:example.com"
 
   setup do
     today = Date.utc_today()
@@ -66,7 +67,13 @@ defmodule GscAnalytics.ContentInsights.KeywordAggregatorTest do
   end
 
   test "list/1 aggregates keyword metrics" do
-    result = KeywordAggregator.list(%{account_id: @account_id, limit: 10, page: 1})
+    result =
+      KeywordAggregator.list(%{
+        account_id: @account_id,
+        property_url: @property_url,
+        limit: 10,
+        page: 1
+      })
 
     assert result.total_count == 2
     assert result.total_pages == 1
@@ -107,6 +114,7 @@ defmodule GscAnalytics.ContentInsights.KeywordAggregatorTest do
   defp insert_time_series(account_id, url, date, top_queries) do
     %TimeSeries{
       account_id: account_id,
+      property_url: @property_url,
       url: url,
       date: date,
       period_type: :daily,

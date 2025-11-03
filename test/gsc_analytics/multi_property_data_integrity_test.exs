@@ -8,6 +8,8 @@ defmodule GscAnalytics.MultiPropertyDataIntegrityTest do
 
   use GscAnalytics.DataCase
 
+  import GscAnalytics.AccountsFixtures
+
   alias GscAnalytics.Accounts
   alias GscAnalytics.ContentInsights
   alias GscAnalytics.Analytics.SummaryStats
@@ -16,7 +18,8 @@ defmodule GscAnalytics.MultiPropertyDataIntegrityTest do
 
   describe "property data isolation" do
     test "two properties with same URL store separate records" do
-      account_id = 1
+      workspace = workspace_fixture()
+      account_id = workspace.id
 
       # Add two properties for the same account
       {:ok, prop1} =
@@ -98,7 +101,8 @@ defmodule GscAnalytics.MultiPropertyDataIntegrityTest do
     end
 
     test "summary stats correctly filter by property_url" do
-      account_id = 1
+      workspace = workspace_fixture()
+      account_id = workspace.id
 
       # Add two properties
       {:ok, prop1} =
@@ -197,7 +201,8 @@ defmodule GscAnalytics.MultiPropertyDataIntegrityTest do
     end
 
     test "dashboard queries require property_url filter" do
-      account_id = 1
+      workspace = workspace_fixture()
+      account_id = workspace.id
 
       # Add a property
       {:ok, prop} =
@@ -230,7 +235,8 @@ defmodule GscAnalytics.MultiPropertyDataIntegrityTest do
     end
 
     test "composite primary key prevents data collision" do
-      account_id = 1
+      workspace = workspace_fixture()
+      account_id = workspace.id
 
       # Add a property
       {:ok, prop} =

@@ -24,7 +24,7 @@ defmodule GscAnalytics.UrlGroupsTest do
       [first, second, third] = build_chain(~D[2024-12-01], 3)
 
       QueryCounter.reset()
-      result = UrlGroups.resolve(first.url)
+      result = UrlGroups.resolve(first.url, %{account_id: @account_id})
       analysis = QueryCounter.analyze()
 
       assert result.canonical_url == third.url
@@ -40,7 +40,7 @@ defmodule GscAnalytics.UrlGroupsTest do
       last = List.last(chain)
 
       QueryCounter.reset()
-      result = UrlGroups.resolve(first.url)
+      result = UrlGroups.resolve(first.url, %{account_id: @account_id})
       analysis = QueryCounter.analyze()
 
       assert result.canonical_url == last.url
@@ -60,7 +60,7 @@ defmodule GscAnalytics.UrlGroupsTest do
       insert_time_series(url_b, ~D[2024-11-01])
 
       QueryCounter.reset()
-      result = UrlGroups.resolve(url_a)
+      result = UrlGroups.resolve(url_a, %{account_id: @account_id})
 
       assert Enum.sort(result.urls) == Enum.sort([url_a, url_b])
       assert result.canonical_url in [url_a, url_b]
@@ -75,7 +75,7 @@ defmodule GscAnalytics.UrlGroupsTest do
       insert_time_series(url, ~D[2024-10-01])
 
       QueryCounter.reset()
-      result = UrlGroups.resolve(url)
+      result = UrlGroups.resolve(url, %{account_id: @account_id})
 
       assert result.canonical_url == url
       assert result.redirect_events == []
@@ -93,7 +93,7 @@ defmodule GscAnalytics.UrlGroupsTest do
       insert_time_series(old_url, ~D[2025-02-01])
       insert_time_series(new_url, ~D[2025-02-02])
 
-      result = UrlGroups.resolve(old_url)
+      result = UrlGroups.resolve(old_url, %{account_id: @account_id})
 
       refute Enum.any?(result.urls, &String.contains?(&1, "#"))
       assert Enum.count(result.redirect_events, &(&1.type == :gsc_migration)) == 1

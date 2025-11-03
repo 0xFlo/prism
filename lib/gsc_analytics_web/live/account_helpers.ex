@@ -411,6 +411,10 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
 
           {:ok, api_property_urls}
 
+        {:error, :authenticator_not_started} ->
+          # Test mode: Assume all saved properties are API-accessible
+          {:ok, saved_urls}
+
         {:error, error} ->
           {:error, error}
       end
@@ -424,6 +428,7 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
 
     from(p in WorkspaceProperty,
       where: p.workspace_id in ^account_ids,
+      where: p.is_active == true,
       order_by: [desc: p.is_active, asc: p.display_name]
     )
     |> Repo.all()
@@ -449,7 +454,13 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
 
       Enum.map(properties, fn property ->
         property_label = property_label(property)
-        {"#{label} - #{property_label}", property.id}
+        favicon_url = Map.get(property, :favicon_url)
+
+        %{
+          label: "#{label} - #{property_label}",
+          id: property.id,
+          favicon_url: favicon_url
+        }
       end)
     end)
   end

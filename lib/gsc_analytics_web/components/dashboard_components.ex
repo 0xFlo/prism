@@ -796,4 +796,97 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
     </div>
     """
   end
+
+  @doc """
+  Renders a property selector dropdown with favicons.
+
+  Displays a dropdown menu for selecting Google Search Console properties.
+  Shows website favicons next to property labels for better visual identification.
+  Supports both map-based options (with favicon URLs) and legacy tuple format.
+
+  ## Attributes
+  - `property_options` - List of property options (maps or tuples)
+  - `property_label` - Label for currently selected property
+  - `property_favicon_url` - Favicon URL for currently selected property (optional)
+  - `current_property_id` - ID of currently selected property
+  - `empty_message` - Message to show when no property is selected (optional)
+
+  ## Examples
+
+      # With favicon support (recommended)
+      <.property_selector
+        property_options={@property_options}
+        property_label={@property_label}
+        property_favicon_url={@property_favicon_url}
+        current_property_id={@current_property_id}
+      />
+
+      # Legacy format (tuples)
+      <.property_selector
+        property_options={[{"Domain: example.com", "uuid"}]}
+        property_label="Domain: example.com"
+        current_property_id="uuid"
+      />
+  """
+  attr :property_options, :list, default: []
+  attr :property_label, :string, default: nil
+  attr :property_favicon_url, :string, default: nil
+  attr :current_property_id, :string, default: nil
+  attr :empty_message, :string, default: "No property selected"
+
+  def property_selector(assigns) do
+    ~H"""
+    <%= if Enum.empty?(@property_options) do %>
+      <%= if @property_label do %>
+        <span class="text-base font-medium text-slate-900 dark:text-slate-100">
+          {@property_label}
+        </span>
+      <% else %>
+        <span class="text-base font-medium text-slate-500 dark:text-slate-400">
+          {@empty_message}
+        </span>
+      <% end %>
+    <% else %>
+      <div class="dropdown dropdown-end">
+        <label tabindex="0" class="btn btn-ghost gap-2 normal-case text-base font-medium">
+          <%= if @property_favicon_url do %>
+            <img src={@property_favicon_url} alt="" class="w-4 h-4 flex-shrink-0" />
+          <% end %>
+          <%= if @property_label do %>
+            {@property_label}
+          <% else %>
+            Select property
+          <% end %>
+          <.icon name="hero-chevron-down" class="h-4 w-4" />
+        </label>
+        <ul
+          tabindex="0"
+          class="dropdown-content menu menu-compact rounded-box mt-3 w-80 bg-base-100 p-2 shadow-lg border border-base-300 max-h-96 overflow-y-auto"
+        >
+          <%= for option <- @property_options do %>
+            <% {label, id, favicon_url} =
+              case option do
+                %{label: l, id: i, favicon_url: f} -> {l, i, f}
+                {l, i} -> {l, i, nil}
+              end %>
+            <li>
+              <button
+                phx-click="switch_property"
+                phx-value-property_id={id}
+                class={[@current_property_id == id && "active", "flex items-center gap-2"]}
+              >
+                <%= if favicon_url do %>
+                  <img src={favicon_url} alt="" class="w-4 h-4 flex-shrink-0" />
+                <% else %>
+                  <.icon name="hero-globe-alt" class="w-4 h-4 flex-shrink-0" />
+                <% end %>
+                <span class="truncate">{label}</span>
+              </button>
+            </li>
+          <% end %>
+        </ul>
+      </div>
+    <% end %>
+    """
+  end
 end

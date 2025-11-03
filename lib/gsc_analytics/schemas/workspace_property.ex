@@ -50,6 +50,7 @@ defmodule GscAnalytics.Schemas.WorkspaceProperty do
     field :property_url, :string
     field :display_name, :string
     field :is_active, :boolean, default: false
+    field :favicon_url, :string
 
     timestamps(type: :utc_datetime)
   end
@@ -72,16 +73,29 @@ defmodule GscAnalytics.Schemas.WorkspaceProperty do
   """
   def changeset(property, attrs) do
     property
-    |> cast(attrs, [:workspace_id, :property_url, :display_name, :is_active])
+    |> cast(attrs, [:workspace_id, :property_url, :display_name, :is_active, :favicon_url])
     |> validate_required([:workspace_id, :property_url])
     |> validate_number(:workspace_id, greater_than: 0)
     |> trim_and_validate(:property_url)
     |> trim_optional(:display_name)
+    |> maybe_generate_favicon_url()
     |> generate_uuid_if_new()
     |> unique_constraint([:workspace_id, :property_url],
       name: :workspace_properties_workspace_property_unique,
       message: "This property is already saved for this workspace"
     )
+  end
+
+  defp maybe_generate_favicon_url(changeset) do
+    # Only generate favicon URL if not explicitly provided and property_url is present
+    case {get_change(changeset, :favicon_url), get_field(changeset, :property_url)} do
+      {nil, property_url} when is_binary(property_url) ->
+        favicon_url = GscAnalytics.Helpers.FaviconFetcher.get_favicon_url(property_url)
+        put_change(changeset, :favicon_url, favicon_url)
+
+      _ ->
+        changeset
+    end
   end
 
   defp generate_uuid_if_new(changeset) do

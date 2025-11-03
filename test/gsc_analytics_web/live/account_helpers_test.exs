@@ -120,7 +120,7 @@ defmodule GscAnalyticsWeb.Live.AccountHelpersTest do
       workspace1: workspace1,
       workspace2: workspace2
     } do
-      {:ok, conn} = Plug.Test.init_test_session(Plug.Conn.fetch_session(build_conn()), %{})
+      conn = build_conn() |> Phoenix.ConnTest.init_test_session(%{})
       conn = log_in_user(conn, user)
 
       {:ok, view, _html} = live(conn, ~p"/")
@@ -156,7 +156,7 @@ defmodule GscAnalyticsWeb.Live.AccountHelpersTest do
           is_active: false
         })
 
-      {:ok, conn} = Plug.Test.init_test_session(Plug.Conn.fetch_session(build_conn()), %{})
+      conn = build_conn() |> Phoenix.ConnTest.init_test_session(%{})
       conn = log_in_user(conn, user)
 
       {:ok, view, _html} = live(conn, ~p"/")
@@ -258,7 +258,7 @@ defmodule GscAnalyticsWeb.Live.AccountHelpersTest do
           is_active: true
         })
 
-      {:ok, conn} = Plug.Test.init_test_session(Plug.Conn.fetch_session(conn), %{})
+      conn = build_conn() |> Phoenix.ConnTest.init_test_session(%{})
       conn = log_in_user(conn, user)
 
       {:ok, view, _html} = live(conn, ~p"/?account_id=#{workspace1.id}")

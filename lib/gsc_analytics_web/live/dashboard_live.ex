@@ -45,6 +45,7 @@ defmodule GscAnalyticsWeb.DashboardLive do
      |> assign_new(:search, fn -> "" end)
      |> assign_new(:page_title, fn -> "GSC Analytics Dashboard" end)
      |> assign_new(:property_label, fn -> nil end)
+     |> assign_new(:property_favicon_url, fn -> nil end)
      |> assign_new(:total_clicks, fn -> 0 end)
      |> assign_new(:total_impressions, fn -> 0 end)
      |> assign_new(:avg_ctr, fn -> 0.0 end)
@@ -60,6 +61,7 @@ defmodule GscAnalyticsWeb.DashboardLive do
     property = socket.assigns.current_property
     property_url = property && property.property_url
     property_label = property && (property.display_name || property.property_url)
+    property_favicon_url = property && property.favicon_url
 
     limit = DashboardUtils.normalize_limit(params["limit"])
     page = DashboardUtils.normalize_page(params["page"])
@@ -175,6 +177,7 @@ defmodule GscAnalyticsWeb.DashboardLive do
      |> assign(:search, search)
      |> assign(:period_days, period_days)
      |> assign(:property_label, property_label)
+     |> assign(:property_favicon_url, property_favicon_url)
      |> assign(:total_clicks, period_totals.total_clicks)
      |> assign(:total_impressions, period_totals.total_impressions)
      |> assign(:avg_ctr, period_totals.avg_ctr)

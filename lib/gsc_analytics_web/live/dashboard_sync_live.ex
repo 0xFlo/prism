@@ -6,7 +6,9 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
   import GscAnalyticsWeb.Dashboard.HTMLHelpers,
     only: [format_date: 1, days_ago: 1, format_number: 1]
 
-  alias GscAnalytics.{Accounts, Repo}
+  import GscAnalyticsWeb.Components.DashboardComponents, only: [property_selector: 1]
+
+  alias GscAnalytics.Repo
   alias GscAnalytics.DataSources.GSC.Core.Sync
   alias GscAnalytics.DataSources.GSC.Support.SyncProgress
   alias GscAnalytics.Schemas.{Performance, TimeSeries}
@@ -57,8 +59,16 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
         |> assign(:sync_info_loaded_property_id, nil)
         |> assign_progress(progress_state)
 
-      property_url = socket.assigns.current_property && socket.assigns.current_property.property_url
-      socket = maybe_request_sync_info(socket, account.id, property_url, force: true)
+      property = socket.assigns.current_property
+      property_url = property && property.property_url
+      property_label = property && (property.display_name || property.property_url)
+      property_favicon_url = property && property.favicon_url
+
+      socket =
+        socket
+        |> assign(:property_label, property_label)
+        |> assign(:property_favicon_url, property_favicon_url)
+        |> maybe_request_sync_info(account.id, property_url, force: true)
 
       {:ok, socket}
     end
@@ -75,7 +85,10 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
 
     account_id = socket.assigns.current_account_id
     new_property_id = socket.assigns[:current_property_id]
-    property_url = socket.assigns.current_property && socket.assigns.current_property.property_url
+    property = socket.assigns.current_property
+    property_url = property && property.property_url
+    property_label = property && (property.display_name || property.property_url)
+    property_favicon_url = property && property.favicon_url
 
     # Clear progress when property changes
     socket =
@@ -90,7 +103,11 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
       socket.assigns[:sync_info_loaded_account_id] != account_id or
         socket.assigns[:sync_info_loaded_property_id] != new_property_id
 
-    socket = maybe_request_sync_info(socket, account_id, property_url, force: force?)
+    socket =
+      socket
+      |> assign(:property_label, property_label)
+      |> assign(:property_favicon_url, property_favicon_url)
+      |> maybe_request_sync_info(account_id, property_url, force: force?)
 
     {:noreply, socket}
   end
@@ -112,6 +129,7 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
               Task.start(fn -> Sync.sync_full_history(site_url, account_id: account_id) end)
 
               form = build_form("full")
+
               property_name =
                 socket.assigns.current_property.display_name ||
                   socket.assigns.current_property.property_url
@@ -137,6 +155,7 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
               Task.start(fn -> Sync.sync_last_n_days(site_url, days, account_id: account_id) end)
 
               form = build_form(Integer.to_string(days))
+
               property_name =
                 socket.assigns.current_property.display_name ||
                   socket.assigns.current_property.property_url
@@ -193,8 +212,12 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
     socket =
       case payload.type do
         :finished ->
-          property_url = socket.assigns.current_property && socket.assigns.current_property.property_url
-          maybe_request_sync_info(socket, socket.assigns.current_account_id, property_url, force: true)
+          property_url =
+            socket.assigns.current_property && socket.assigns.current_property.property_url
+
+          maybe_request_sync_info(socket, socket.assigns.current_account_id, property_url,
+            force: true
+          )
 
         _ ->
           socket
@@ -203,7 +226,10 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
     {:noreply, socket}
   end
 
-  def handle_info({:load_sync_info, account_id, property_url, force?}, %{assigns: assigns} = socket) do
+  def handle_info(
+        {:load_sync_info, account_id, property_url, force?},
+        %{assigns: assigns} = socket
+      ) do
     cond do
       assigns.current_account_id != account_id and not force? ->
         {:noreply, socket}
@@ -261,7 +287,7 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
     current_property_url = current_property && current_property.property_url
 
     # Clear progress if account or property mismatch
-    if (job_account_id && current_account_id && job_account_id != current_account_id) or
+    if (job_account_id && current_account_id && job_account_id != current_account_id) ||
          (job_property_url && current_property_url && job_property_url != current_property_url) do
       assign_progress(socket, nil)
     else

@@ -46,45 +46,12 @@
     <%!-- Top control bar --%>
     <div class="flex flex-wrap items-center justify-between gap-4">
       <div class="flex flex-wrap items-center gap-3">
-        <% property_options = @property_options || [] %>
-        <%= if Enum.empty?(property_options) do %>
-          <%= if @property_label do %>
-            <span class="text-base font-medium text-slate-900 dark:text-slate-100">
-              {@property_label}
-            </span>
-          <% else %>
-            <span class="text-base font-medium text-slate-500 dark:text-slate-400">
-              No property selected
-            </span>
-          <% end %>
-        <% else %>
-          <div class="dropdown dropdown-end">
-            <label tabindex="0" class="btn btn-ghost gap-2 normal-case text-base font-medium">
-              <%= if @property_label do %>
-                {@property_label}
-              <% else %>
-                Select property
-              <% end %>
-              <.icon name="hero-chevron-down" class="h-4 w-4" />
-            </label>
-            <ul
-              tabindex="0"
-              class="dropdown-content menu menu-compact rounded-box mt-3 w-64 bg-base-100 p-2 shadow-lg border border-base-300 max-h-96 overflow-y-auto"
-            >
-              <%= for {label, id} <- property_options do %>
-                <li>
-                  <button
-                    phx-click="switch_property"
-                    phx-value-property_id={id}
-                    class={[@current_property_id == id && "active"]}
-                  >
-                    {label}
-                  </button>
-                </li>
-              <% end %>
-            </ul>
-          </div>
-        <% end %>
+        <.property_selector
+          property_options={@property_options || []}
+          property_label={@property_label}
+          property_favicon_url={@property_favicon_url}
+          current_property_id={@current_property_id}
+        />
 
         <button
           type="button"
@@ -104,37 +71,57 @@
             class="dropdown-content menu menu-compact rounded-box mt-3 w-52 bg-base-100 p-2 shadow-lg border border-base-300"
           >
             <li>
-              <button phx-click="change_period" phx-value-period="7" class={[
-                @period_days == 7 && "active"
-              ]}>
+              <button
+                phx-click="change_period"
+                phx-value-period="7"
+                class={[
+                  @period_days == 7 && "active"
+                ]}
+              >
                 Last 7 days
               </button>
             </li>
             <li>
-              <button phx-click="change_period" phx-value-period="30" class={[
-                @period_days == 30 && "active"
-              ]}>
+              <button
+                phx-click="change_period"
+                phx-value-period="30"
+                class={[
+                  @period_days == 30 && "active"
+                ]}
+              >
                 Last 30 days
               </button>
             </li>
             <li>
-              <button phx-click="change_period" phx-value-period="90" class={[
-                @period_days == 90 && "active"
-              ]}>
+              <button
+                phx-click="change_period"
+                phx-value-period="90"
+                class={[
+                  @period_days == 90 && "active"
+                ]}
+              >
                 Last 90 days
               </button>
             </li>
             <li>
-              <button phx-click="change_period" phx-value-period="180" class={[
-                @period_days == 180 && "active"
-              ]}>
+              <button
+                phx-click="change_period"
+                phx-value-period="180"
+                class={[
+                  @period_days == 180 && "active"
+                ]}
+              >
                 Last 6 months
               </button>
             </li>
             <li>
-              <button phx-click="change_period" phx-value-period="all" class={[
-                @period_days == "all" && "active"
-              ]}>
+              <button
+                phx-click="change_period"
+                phx-value-period="all"
+                class={[
+                  @period_days == "all" && "active"
+                ]}
+              >
                 Last 12 months
               </button>
             </li>
@@ -159,23 +146,35 @@
             class="dropdown-content menu menu-compact rounded-box mt-3 w-40 bg-base-100 p-2 shadow-lg border border-base-300"
           >
             <li>
-              <button phx-click="change_chart_view" phx-value-chart_view="daily" class={[
-                @chart_view == "daily" && "active"
-              ]}>
+              <button
+                phx-click="change_chart_view"
+                phx-value-chart_view="daily"
+                class={[
+                  @chart_view == "daily" && "active"
+                ]}
+              >
                 Daily
               </button>
             </li>
             <li>
-              <button phx-click="change_chart_view" phx-value-chart_view="weekly" class={[
-                @chart_view == "weekly" && "active"
-              ]}>
+              <button
+                phx-click="change_chart_view"
+                phx-value-chart_view="weekly"
+                class={[
+                  @chart_view == "weekly" && "active"
+                ]}
+              >
                 Weekly
               </button>
             </li>
             <li>
-              <button phx-click="change_chart_view" phx-value-chart_view="monthly" class={[
-                @chart_view == "monthly" && "active"
-              ]}>
+              <button
+                phx-click="change_chart_view"
+                phx-value-chart_view="monthly"
+                class={[
+                  @chart_view == "monthly" && "active"
+                ]}
+              >
                 Monthly
               </button>
             </li>
@@ -230,7 +229,10 @@
           {if @sync_running, do: "Active", else: "Idle"}
         </p>
         <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-          <.link navigate={~p"/dashboard/sync"} class="text-indigo-600 hover:underline dark:text-indigo-400">
+          <.link
+            navigate={~p"/dashboard/sync"}
+            class="text-indigo-600 hover:underline dark:text-indigo-400"
+          >
             View status
           </.link>
         </p>

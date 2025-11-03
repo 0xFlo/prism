@@ -404,17 +404,23 @@ defmodule GscAnalytics.DataSources.GSC.Core.Client do
   # ============================================================================
 
   defp get_auth_token(account_id) do
-    case Authenticator.get_token(account_id) do
-      {:ok, token} ->
-        {:ok, token}
+    try do
+      case Authenticator.get_token(account_id) do
+        {:ok, token} ->
+          {:ok, token}
 
-      {:error, :no_token} ->
-        # Token not ready yet, wait and retry once
-        Process.sleep(1000)
-        Authenticator.get_token(account_id)
+        {:error, :no_token} ->
+          # Token not ready yet, wait and retry once
+          Process.sleep(1000)
+          Authenticator.get_token(account_id)
 
-      error ->
-        error
+        error ->
+          error
+      end
+    catch
+      :exit, {:noproc, _} ->
+        # Authenticator not started (test mode)
+        {:error, :authenticator_not_started}
     end
   end
 

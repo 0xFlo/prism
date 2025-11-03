@@ -86,4 +86,34 @@ defmodule GscAnalytics.AuthFixtures do
       set: [inserted_at: dt, authenticated_at: dt]
     )
   end
+
+  @doc """
+  Creates an OAuth token for testing.
+
+  ## Options
+    * `:workspace` - Workspace struct (required if not passed as first arg)
+    * `:access_token` - OAuth access token (defaults to random)
+    * `:refresh_token` - OAuth refresh token (defaults to random)
+    * `:expires_at` - Token expiration (defaults to 1 hour from now)
+    * `:scopes` - OAuth scopes (defaults to webmasters.readonly)
+    * `:google_email` - Google account email (defaults to workspace email)
+  """
+  def oauth_token_fixture(workspace, attrs \\ []) do
+    user = workspace.user || user_fixture()
+    scope = %Scope{user: user, account_ids: [workspace.id]}
+
+    token_attrs = %{
+      account_id: workspace.id,
+      access_token: Keyword.get(attrs, :access_token, "test_token_#{:rand.uniform(100_000)}"),
+      refresh_token: Keyword.get(attrs, :refresh_token, "test_refresh_#{:rand.uniform(100_000)}"),
+      expires_at:
+        Keyword.get(attrs, :expires_at, DateTime.add(DateTime.utc_now(), 3600, :second)),
+      scopes:
+        Keyword.get(attrs, :scopes, ["https://www.googleapis.com/auth/webmasters.readonly"]),
+      google_email: Keyword.get(attrs, :google_email, workspace.google_account_email)
+    }
+
+    {:ok, token} = Auth.store_oauth_token(scope, token_attrs)
+    token
+  end
 end

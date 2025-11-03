@@ -33,7 +33,9 @@ defmodule GscAnalyticsWeb.ConnCase do
 
   setup tags do
     GscAnalytics.DataCase.setup_sandbox(tags)
-    {:ok, conn: Phoenix.ConnTest.build_conn()}
+    conn = Phoenix.ConnTest.build_conn()
+    conn = Phoenix.ConnTest.init_test_session(conn, %{})
+    {:ok, conn: conn}
   end
 
   @doc """

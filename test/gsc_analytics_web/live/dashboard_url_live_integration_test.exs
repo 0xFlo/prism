@@ -14,11 +14,13 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
   - Tests survive refactoring
   """
 
-  use GscAnalyticsWeb.ConnCase
+  use GscAnalyticsWeb.ConnCase, async: false
 
   @moduletag :integration
 
   import Phoenix.LiveViewTest
+  import GscAnalytics.WorkspaceTestHelper
+
   alias GscAnalytics.Repo
   alias GscAnalytics.Schemas.TimeSeries
 
@@ -26,10 +28,14 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
 
   setup :register_and_log_in_user
 
+  setup %{user: user} do
+    {workspace, property} = setup_workspace_with_property(user: user, property_url: @property_url)
+    %{workspace: workspace, property: property, account_id: workspace.id}
+  end
+
   describe "URL detail user journey: viewing time series" do
-    test "user can view URL with daily time series chart", %{conn: conn} do
+    test "user can view URL with daily time series chart", %{conn: conn, account_id: account_id} do
       # Setup: Create 30 days of data for a URL
-      account_id = 1
       url = "https://example.com/test-article"
 
       dates = for days_ago <- 0..29, do: Date.add(~D[2025-10-15], -days_ago)
@@ -74,9 +80,12 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
       assert html =~ "No performance data yet"
     end
 
-    test "user can view URL with partial data (some days missing)", %{conn: conn} do
+    test "user can view URL with partial data (some days missing)", %{
+      conn: conn,
+      account_id: account_id
+    } do
       # Setup: Sparse data (only some days have metrics)
-      account_id = 1
+      # account_id from setup
       url = "https://example.com/sparse-data"
 
       # Only populate days 0, 5, 10, 15 (gaps in between)
@@ -99,9 +108,12 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
   end
 
   describe "URL detail user journey: switching time views" do
-    test "user can switch between daily, weekly, and monthly views", %{conn: conn} do
+    test "user can switch between daily, weekly, and monthly views", %{
+      conn: conn,
+      account_id: account_id
+    } do
       # Setup: Create enough data for meaningful aggregations
-      account_id = 1
+      # account_id from setup
       url = "https://example.com/popular-page"
 
       # 90 days of data
@@ -136,9 +148,9 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
       assert html =~ "Monthly" or html =~ "Month"
     end
 
-    test "view mode persists in URL params", %{conn: conn} do
+    test "view mode persists in URL params", %{conn: conn, account_id: account_id} do
       # Setup
-      account_id = 1
+      # account_id from setup
       url = "https://example.com/test"
 
       for days_ago <- 0..30 do
@@ -162,9 +174,12 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
   end
 
   describe "URL detail user journey: viewing top queries" do
-    test "user can see top performing search queries for URL", %{conn: conn} do
+    test "user can see top performing search queries for URL", %{
+      conn: conn,
+      account_id: account_id
+    } do
       # Setup: Create URL with top queries data
-      account_id = 1
+      # account_id from setup
       url = "https://example.com/article"
       date = ~D[2025-10-15]
 
@@ -215,9 +230,9 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
       assert html =~ "100"
     end
 
-    test "user sees message when no query data available", %{conn: conn} do
+    test "user sees message when no query data available", %{conn: conn, account_id: account_id} do
       # Setup: URL with no top_queries data
-      account_id = 1
+      # account_id from setup
       url = "https://example.com/no-queries"
       date = ~D[2025-10-15]
 
@@ -238,9 +253,12 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
   end
 
   describe "URL detail user journey: summary statistics" do
-    test "user sees accurate summary stats matching chart data", %{conn: conn} do
+    test "user sees accurate summary stats matching chart data", %{
+      conn: conn,
+      account_id: account_id
+    } do
       # Setup: Precise data for verification
-      account_id = 1
+      # account_id from setup
       url = "https://example.com/test"
 
       # Create 7 days with known values
@@ -264,9 +282,9 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
       assert html =~ "4500" or html =~ "4,500"
     end
 
-    test "user can see time range of data", %{conn: conn} do
+    test "user can see time range of data", %{conn: conn, account_id: account_id} do
       # Setup: Data spanning specific range
-      account_id = 1
+      # account_id from setup
       url = "https://example.com/test"
 
       start_date = ~D[2025-10-01]
@@ -288,9 +306,9 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
   end
 
   describe "URL detail user journey: URL encoding edge cases" do
-    test "user can view URL with special characters", %{conn: conn} do
+    test "user can view URL with special characters", %{conn: conn, account_id: account_id} do
       # Setup: URL with query parameters and special chars
-      account_id = 1
+      # account_id from setup
       url = "https://example.com/search?q=test+query&category=docs"
       date = ~D[2025-10-15]
 
@@ -304,9 +322,9 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
       assert html =~ "search" or html =~ "test"
     end
 
-    test "user can view URL with UTF-8 characters", %{conn: conn} do
+    test "user can view URL with UTF-8 characters", %{conn: conn, account_id: account_id} do
       # Setup: URL with international characters
-      account_id = 1
+      # account_id from setup
       url = "https://example.com/guía/español"
       date = ~D[2025-10-15]
 
@@ -322,9 +340,12 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
   end
 
   describe "URL detail user journey: navigation" do
-    test "user can navigate back to dashboard from URL detail", %{conn: conn} do
+    test "user can navigate back to dashboard from URL detail", %{
+      conn: conn,
+      account_id: account_id
+    } do
       # Setup
-      account_id = 1
+      # account_id from setup
       url = "https://example.com/test"
       populate_url_data(account_id, url, ~D[2025-10-15], %{clicks: 100, impressions: 1000})
 
@@ -338,9 +359,9 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
                render(view) =~ "Back"
     end
 
-    test "user can share URL detail page via URL", %{conn: conn} do
+    test "user can share URL detail page via URL", %{conn: conn, account_id: account_id} do
       # Setup
-      account_id = 1
+      # account_id from setup
       url = "https://example.com/shareable-article"
       populate_url_data(account_id, url, ~D[2025-10-15], %{clicks: 500, impressions: 5000})
 

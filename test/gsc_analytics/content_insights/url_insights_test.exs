@@ -78,7 +78,11 @@ defmodule GscAnalytics.ContentInsights.UrlInsightsTest do
   end
 
   test "aggregates metrics across redirect chain", %{old_url: old_url, new_url: new_url} do
-    insights = ContentInsights.url_insights(old_url, "daily")
+    insights =
+      ContentInsights.url_insights(old_url, "daily", %{
+        account_id: @account_id,
+        property_url: @property_url
+      })
 
     assert insights.url == new_url
     assert insights.requested_url == old_url
@@ -103,21 +107,33 @@ defmodule GscAnalytics.ContentInsights.UrlInsightsTest do
   end
 
   test "weekly view normalizes chart events to week start", %{old_url: old_url} do
-    insights = ContentInsights.url_insights(old_url, "weekly")
+    insights =
+      ContentInsights.url_insights(old_url, "weekly", %{
+        account_id: @account_id,
+        property_url: @property_url
+      })
 
     assert insights.label == "Week Starting"
     assert Enum.any?(insights.chart_events, fn event -> event.date == "2025-01-13" end)
   end
 
   test "monthly view normalizes chart events to month start", %{old_url: old_url} do
-    insights = ContentInsights.url_insights(old_url, "monthly")
+    insights =
+      ContentInsights.url_insights(old_url, "monthly", %{
+        account_id: @account_id,
+        property_url: @property_url
+      })
 
     assert insights.label == "Month"
     assert Enum.any?(insights.chart_events, fn event -> event.date == "2025-01-01" end)
   end
 
   test "aggregates top queries across url group", %{old_url: old_url} do
-    insights = ContentInsights.url_insights(old_url, "daily")
+    insights =
+      ContentInsights.url_insights(old_url, "daily", %{
+        account_id: @account_id,
+        property_url: @property_url
+      })
 
     shared = Enum.find(insights.top_queries, &(String.downcase(&1.query) == "shared query"))
     legacy = Enum.find(insights.top_queries, &(String.downcase(&1.query) == "legacy only"))
@@ -136,7 +152,12 @@ defmodule GscAnalytics.ContentInsights.UrlInsightsTest do
   end
 
   test "selection window preserves requested span", %{old_url: old_url} do
-    insights = ContentInsights.url_insights(old_url, "daily", %{period_days: 30})
+    insights =
+      ContentInsights.url_insights(old_url, "daily", %{
+        account_id: @account_id,
+        property_url: @property_url,
+        period_days: 30
+      })
 
     assert insights.period_end == ~D[2025-02-02]
     assert insights.period_start == ~D[2025-01-04]
@@ -147,7 +168,12 @@ defmodule GscAnalytics.ContentInsights.UrlInsightsTest do
   end
 
   test "period_days filters time series and query aggregation", %{old_url: old_url} do
-    insights = ContentInsights.url_insights(old_url, "daily", %{period_days: 7})
+    insights =
+      ContentInsights.url_insights(old_url, "daily", %{
+        account_id: @account_id,
+        property_url: @property_url,
+        period_days: 7
+      })
 
     dates = Enum.map(insights.time_series, & &1.date)
     assert dates == [~D[2025-02-01], ~D[2025-02-02]]

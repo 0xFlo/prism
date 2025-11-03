@@ -102,7 +102,14 @@ defmodule GscAnalytics.ContentInsights.UrlPerformanceTest do
   end
 
   test "list/1 returns enriched url data" do
-    result = UrlPerformance.list(%{account_id: @account_id, limit: 10, page: 1, period_days: 30})
+    result =
+      UrlPerformance.list(%{
+        account_id: @account_id,
+        property_url: @property_url,
+        limit: 10,
+        page: 1,
+        period_days: 30
+      })
 
     assert result.total_count == 2
     assert result.total_pages == 1
@@ -128,6 +135,7 @@ defmodule GscAnalytics.ContentInsights.UrlPerformanceTest do
     result =
       UrlPerformance.list(%{
         account_id: @account_id,
+        property_url: @property_url,
         limit: 10,
         page: 1,
         search: "example.com/b"
@@ -141,6 +149,7 @@ defmodule GscAnalytics.ContentInsights.UrlPerformanceTest do
     %{urls: urls} =
       UrlPerformance.list(%{
         account_id: @account_id,
+        property_url: @property_url,
         limit: 10,
         page: 1,
         period_days: 10_000

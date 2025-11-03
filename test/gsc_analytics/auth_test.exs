@@ -212,13 +212,15 @@ defmodule GscAnalytics.AuthTest do
     setup :verify_on_exit!
 
     setup do
-      scope = AccountsFixtures.scope_with_accounts([2])
-      %{scope: scope}
+      user = GscAnalytics.AuthFixtures.user_fixture()
+      workspace = AccountsFixtures.workspace_fixture(user: user)
+      scope = %GscAnalytics.Auth.Scope{user: user, account_ids: [workspace.id]}
+      %{scope: scope, workspace: workspace}
     end
 
-    test "stores and retrieves encrypted OAuth tokens", %{scope: scope} do
+    test "stores and retrieves encrypted OAuth tokens", %{scope: scope, workspace: workspace} do
       attrs = %{
-        account_id: 2,
+        account_id: workspace.id,
         google_email: "test@example.com",
         refresh_token: "refresh_xyz",
         access_token: "access_abc",
@@ -231,17 +233,17 @@ defmodule GscAnalytics.AuthTest do
       assert token.access_token == "access_abc"
       assert token.refresh_token == "refresh_xyz"
 
-      raw = Repo.get_by(OAuthToken, account_id: 2)
+      raw = Repo.get_by(OAuthToken, account_id: workspace.id)
       refute raw.access_token_encrypted == "access_abc"
       refute raw.refresh_token_encrypted == "refresh_xyz"
 
-      {:ok, fetched} = Auth.get_oauth_token(scope, 2)
+      {:ok, fetched} = Auth.get_oauth_token(scope, workspace.id)
       assert fetched.google_email == "test@example.com"
     end
 
-    test "updates an existing OAuth token in place", %{scope: scope} do
+    test "updates an existing OAuth token in place", %{scope: scope, workspace: workspace} do
       attrs = %{
-        account_id: 2,
+        account_id: workspace.id,
         google_email: "test@example.com",
         refresh_token: "refresh_xyz",
         access_token: "access_abc",
@@ -254,13 +256,13 @@ defmodule GscAnalytics.AuthTest do
 
       assert initial.id == updated.id
       assert updated.access_token == "new_token"
-      assert {:ok, fetched} = Auth.get_oauth_token(scope, 2)
+      assert {:ok, fetched} = Auth.get_oauth_token(scope, workspace.id)
       assert fetched.access_token == "new_token"
     end
 
-    test "disconnects an OAuth account and clears tokens", %{scope: scope} do
+    test "disconnects an OAuth account and clears tokens", %{scope: scope, workspace: workspace} do
       attrs = %{
-        account_id: 2,
+        account_id: workspace.id,
         google_email: "test@example.com",
         refresh_token: "refresh_xyz",
         access_token: "access_abc",
@@ -269,10 +271,10 @@ defmodule GscAnalytics.AuthTest do
       }
 
       {:ok, _} = Auth.store_oauth_token(scope, attrs)
-      assert Auth.has_oauth_token?(scope, 2)
+      assert Auth.has_oauth_token?(scope, workspace.id)
 
-      {:ok, _} = Auth.disconnect_oauth_account(scope, 2)
-      refute Auth.has_oauth_token?(scope, 2)
+      {:ok, _} = Auth.disconnect_oauth_account(scope, workspace.id)
+      refute Auth.has_oauth_token?(scope, workspace.id)
     end
 
     test "rejects access for unauthorized scopes" do
@@ -286,12 +288,12 @@ defmodule GscAnalytics.AuthTest do
       assert {:error, :missing_account_id} = Auth.store_oauth_token(nil, %{})
     end
 
-    test "refreshes an expired OAuth token via HTTP", %{scope: scope} do
+    test "refreshes an expired OAuth token via HTTP", %{scope: scope, workspace: workspace} do
       expires_at = DateTime.add(DateTime.utc_now(), -60, :second)
 
       {:ok, _} =
         Auth.store_oauth_token(scope, %{
-          account_id: 2,
+          account_id: workspace.id,
           google_email: "test@example.com",
           refresh_token: "refresh_xyz",
           access_token: "expired_token",
@@ -315,11 +317,11 @@ defmodule GscAnalytics.AuthTest do
         {:ok, response}
       end)
 
-      {:ok, refreshed} = Auth.refresh_oauth_access_token(scope, 2)
+      {:ok, refreshed} = Auth.refresh_oauth_access_token(scope, workspace.id)
       assert refreshed.access_token == "new_access_token"
       assert refreshed.refresh_token == "refresh_xyz"
 
-      {:ok, stored} = Auth.get_oauth_token(scope, 2)
+      {:ok, stored} = Auth.get_oauth_token(scope, workspace.id)
       assert stored.access_token == "new_access_token"
     end
   end

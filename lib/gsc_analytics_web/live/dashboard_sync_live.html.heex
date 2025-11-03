@@ -11,68 +11,50 @@
   <div class="mx-auto w-full max-w-7xl px-6 py-10">
     <div class="flex flex-wrap items-end justify-between gap-6">
       <div class="space-y-2">
-        <p class="text-sm font-medium uppercase tracking-widest text-slate-500">
+        <p class="text-sm font-medium uppercase tracking-widest text-slate-500 dark:text-slate-400">
           Google Search Console
         </p>
-        <h1 class="text-4xl font-semibold text-slate-900">Sync Status</h1>
-        <p class="text-base text-slate-500">
+        <h1 class="text-4xl font-semibold text-slate-900 dark:text-slate-100">Sync Status</h1>
+        <p class="text-base text-slate-500 dark:text-slate-400">
           Monitor live ingestion progress and trigger fresh imports right from here.
         </p>
       </div>
       <.link
         navigate={~p"/dashboard"}
-        class="btn btn-ghost gap-2 text-slate-600 hover:text-slate-900"
+        class="btn btn-ghost gap-2 text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
       >
         <.icon name="hero-arrow-left" class="h-5 w-5" /> Back to dashboard
       </.link>
     </div>
 
-    <section class="mt-10 rounded-3xl border border-slate-200 bg-white/80 p-8 shadow-sm backdrop-blur">
-      <h2 class="text-xl font-semibold text-slate-900">Manual sync</h2>
-      <p class="mt-2 text-sm text-slate-500">
+    <section class="mt-10 rounded-3xl border border-slate-200 bg-white/80 p-8 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-800/80">
+      <h2 class="text-xl font-semibold text-slate-900 dark:text-slate-100">Manual sync</h2>
+      <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
         Sync runs in the background. The dashboard updates in real time while data arrives.
       </p>
-      <div class="mt-4 rounded-2xl bg-slate-50/80 p-4 text-sm text-slate-600">
-        <div class="flex items-start gap-3">
-          <.icon name="hero-information-circle" class="mt-0.5 h-5 w-5 text-sky-500" />
-          <span>
-            GSC metrics are delayed by ~3 days. Choose a range that ends three days ago for the freshest complete data.
-          </span>
-        </div>
-      </div>
 
-      <div class="mt-4 rounded-2xl border border-sky-200 bg-sky-50/80 p-4">
+      <div class="mt-4 rounded-2xl border border-sky-200 bg-sky-50/80 p-4 dark:border-sky-800 dark:bg-sky-900/30">
         <div class="flex items-start gap-3">
-          <.icon name="hero-globe-alt" class="h-6 w-6 flex-shrink-0 text-sky-600" />
+          <.icon
+            name="hero-globe-alt"
+            class="h-6 w-6 flex-shrink-0 text-sky-600 dark:text-sky-400"
+          />
           <div class="flex-1">
-            <label for="property-selector" class="text-xs font-semibold uppercase tracking-wider text-sky-600">
+            <label class="text-xs font-semibold uppercase tracking-wider text-sky-600 dark:text-sky-400">
               Select Property to Sync
             </label>
-            <%= if @property_options && length(@property_options) > 0 do %>
-              <select
-                id="property-selector"
-                name="property_id"
-                phx-change="switch_property"
-                class="mt-2 w-full rounded-lg border-sky-300 bg-white text-base font-medium text-slate-900 shadow-sm focus:border-sky-500 focus:ring-sky-500"
-              >
-                <option value="" disabled={!is_nil(@current_property)}>
-                  -- Select a property --
-                </option>
-                <%= for {label, value} <- @property_options do %>
-                  <option value={value} selected={@current_property_id == value}>
-                    {label}
-                  </option>
-                <% end %>
-              </select>
-              <%= if @current_property do %>
-                <p class="mt-2 flex items-center gap-2 text-xs text-sky-700">
-                  <.icon name="hero-check-circle" class="h-4 w-4" />
-                  Ready to sync
-                </p>
-              <% end %>
-            <% else %>
-              <p class="mt-2 text-sm text-amber-700">
-                No properties available. Please add a property in Settings.
+            <div class="mt-2">
+              <.property_selector
+                property_options={@property_options || []}
+                property_label={@property_label}
+                property_favicon_url={@property_favicon_url}
+                current_property_id={@current_property_id}
+                empty_message="No properties available. Please add a property in Settings."
+              />
+            </div>
+            <%= if @current_property do %>
+              <p class="mt-2 flex items-center gap-2 text-xs text-sky-700 dark:text-sky-300">
+                <.icon name="hero-check-circle" class="h-4 w-4" /> Ready to sync
               </p>
             <% end %>
           </div>
@@ -123,21 +105,27 @@
 
     <div class="mt-8 grid grid-cols-1 gap-8 xl:grid-cols-[1.6fr,1fr]">
       <section class={[
-        "rounded-3xl border border-slate-200 bg-white/80 p-8 shadow-sm backdrop-blur transition-all duration-300",
-        @progress.active? && "ring-2 ring-sky-200"
+        "rounded-3xl border border-slate-200 bg-white/80 p-8 shadow-sm backdrop-blur transition-all duration-300 dark:border-slate-700 dark:bg-slate-800/80",
+        @progress.active? && "ring-2 ring-sky-200 dark:ring-sky-800"
       ]}>
         <div class="flex flex-wrap items-start justify-between gap-4">
           <div>
             <% {badge_class, badge_label} = status_badge(@progress.status) %>
             <span class={badge_class}>{badge_label}</span>
-            <h2 class="mt-4 text-2xl font-semibold text-slate-900">Live Sync Timeline</h2>
-            <p class="mt-2 text-sm text-slate-500">{progress_caption(@progress)}</p>
+            <h2 class="mt-4 text-2xl font-semibold text-slate-900 dark:text-slate-100">
+              Live Sync Timeline
+            </h2>
+            <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
+              {progress_caption(@progress)}
+            </p>
           </div>
           <div class="space-y-3 text-right">
-            <div class="text-4xl font-semibold text-slate-900">
+            <div class="text-4xl font-semibold text-slate-900 dark:text-slate-100">
               {Float.round(@progress.percent, 1)}%
             </div>
-            <p class="text-xs uppercase tracking-wider text-slate-500">Completion</p>
+            <p class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Completion
+            </p>
             <div class="flex justify-end gap-2">
               <button
                 :if={@progress.controls.can_pause?}
@@ -167,7 +155,7 @@
           </div>
         </div>
 
-        <div class="mt-6 h-2 w-full overflow-hidden rounded-full bg-slate-200">
+        <div class="mt-6 h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
           <div
             class="h-full rounded-full bg-gradient-to-r from-sky-400 via-emerald-400 to-emerald-500 transition-all duration-500"
             style={"width: #{min(@progress.percent, 100.0)}%"}
@@ -176,70 +164,74 @@
         </div>
 
         <dl class="mt-8 grid grid-cols-1 gap-6 md:grid-cols-3">
-          <div class="rounded-2xl bg-slate-50/80 p-4">
-            <dt class="text-xs font-semibold uppercase tracking-widest text-slate-500">
+          <div class="rounded-2xl bg-slate-50/80 p-4 dark:bg-slate-700/50">
+            <dt class="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
               Date range
             </dt>
-            <dd class="mt-2 text-sm text-slate-900">
+            <dd class="mt-2 text-sm text-slate-900 dark:text-slate-100">
               {format_date_safe(@progress.metadata[:start_date])}
-              <span class="mx-1 text-slate-400">&mdash;</span>
+              <span class="mx-1 text-slate-400 dark:text-slate-500">&mdash;</span>
               {format_date_safe(@progress.metadata[:end_date])}
             </dd>
           </div>
-          <div class="rounded-2xl bg-slate-50/80 p-4">
-            <dt class="text-xs font-semibold uppercase tracking-widest text-slate-500">
+          <div class="rounded-2xl bg-slate-50/80 p-4 dark:bg-slate-700/50">
+            <dt class="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
               Started
             </dt>
-            <dd class="mt-2 text-sm text-slate-900">{format_timestamp(@progress.started_at)}</dd>
+            <dd class="mt-2 text-sm text-slate-900 dark:text-slate-100">
+              {format_timestamp(@progress.started_at)}
+            </dd>
           </div>
-          <div class="rounded-2xl bg-slate-50/80 p-4">
-            <dt class="text-xs font-semibold uppercase tracking-widest text-slate-500">
+          <div class="rounded-2xl bg-slate-50/80 p-4 dark:bg-slate-700/50">
+            <dt class="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
               Processed days
             </dt>
-            <dd class="mt-2 text-sm text-slate-900">
+            <dd class="mt-2 text-sm text-slate-900 dark:text-slate-100">
               {@progress.completed_steps}/{max(@progress.total_steps, 1)}
             </dd>
           </div>
         </dl>
 
         <dl class="mt-6 grid grid-cols-1 gap-6 md:grid-cols-3">
-          <div class="rounded-2xl bg-slate-50/80 p-4">
-            <dt class="text-xs font-semibold uppercase tracking-widest text-slate-500">
+          <div class="rounded-2xl bg-slate-50/80 p-4 dark:bg-slate-700/50">
+            <dt class="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
               Query rows processed
             </dt>
-            <dd class="mt-2 text-2xl font-semibold text-slate-900">
+            <dd class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">
               {format_number(@progress.metrics[:total_rows])}
             </dd>
-            <p class="mt-1 text-xs text-slate-500">Current sync run</p>
+            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Current sync run</p>
           </div>
-          <div class="rounded-2xl bg-slate-50/80 p-4">
-            <dt class="text-xs font-semibold uppercase tracking-widest text-slate-500">
+          <div class="rounded-2xl bg-slate-50/80 p-4 dark:bg-slate-700/50">
+            <dt class="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
               HTTP Batch Calls
             </dt>
-            <dd class="mt-2 text-2xl font-semibold text-slate-900">
+            <dd class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">
               {format_number(@progress.metrics[:total_query_http_batches] || 0)}
             </dd>
-            <p class="mt-1 text-xs text-slate-500">Query batches sent</p>
+            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Query batches sent</p>
           </div>
-          <div class="rounded-2xl bg-slate-50/80 p-4">
-            <dt class="text-xs font-semibold uppercase tracking-widest text-slate-500">
+          <div class="rounded-2xl bg-slate-50/80 p-4 dark:bg-slate-700/50">
+            <dt class="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
               Query sub-requests
             </dt>
-            <dd class="mt-2 text-2xl font-semibold text-slate-900">
+            <dd class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">
               {format_number(@progress.metrics[:total_query_sub_requests] || 0)}
             </dd>
-            <p class="mt-1 text-xs text-slate-500">
+            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
               In {format_number(@progress.metrics[:total_query_http_batches] || 0)} batch(es)
             </p>
           </div>
-          <div class="rounded-2xl bg-slate-50/80 p-4">
-            <dt class="text-xs font-semibold uppercase tracking-widest text-slate-500">
+          <div class="rounded-2xl bg-slate-50/80 p-4 dark:bg-slate-700/50">
+            <dt class="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
               API calls (total)
             </dt>
-            <dd class="mt-2 text-2xl font-semibold text-slate-900">
+            <dd class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">
               {format_number(@progress.metrics[:total_api_calls])}
             </dd>
-            <p class="mt-1 text-xs text-slate-500">URL calls + HTTP batches</p>
+            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              URL calls + HTTP batches
+            </p>
           </div>
         </dl>
 
@@ -286,13 +278,13 @@
         </div>
 
         <div class="mt-8 space-y-4">
-          <h3 class="text-sm font-semibold uppercase tracking-widest text-slate-500">
+          <h3 class="text-sm font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
             Recent activity
           </h3>
           <div class="space-y-3">
             <div
               :if={Enum.empty?(@progress.events)}
-              class="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500"
+              class="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400"
             >
               Waiting for sync updates
             </div>
@@ -300,15 +292,19 @@
               :for={event <- @progress.events}
               :key={event.key}
               id={"event-#{event.key}"}
-              class="flex gap-4 rounded-2xl border border-slate-100 bg-white/60 p-5 backdrop-blur transition hover:-translate-y-0.5 hover:shadow-md"
+              class="flex gap-4 rounded-2xl border border-slate-100 bg-white/60 p-5 backdrop-blur transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-700 dark:bg-slate-800/60"
             >
               <div class={["mt-1 h-3 w-3 rounded-full", event_marker_class(event.tone)]}></div>
               <div class="flex-1 space-y-1">
                 <div class="flex flex-wrap items-center justify-between gap-2">
-                  <p class="text-sm font-medium text-slate-900">{event.label}</p>
-                  <span class="text-xs text-slate-400">{format_timestamp(event.timestamp)}</span>
+                  <p class="text-sm font-medium text-slate-900 dark:text-slate-100">
+                    {event.label}
+                  </p>
+                  <span class="text-xs text-slate-400 dark:text-slate-500">
+                    {format_timestamp(event.timestamp)}
+                  </span>
                 </div>
-                <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
                   <% badge_label = event_badge_label(event) %>
                   <span :if={badge_label} class={event_tag_class(event.tone)}>{badge_label}</span>
                   <span :if={rows_phrase(event.rows)}>
@@ -337,34 +333,38 @@
       </section>
 
       <aside class="space-y-8">
-        <section class="rounded-3xl border border-slate-200 bg-white/80 p-8 shadow-sm backdrop-blur">
-          <h2 class="text-xl font-semibold text-slate-900">Latest dataset</h2>
+        <section class="rounded-3xl border border-slate-200 bg-white/80 p-8 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-800/80">
+          <h2 class="text-xl font-semibold text-slate-900 dark:text-slate-100">Latest dataset</h2>
           <dl class="mt-4 space-y-4 text-sm">
             <div class="flex items-center justify-between">
-              <dt class="text-slate-500">Last sync completed</dt>
-              <dd class="font-medium text-slate-900">
+              <dt class="text-slate-500 dark:text-slate-400">Last sync completed</dt>
+              <dd class="font-medium text-slate-900 dark:text-slate-100">
                 {format_date(@sync_info.last_sync)}
               </dd>
             </div>
             <div class="flex items-center justify-between">
-              <dt class="text-slate-500">Recency</dt>
-              <dd class="font-medium text-slate-900">{days_ago(@sync_info.last_sync)}</dd>
+              <dt class="text-slate-500 dark:text-slate-400">Recency</dt>
+              <dd class="font-medium text-slate-900 dark:text-slate-100">
+                {days_ago(@sync_info.last_sync)}
+              </dd>
             </div>
             <div class="flex items-center justify-between">
-              <dt class="text-slate-500">Range covered</dt>
-              <dd class="font-medium text-slate-900">
+              <dt class="text-slate-500 dark:text-slate-400">Range covered</dt>
+              <dd class="font-medium text-slate-900 dark:text-slate-100">
                 {format_date(@sync_info.earliest_date)}
-                <span class="mx-1 text-slate-400">&mdash;</span>
+                <span class="mx-1 text-slate-400 dark:text-slate-500">&mdash;</span>
                 {format_date(@sync_info.latest_date)}
               </dd>
             </div>
             <div class="flex items-center justify-between">
-              <dt class="text-slate-500">Days available</dt>
-              <dd class="font-medium text-slate-900">{@sync_info.days_available}</dd>
+              <dt class="text-slate-500 dark:text-slate-400">Days available</dt>
+              <dd class="font-medium text-slate-900 dark:text-slate-100">
+                {@sync_info.days_available}
+              </dd>
             </div>
             <div class="flex items-center justify-between">
-              <dt class="text-slate-500">Time series rows</dt>
-              <dd class="font-medium text-slate-900">
+              <dt class="text-slate-500 dark:text-slate-400">Time series rows</dt>
+              <dd class="font-medium text-slate-900 dark:text-slate-100">
                 {format_number(@sync_info.total_records)}
               </dd>
             </div>
@@ -372,39 +372,5 @@
         </section>
       </aside>
     </div>
-
-    <section class="mt-8 rounded-3xl border border-slate-200 bg-white/80 p-8 shadow-sm backdrop-blur">
-      <h2 class="text-xl font-semibold text-slate-900">What to expect during sync</h2>
-      <div class="mt-4 grid grid-cols-1 gap-6 md:grid-cols-3">
-        <div class="rounded-2xl border border-sky-100 bg-sky-50/80 p-6">
-          <h3 class="text-sm font-semibold uppercase tracking-widest text-sky-600">Pipeline</h3>
-          <ul class="mt-3 space-y-2 text-sm text-slate-600">
-            <li>Fetch aggregated page metrics for each day in the range</li>
-            <li>Persist daily rows &amp; update URL-level performance summaries</li>
-            <li>Backfill top queries per URL for richer insights</li>
-          </ul>
-        </div>
-        <div class="rounded-2xl border border-emerald-100 bg-emerald-50/80 p-6">
-          <h3 class="text-sm font-semibold uppercase tracking-widest text-emerald-600">
-            Stability
-          </h3>
-          <ul class="mt-3 space-y-2 text-sm text-slate-600">
-            <li>Automatic rate limiting keeps API calls within quota</li>
-            <li>Retries kick in after transient GSC errors</li>
-            <li>Partial failures are surfaced instantly in the timeline</li>
-          </ul>
-        </div>
-        <div class="rounded-2xl border border-purple-100 bg-purple-50/80 p-6">
-          <h3 class="text-sm font-semibold uppercase tracking-widest text-purple-600">
-            Best practices
-          </h3>
-          <ul class="mt-3 space-y-2 text-sm text-slate-600">
-            <li>Schedule a daily 7-day sync to keep numbers fresh</li>
-            <li>Use 30–90 day ranges for onboarding or rebuilding history</li>
-            <li>Leave this page open to watch live progress as data lands</li>
-          </ul>
-        </div>
-      </div>
-    </section>
   </div>
 </Layouts.app>
