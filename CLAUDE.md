@@ -127,7 +127,9 @@ The GSC Analytics codebase uses a **data sources architecture** where all GSC-re
 Core modules:
 
 - `Core.Client`: HTTP client for GSC Search Analytics API with retry logic and rate limiting
-- `Core.Sync`: Orchestrates daily data fetching and storage
+- `Core.Sync`: Thin orchestrator that delegates to the pipeline modules
+  (`Core.Sync.State`, `Core.Sync.Pipeline`, `Core.Sync.URLPhase`,
+  `Core.Sync.QueryPhase`, `Core.Sync.ProgressTracker`)
 - `Core.Config`: Centralized configuration management
 - `Core.Persistence`: Database operations and data storage
 
@@ -182,11 +184,12 @@ children = [
 ### Data Flow
 
 1. **Authentication**: `Support.Authenticator` loads service account JSON, generates JWT, exchanges for OAuth2 token
-2. **Sync Process**: `Core.Sync.sync_date_range/3` coordinates date iteration and delegates to:
-   - `Core.Client` for API requests
-   - `Support.QueryPaginator` for pagination
-   - `Core.Persistence` for database storage
-   - `Support.SyncProgress` for real-time progress tracking
+2. **Sync Process**: `Core.Sync.sync_date_range/3` initializes `Core.Sync.State` and runs
+   `Core.Sync.Pipeline.execute/1`, which coordinates:
+   - `Core.Sync.URLPhase` for URL discovery and persistence (via `Core.Client`)
+   - `Core.Sync.QueryPhase` for query pagination (via `Support.QueryPaginator`)
+   - `Core.Sync.ProgressTracker` for real-time progress reporting
+   - `Core.Persistence` for database storage inside the phases
 3. **Storage**: Raw data stored in `TimeSeries`, aggregated into `Performance` table via `Core.Persistence`
 4. **Dashboard**: LiveView queries `Performance` with Ecto, subscribes to `SyncProgress` PubSub for real-time updates
 

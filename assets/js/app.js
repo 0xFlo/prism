@@ -3,9 +3,9 @@ import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/gsc_analytics"
 import topbar from "../vendor/topbar"
-import PerformanceChartHook from "./charts/performance_chart"
+import ChartJsPerformanceChartHook from "./charts/chartjs_performance_chart"
 
-const hooks = {...colocatedHooks, PerformanceChart: PerformanceChartHook}
+const hooks = {...colocatedHooks, PerformanceChart: ChartJsPerformanceChartHook}
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {

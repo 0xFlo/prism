@@ -66,15 +66,24 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
       |> sort_queries(queries_sort_by, queries_sort_dir)
       |> sort_backlinks(backlinks_sort_by, backlinks_sort_dir)
 
+    encoded_url =
+      insights
+      |> Map.get(:requested_url)
+      |> case do
+        nil -> Map.get(insights, :url)
+        value -> value
+      end
+      |> safe_encode_url()
+
     enriched_insights =
       sorted_insights
       |> Map.put(
         :time_series_json,
-        ChartDataPresenter.encode_time_series(sorted_insights.time_series || [])
+        ChartDataPresenter.encode_time_series(List.wrap(sorted_insights.time_series))
       )
       |> Map.put(
         :chart_events_json,
-        ChartDataPresenter.encode_events(sorted_insights.chart_events || [])
+        ChartDataPresenter.encode_events(List.wrap(sorted_insights.chart_events))
       )
 
     {:noreply,
@@ -83,7 +92,7 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
      |> assign(:view_mode, view_mode)
      |> assign(:period_days, period_days)
      |> assign(:insights, enriched_insights)
-     |> assign(:encoded_url, URI.encode(insights.requested_url || insights.url || ""))
+     |> assign(:encoded_url, encoded_url)
      |> assign(:queries_sort_by, queries_sort_by)
      |> assign(:queries_sort_direction, queries_sort_dir)
      |> assign(:backlinks_sort_by, backlinks_sort_by)
@@ -209,51 +218,61 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
   defp redirect_event_label(_), do: "Redirect"
 
   # Sort queries by specified field
-  defp sort_queries(%{top_queries: queries} = insights, sort_by, direction)
-       when is_list(queries) do
-    sorted =
-      Enum.sort_by(
-        queries,
-        fn query ->
-          case sort_by do
-            "query" -> query.query
-            "clicks" -> query.clicks
-            "impressions" -> query.impressions
-            "ctr" -> query.ctr
-            "position" -> query.position
-            _ -> query.clicks
-          end
-        end,
-        if(direction == "asc", do: :asc, else: :desc)
-      )
+  defp sort_queries(insights, sort_by, direction) do
+    case Map.get(insights, :top_queries) do
+      queries when is_list(queries) ->
+        sorted =
+          Enum.sort_by(
+            queries,
+            fn query ->
+              case sort_by do
+                "query" -> query.query
+                "clicks" -> query.clicks
+                "impressions" -> query.impressions
+                "ctr" -> query.ctr
+                "position" -> query.position
+                _ -> query.clicks
+              end
+            end,
+            if(direction == "asc", do: :asc, else: :desc)
+          )
 
-    %{insights | top_queries: sorted}
+        %{insights | top_queries: sorted}
+
+      _ ->
+        insights
+    end
   end
-
-  defp sort_queries(insights, _sort_by, _direction), do: insights
 
   # Sort backlinks by specified field
-  defp sort_backlinks(%{backlinks: backlinks} = insights, sort_by, direction)
-       when is_list(backlinks) do
-    sorted =
-      Enum.sort_by(
-        backlinks,
-        fn backlink ->
-          case sort_by do
-            "source_domain" -> backlink.source_domain || backlink.source_url
-            "anchor_text" -> backlink.anchor_text || ""
-            "domain_rating" -> backlink.domain_rating || 0
-            "domain_traffic" -> backlink.domain_traffic || 0
-            "first_seen_at" -> backlink.first_seen_at || ~U[1970-01-01 00:00:00Z]
-            "data_source" -> backlink.data_source
-            _ -> backlink.first_seen_at || ~U[1970-01-01 00:00:00Z]
-          end
-        end,
-        if(direction == "asc", do: :asc, else: :desc)
-      )
+  defp sort_backlinks(insights, sort_by, direction) do
+    case Map.get(insights, :backlinks) do
+      backlinks when is_list(backlinks) ->
+        sorted =
+          Enum.sort_by(
+            backlinks,
+            fn backlink ->
+              case sort_by do
+                "source_domain" -> backlink.source_domain || backlink.source_url
+                "anchor_text" -> backlink.anchor_text || ""
+                "domain_rating" -> backlink.domain_rating || 0
+                "domain_traffic" -> backlink.domain_traffic || 0
+                "first_seen_at" -> backlink.first_seen_at || ~U[1970-01-01 00:00:00Z]
+                "data_source" -> backlink.data_source
+                _ -> backlink.first_seen_at || ~U[1970-01-01 00:00:00Z]
+              end
+            end,
+            if(direction == "asc", do: :asc, else: :desc)
+          )
 
-    %{insights | backlinks: sorted}
+        %{insights | backlinks: sorted}
+
+      _ ->
+        insights
+    end
   end
 
-  defp sort_backlinks(insights, _sort_by, _direction), do: insights
+  defp safe_encode_url(nil), do: ""
+  defp safe_encode_url(url) when is_binary(url), do: URI.encode(url)
+  defp safe_encode_url(_), do: ""
 end

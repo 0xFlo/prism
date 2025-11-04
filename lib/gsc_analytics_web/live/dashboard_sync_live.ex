@@ -11,7 +11,7 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
   alias GscAnalytics.Repo
   alias GscAnalytics.DataSources.GSC.Core.Sync
   alias GscAnalytics.DataSources.GSC.Support.SyncProgress
-  alias GscAnalytics.Schemas.{Performance, TimeSeries}
+  alias GscAnalytics.Schemas.{Performance, SyncDay, TimeSeries}
   alias GscAnalyticsWeb.Live.AccountHelpers
 
   @max_days 540
@@ -61,7 +61,11 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
 
       property = socket.assigns.current_property
       property_url = property && property.property_url
-      property_label = property && (property.display_name || property.property_url)
+
+      property_label =
+        property &&
+          (property.display_name || AccountHelpers.display_property_label(property.property_url))
+
       property_favicon_url = property && property.favicon_url
 
       socket =
@@ -87,7 +91,11 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
     new_property_id = socket.assigns[:current_property_id]
     property = socket.assigns.current_property
     property_url = property && property.property_url
-    property_label = property && (property.display_name || property.property_url)
+
+    property_label =
+      property &&
+        (property.display_name || AccountHelpers.display_property_label(property.property_url))
+
     property_favicon_url = property && property.favicon_url
 
     # Clear progress when property changes
@@ -185,6 +193,41 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
   @impl true
   def handle_event("switch_property", %{"property_id" => property_id}, socket) do
     {:noreply, push_patch(socket, to: ~p"/dashboard/sync?#{[property_id: property_id]}")}
+  end
+
+  @impl true
+  def handle_event("retry_failed_day", %{"date" => date_str}, %{assigns: assigns} = socket) do
+    with true <- is_integer(assigns.current_account_id),
+         {:ok, date} <- Date.from_iso8601(date_str) do
+      cond do
+        assigns.progress.active? ->
+          {:noreply, put_flash(socket, :error, "A sync is already in progress")}
+
+        true ->
+          account_id = assigns.current_account_id
+
+          case configured_site(assigns.current_property) do
+            {:ok, site_url} ->
+              Task.start(fn ->
+                Sync.sync_date_range(site_url, date, date,
+                  account_id: account_id,
+                  force?: true,
+                  stop_on_empty?: false
+                )
+              end)
+
+              {:noreply,
+               socket
+               |> put_flash(:info, "Retrying sync for #{format_date(date)}")
+               |> maybe_request_sync_info(account_id, site_url, force: true)}
+
+            {:error, message} ->
+              {:noreply, put_flash(socket, :error, message)}
+          end
+      end
+    else
+      _ -> {:noreply, put_flash(socket, :error, "Invalid failure date")}
+    end
   end
 
   @impl true
@@ -422,13 +465,30 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
 
   defp maybe_apply_control(_progress, _action), do: :ok
 
+  defp progress_failure_date(%{summary: summary}) when is_map(summary) do
+    summary[:failed_on] || summary[:halt_on]
+  end
+
+  defp progress_failure_date(_), do: nil
+
+  defp progress_failure_raw_message(%{error: error, summary: summary}) do
+    cond do
+      is_binary(error) and error != "" -> error
+      is_map(summary) and is_binary(summary[:error]) and summary[:error] != "" -> summary[:error]
+      true -> nil
+    end
+  end
+
+  defp progress_failure_raw_message(_), do: nil
+
   defp empty_sync_info do
     %{
       last_sync: nil,
       earliest_date: nil,
       latest_date: nil,
       total_records: 0,
-      days_available: 0
+      days_available: 0,
+      last_failure: nil
     }
   end
 
@@ -467,6 +527,22 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
       )
       |> Repo.one()
 
+    last_failure =
+      from(sd in SyncDay,
+        where:
+          sd.account_id == ^account_id and
+            sd.site_url == ^property_url and
+            sd.status == ^:failed,
+        order_by: [desc: sd.last_synced_at, desc: sd.date],
+        limit: 1,
+        select: %{
+          date: sd.date,
+          error: sd.error,
+          last_synced_at: sd.last_synced_at
+        }
+      )
+      |> Repo.one()
+
     earliest_date = result.earliest_date
     latest_date = result.latest_date
 
@@ -475,7 +551,8 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
       earliest_date: earliest_date,
       latest_date: latest_date,
       total_records: result.total_records,
-      days_available: calculate_days_available(earliest_date, latest_date)
+      days_available: calculate_days_available(earliest_date, latest_date),
+      last_failure: last_failure
     }
   end
 
@@ -593,15 +670,50 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
     "Cancellation requested"
   end
 
-  defp event_label(%{type: :finished, summary: summary, error: nil}) when is_map(summary) do
-    days = summary[:days_processed] || 0
-    duration = summary[:duration_ms] |> format_duration()
-    "Sync finished – #{days} day(s) processed in #{duration}"
+  defp event_label(%{type: :finished, summary: summary, error: error}) when is_map(summary) do
+    cond do
+      is_nil(error) and is_nil(summary[:error]) ->
+        days = summary[:days_processed] || 0
+        duration = summary[:duration_ms] |> format_duration()
+        "Sync finished – #{days} day(s) processed in #{duration}"
+
+      true ->
+        failure_date = summary[:failed_on] || summary[:halt_on]
+
+        base =
+          case failure_date do
+            %Date{} -> "Sync failed on #{format_date_safe(failure_date)}"
+            %DateTime{} -> "Sync failed on #{format_date_safe(failure_date)}"
+            _ -> "Sync failed"
+          end
+
+        message = truncate_error(error || summary[:error], 120)
+
+        metrics =
+          [
+            rows_phrase(summary[:total_rows]),
+            http_batch_phrase(summary[:total_query_http_batches]),
+            query_sub_request_phrase(summary[:total_query_sub_requests])
+          ]
+          |> Enum.reject(&is_nil_or_empty?/1)
+          |> Enum.join(" · ")
+
+        details =
+          [message, metrics]
+          |> Enum.reject(&is_nil_or_empty?/1)
+          |> Enum.join(" – ")
+
+        if details == "" do
+          base
+        else
+          "#{base} – #{details}"
+        end
+    end
   end
 
   defp event_label(%{type: :finished, error: error}) do
-    message = error && String.slice(to_string(error), 0, 120)
-    "Sync failed: #{message}"
+    message = truncate_error(error, 120)
+    if message, do: "Sync failed – #{message}", else: "Sync failed"
   end
 
   defp event_label(%{type: :started}) do
@@ -652,6 +764,26 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
   end
 
   defp format_duration(_), do: "—"
+
+  defp truncate_error(value), do: truncate_error(value, 160)
+  defp truncate_error(nil, _limit), do: nil
+
+  defp truncate_error(error, limit) do
+    error
+    |> to_string()
+    |> String.trim()
+    |> case do
+      "" ->
+        nil
+
+      message ->
+        if String.length(message) > limit do
+          String.slice(message, 0, limit) <> "…"
+        else
+          message
+        end
+    end
+  end
 
   defp empty_metrics do
     %{
@@ -805,9 +937,40 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
 
   defp progress_caption(%{status: :cancelled}), do: "Sync cancelled"
 
+  defp progress_caption(%{status: :failed, summary: summary, error: error})
+       when is_map(summary) do
+    failure_date = summary[:failed_on] || summary[:halt_on]
+
+    base =
+      case failure_date do
+        %Date{} -> "Sync failed on #{format_date_safe(failure_date)}"
+        %DateTime{} -> "Sync failed on #{format_date_safe(failure_date)}"
+        _ -> "Sync failed"
+      end
+
+    message = truncate_error(error || summary[:error], 80)
+
+    metrics =
+      [
+        rows_phrase(summary[:total_rows]),
+        http_batch_phrase(summary[:total_query_http_batches]),
+        query_sub_request_phrase(summary[:total_query_sub_requests])
+      ]
+      |> Enum.reject(&is_nil_or_empty?/1)
+      |> Enum.join(" · ")
+
+    [base, message, metrics]
+    |> Enum.reject(&is_nil_or_empty?/1)
+    |> Enum.join(" – ")
+  end
+
   defp progress_caption(%{status: :failed, error: error}) do
-    message = error && String.slice(to_string(error), 0, 120)
-    "Sync failed: #{message || "unknown error"}"
+    message = truncate_error(error, 80)
+
+    case message do
+      nil -> "Sync failed"
+      _ -> "Sync failed – #{message}"
+    end
   end
 
   defp progress_caption(_), do: "No active sync"

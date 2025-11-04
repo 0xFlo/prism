@@ -128,6 +128,22 @@ defmodule GscAnalytics.DataSources.GSC.Core.SyncTest do
       # No more batches
       refute_receive {:batch, _}
     end
+
+    test "summary collects total query rows across dates" do
+      start_date = ~D[2024-01-01]
+      end_date = ~D[2024-01-02]
+
+      assert {:ok, summary} =
+               Sync.sync_date_range(@site_url, start_date, end_date,
+                 force?: true,
+                 stop_on_empty?: false
+               )
+
+      assert summary.total_queries == 40_000
+      assert summary.total_rows == 40_000
+      assert summary.total_query_sub_requests == 3
+      assert summary.total_query_http_batches == 3
+    end
   end
 
   defmodule ErrorClient do

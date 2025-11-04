@@ -784,6 +784,7 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
     |> Enum.group_by(& &1.workspace_id)
   end
 
+  @spec load_accounts(Auth.Scope.t(), map() | nil) :: [map()]
   defp load_accounts(%Auth.Scope{} = current_scope, preloaded_properties) do
     # Load workspaces from database instead of config
     user_id = current_scope.user.id
@@ -794,7 +795,11 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
     oauth_tokens = batch_load_oauth_tokens(workspace_ids)
 
     # Use preloaded properties if provided, otherwise batch load
-    all_properties = preloaded_properties || batch_load_properties(workspace_ids)
+    all_properties =
+      case preloaded_properties do
+        %{} = properties -> properties
+        _ -> batch_load_properties(workspace_ids)
+      end
 
     Enum.map(workspaces, fn account ->
       oauth = Map.get(oauth_tokens, account.id)
@@ -881,19 +886,27 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
     |> AccountHelpers.reload_properties_from_cache(all_properties)
   end
 
-  defp ensure_included_property(options, nil), do: options
+  defp ensure_included_property(options, property) do
+    case property do
+      nil ->
+        options
 
-  defp ensure_included_property(options, property) when is_binary(property) do
-    trimmed = String.trim(property)
+      value when is_binary(value) ->
+        trimmed = String.trim(value)
 
-    if trimmed == "" or Enum.any?(options, &(&1.value == trimmed)) do
-      options
-    else
-      [%{value: trimmed, label: format_property_label(trimmed), permission_level: nil} | options]
+        if trimmed == "" or Enum.any?(options, &(&1.value == trimmed)) do
+          options
+        else
+          [
+            %{value: trimmed, label: format_property_label(trimmed), permission_level: nil}
+            | options
+          ]
+        end
+
+      _ ->
+        options
     end
   end
-
-  defp ensure_included_property(options, _property), do: options
 
   defp property_display_label(nil, _options), do: nil
 
@@ -929,20 +942,11 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
   defp account_requires_action?(%{property_required?: true}), do: true
   defp account_requires_action?(_), do: false
 
-  defp translate_property_error(:oauth_not_configured),
-    do: "Connect a Google account to list available properties."
+  defp translate_property_error(:invalid_account_id),
+    do: "Pick a valid workspace before loading properties."
 
-  defp translate_property_error(:missing_credentials),
-    do: "No Google credentials available. Connect an account first."
-
-  defp translate_property_error({:oauth_error, reason}),
-    do: "Google OAuth is not ready yet (#{inspect(reason)}). Try reconnecting."
-
-  defp translate_property_error({:http_error, status, _body}),
-    do: "Google returned HTTP #{status} while listing properties. Try again in a moment."
-
-  defp translate_property_error({:oauth_refresh_failed, reason}),
-    do: "Failed to refresh the Google token: #{inspect(reason)}."
+  defp translate_property_error(:unauthorized_account),
+    do: "You are not allowed to manage that workspace."
 
   defp translate_property_error(reason),
     do: "Could not load properties: #{inspect(reason)}"

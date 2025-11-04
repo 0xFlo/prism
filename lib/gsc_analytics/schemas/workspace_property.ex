@@ -45,6 +45,17 @@ defmodule GscAnalytics.Schemas.WorkspaceProperty do
   @primary_key {:id, :binary_id, autogenerate: false}
   @foreign_key_type :binary_id
 
+  @type t :: %__MODULE__{
+          id: Ecto.UUID.t() | nil,
+          workspace_id: pos_integer() | nil,
+          property_url: String.t() | nil,
+          display_name: String.t() | nil,
+          is_active: boolean(),
+          favicon_url: String.t() | nil,
+          inserted_at: DateTime.t() | nil,
+          updated_at: DateTime.t() | nil
+        }
+
   schema "workspace_properties" do
     field :workspace_id, :integer
     field :property_url, :string

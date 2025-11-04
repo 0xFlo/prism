@@ -172,6 +172,24 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
   end
 
   @doc """
+  Extract a clean display label from a property URL.
+
+  ## Examples
+
+      iex> display_property_label("sc-domain:example.com")
+      "example.com"
+
+      iex> display_property_label("https://example.com/")
+      "example.com"
+  """
+  @spec display_property_label(String.t() | nil) :: String.t() | nil
+  def display_property_label(nil), do: nil
+
+  def display_property_label(property_url) when is_binary(property_url) do
+    extract_domain(property_url)
+  end
+
+  @doc """
   Reload properties from preloaded cache. Avoids re-querying the database.
   Useful when properties have already been batch-loaded elsewhere.
   """
@@ -449,15 +467,13 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
       label = account_label(Map.get(accounts_by_id, account_id), account_id)
       {String.downcase(label), account_id}
     end)
-    |> Enum.flat_map(fn {account_id, properties} ->
-      label = account_label(Map.get(accounts_by_id, account_id), account_id)
-
+    |> Enum.flat_map(fn {_account_id, properties} ->
       Enum.map(properties, fn property ->
         property_label = property_label(property)
         favicon_url = Map.get(property, :favicon_url)
 
         %{
-          label: "#{label} - #{property_label}",
+          label: property_label,
           id: property.id,
           favicon_url: favicon_url
         }
@@ -487,9 +503,17 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
   end
 
   defp property_label(property) do
-    # Always use the actual property URL for consistency
-    # This ensures all properties display uniformly (e.g., "sc-domain:example.com")
-    property_url_label(property)
+    property_url = property_url_label(property)
+    extract_domain(property_url)
+  end
+
+  defp extract_domain("sc-domain:" <> domain), do: String.trim(domain)
+
+  defp extract_domain(url) when is_binary(url) do
+    case URI.parse(url) do
+      %URI{host: host} when is_binary(host) -> host
+      _ -> url
+    end
   end
 
   defp property_url_label(%{property_url: property_url}) when is_binary(property_url) do

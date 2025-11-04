@@ -12,6 +12,14 @@ defmodule GscAnalytics.Accounts.AccountSetting do
 
   @primary_key {:account_id, :integer, autogenerate: false}
 
+  @type t :: %__MODULE__{
+          account_id: pos_integer() | nil,
+          display_name: String.t() | nil,
+          default_property: String.t() | nil,
+          inserted_at: DateTime.t() | nil,
+          updated_at: DateTime.t() | nil
+        }
+
   schema "gsc_account_settings" do
     field :display_name, :string
     field :default_property, :string

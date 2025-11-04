@@ -21,10 +21,12 @@ defmodule GscAnalytics.Crawler.HttpStatus do
   @default_max_redirects 10
   @redirect_statuses [301, 302, 307, 308]
 
+  @type redirect_chain :: %{optional(String.t()) => String.t()}
+
   @type check_result :: %{
           status: integer() | nil,
           redirect_url: String.t() | nil,
-          redirect_chain: list(String.t()),
+          redirect_chain: redirect_chain(),
           checked_at: DateTime.t(),
           error: String.t() | nil
         }
@@ -47,15 +49,39 @@ defmodule GscAnalytics.Crawler.HttpStatus do
   ## Examples
 
       iex> check_url("https://example.com")
-      {:ok, %{status: 200, redirect_url: nil, redirect_chain: [], checked_at: ~U[...], error: nil}}
+      {:ok,
+       %{
+         status: 200,
+         redirect_url: nil,
+         redirect_chain: %{},
+         checked_at: ~U[...],
+         error: nil
+       }}
 
       iex> check_url("https://example.com/old-page")
-      {:ok, %{status: 301, redirect_url: "https://example.com/new-page", redirect_chain: ["https://example.com/old-page"], checked_at: ~U[...], error: nil}}
+      {:ok,
+       %{
+         status: 301,
+         redirect_url: "https://example.com/new-page",
+         redirect_chain: %{
+           "step_1" => "https://example.com/old-page",
+           "step_2" => "https://example.com/new-page"
+         },
+         checked_at: ~U[...],
+         error: nil
+       }}
 
       iex> check_url("https://example.com/not-found")
-      {:ok, %{status: 404, redirect_url: nil, redirect_chain: [], checked_at: ~U[...], error: nil}}
+      {:ok,
+       %{
+         status: 404,
+         redirect_url: nil,
+         redirect_chain: %{},
+         checked_at: ~U[...],
+         error: nil
+       }}
   """
-  @spec check_url(String.t(), keyword()) :: {:ok, check_result()} | {:error, term()}
+  @spec check_url(String.t(), keyword()) :: {:ok, check_result()}
   def check_url(url, opts \\ []) when is_binary(url) do
     timeout = Keyword.get(opts, :timeout, @default_timeout)
     max_redirects = Keyword.get(opts, :max_redirects, @default_max_redirects)
@@ -264,5 +290,4 @@ defmodule GscAnalytics.Crawler.HttpStatus do
   defp format_error(:too_many_redirects), do: "Too many redirects (>10)"
   defp format_error(:redirect_loop), do: "Redirect loop detected"
   defp format_error({:http_error, reason}), do: "HTTP error: #{inspect(reason)}"
-  defp format_error(reason), do: "Unknown error: #{inspect(reason)}"
 end

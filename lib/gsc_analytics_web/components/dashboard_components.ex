@@ -921,12 +921,29 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
   attr :interactive, :boolean, default: true
 
   def interactive_metric_card(assigns) do
+    # Define color scheme matching Chart.js series configuration
+    # These colors match the ones in chartjs_performance_chart.js seriesConfig
+    {border_color, check_color, bg_color} =
+      case assigns.metric do
+        :clicks -> {"border-indigo-500", "text-indigo-400", "bg-indigo-500/10"}
+        :impressions -> {"border-emerald-500", "text-emerald-400", "bg-emerald-500/10"}
+        :ctr -> {"border-purple-500", "text-purple-400", "bg-purple-500/10"}
+        :position -> {"border-red-500", "text-red-400", "bg-red-500/10"}
+        _ -> {"border-slate-500", "text-slate-400", "bg-slate-500/10"}
+      end
+
+    assigns =
+      assigns
+      |> assign(:border_color, border_color)
+      |> assign(:check_color, check_color)
+      |> assign(:bg_color, bg_color)
+
     ~H"""
     <div
       class={[
         "relative rounded-lg p-5 transition-all duration-200",
         @interactive && "cursor-pointer hover:shadow-lg hover:scale-[1.02]",
-        @interactive && @active && "border-2 border-blue-500 bg-slate-800 shadow-md",
+        @interactive && @active && ["border-2", @border_color, @bg_color, "bg-slate-800 shadow-md"],
         @interactive && !@active && "border border-slate-600 bg-slate-800/70",
         !@interactive && "border border-slate-600 bg-slate-800/70"
       ]}
@@ -951,7 +968,7 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
         </div>
         <%= if @interactive && @active do %>
           <div class="flex-shrink-0">
-            <.icon name="hero-check-circle-solid" class="h-6 w-6 text-blue-400" />
+            <.icon name="hero-check-circle-solid" class={"h-6 w-6 #{@check_color}"} />
           </div>
         <% end %>
       </div>

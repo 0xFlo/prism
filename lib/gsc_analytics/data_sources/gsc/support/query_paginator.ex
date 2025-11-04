@@ -12,6 +12,7 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryPaginator do
   """
 
   require Logger
+  alias MapSet
 
   @page_size 25_000
   @default_batch_size 8
@@ -60,7 +61,14 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryPaginator do
       queue: :queue.from_list(Enum.map(dates, &{&1, 0})),
       results:
         Map.new(dates, fn date ->
-          {date, %{rows: [], row_chunks: [], api_calls: 0, partial?: false}}
+          {date,
+           %{
+             rows: [],
+             row_chunks: [],
+             api_calls: 0,
+             partial?: false,
+             http_batches: 0
+           }}
         end),
       completed: MapSet.new(),
       total_api_calls: 0,
@@ -299,8 +307,12 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryPaginator do
   defp handle_batch_responses(batch, responses, state, remaining_queue) do
     response_map = Map.new(responses, fn part -> {part.id, part} end)
 
-    Enum.reduce_while(batch, {:ok, %{state | queue: remaining_queue}}, fn {date, start_row},
-                                                                          {:ok, acc_state} ->
+    state_with_batches = increment_http_batches(state, batch)
+
+    Enum.reduce_while(batch, {:ok, %{state_with_batches | queue: remaining_queue}}, fn {date,
+                                                                                        start_row},
+                                                                                       {:ok,
+                                                                                        acc_state} ->
       id = request_id(date, start_row)
 
       case Map.fetch(response_map, id) do
@@ -383,28 +395,38 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryPaginator do
 
   defp maybe_emit_completion(state, date, entry, false = _needs_next_page) do
     rows = entry.row_chunks |> Enum.reverse() |> Enum.flat_map(& &1)
+    row_count = length(rows)
+    entry_with_count = Map.put(entry, :row_count, row_count)
 
     case state.on_complete do
       nil ->
         # No callback, just finalize the entry
         finalized_entry =
-          entry
+          entry_with_count
           |> Map.put(:rows, rows)
+          |> Map.put(:row_count, row_count)
           |> Map.put(:row_chunks, [])
 
         {:continue, state, finalized_entry}
 
       callback when is_function(callback, 1) ->
         # Invoke callback with completed data
-        payload = %{date: date, rows: rows, api_calls: entry.api_calls, partial?: entry.partial?}
+        payload = %{
+          date: date,
+          rows: rows,
+          api_calls: entry.api_calls,
+          partial?: entry.partial?,
+          row_count: row_count,
+          http_batches: Map.get(entry, :http_batches, 0)
+        }
 
         case safe_invoke_callback(callback, payload) do
           {:halt, reason} ->
-            minimized_entry = minimize_entry(entry)
+            minimized_entry = minimize_entry(entry_with_count)
             {:halt, reason, state, minimized_entry}
 
           :continue ->
-            minimized_entry = minimize_entry(entry)
+            minimized_entry = minimize_entry(entry_with_count)
             {:continue, state, minimized_entry}
         end
     end
@@ -566,5 +588,32 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryPaginator do
           "total #{total_rows} rows across #{result_entry.api_calls + 1} pages"
       )
     end
+  end
+
+  defp increment_http_batches(state, batch) do
+    unique_dates =
+      batch
+      |> Enum.map(&elem(&1, 0))
+      |> MapSet.new()
+
+    updated_results =
+      Enum.reduce(unique_dates, state.results, fn date, acc ->
+        Map.update(
+          acc,
+          date,
+          %{
+            rows: [],
+            row_chunks: [],
+            api_calls: 0,
+            partial?: false,
+            http_batches: 1
+          },
+          fn entry ->
+            Map.update(entry, :http_batches, 1, &(&1 + 1))
+          end
+        )
+      end)
+
+    %{state | results: updated_results}
   end
 end

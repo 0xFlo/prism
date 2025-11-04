@@ -20,19 +20,22 @@ defmodule GscAnalytics.Schemas.SyncDay do
       default: :pending
 
     field :url_count, :integer, default: 0
+    field :query_count, :integer, default: 0
     field :last_synced_at, :utc_datetime
+    field :error, :string
 
     timestamps(type: :utc_datetime)
   end
 
   @required_fields [:account_id, :site_url, :date, :status]
-  @optional_fields [:url_count, :last_synced_at]
+  @optional_fields [:url_count, :query_count, :last_synced_at, :error]
 
   def changeset(sync_day, attrs) do
     sync_day
     |> cast(attrs, @required_fields ++ @optional_fields)
     |> validate_required(@required_fields)
     |> validate_number(:url_count, greater_than_or_equal_to: 0)
+    |> validate_number(:query_count, greater_than_or_equal_to: 0)
     |> unique_constraint([:account_id, :site_url, :date],
       name: :gsc_sync_days_account_id_site_url_date_index
     )

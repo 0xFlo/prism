@@ -204,6 +204,40 @@ defmodule GscAnalytics.DataSources.GSC.Core.SyncProgressIntegrationTest do
     end
   end
 
+  describe "failure propagation" do
+    setup do
+      Application.put_env(:gsc_analytics, :gsc_client, __MODULE__.QueryFailureClient)
+      :ok
+    end
+
+    test "finishes job with :failed status when query pagination crashes" do
+      start_date = ~D[2024-01-01]
+      end_date = ~D[2024-01-01]
+
+      {:ok, summary} =
+        Sync.sync_date_range(@site_url, start_date, end_date,
+          force?: true,
+          stop_on_empty?: false
+        )
+
+      assert summary[:halt_reason] == {:query_fetch_failed, :forced_failure}
+
+      assert_receive {:sync_progress, %{type: :started}}
+      assert_receive {:sync_progress, %{type: :step_started, event: %{date: ^start_date}}}
+
+      event = wait_for_step_completed(:error)
+      assert event.date == start_date
+
+      assert_receive {:sync_progress, %{type: :finished, job: job, event: finished_event}}
+      assert job.status == :failed
+      assert finished_event.status == :failed
+      assert job.summary[:halt_reason] == {:query_fetch_failed, :forced_failure}
+      assert job.summary[:failed_on] == start_date
+      assert to_string(job.summary[:error] || "") =~ "forced_failure"
+      assert to_string(finished_event.error || "") =~ "forced_failure"
+    end
+  end
+
   # Helper function matching SyncProgress test pattern
   defp calculate_percent(job) do
     total = job.total_steps || 0
@@ -267,6 +301,37 @@ defmodule GscAnalytics.DataSources.GSC.Core.SyncProgressIntegrationTest do
 
     def fetch_query_batch(_, _, _) do
       {:error, :api_error}
+    end
+  end
+
+  defp wait_for_step_completed(status, attempts \\ 5)
+
+  defp wait_for_step_completed(_status, 0) do
+    flunk("step_completed event with desired status not received")
+  end
+
+  defp wait_for_step_completed(status, attempts) do
+    assert_receive {:sync_progress, %{type: :step_completed, event: event}}, 200
+
+    if event.status == status do
+      event
+    else
+      wait_for_step_completed(status, attempts - 1)
+    end
+  end
+
+  defmodule QueryFailureClient do
+    def fetch_all_urls_for_date(_, _, _date) do
+      {:ok,
+       %{
+         "rows" => [
+           %{"keys" => ["https://example.com/page"], "clicks" => 1, "impressions" => 1}
+         ]
+       }}
+    end
+
+    def fetch_query_batch(_, _requests, _operation) do
+      {:error, :forced_failure}
     end
   end
 end

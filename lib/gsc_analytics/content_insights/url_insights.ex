@@ -31,6 +31,18 @@ defmodule GscAnalytics.ContentInsights.UrlInsights do
 
     url_group = UrlGroups.resolve(decoded_url, %{account_id: account_id})
 
+    canonical_url =
+      case url_group do
+        %{canonical_url: value} when is_binary(value) and value != "" -> value
+        _ -> decoded_url
+      end
+
+    urls =
+      case url_group do
+        %{urls: list} when is_list(list) -> list
+        _ -> []
+      end
+
     period_end = resolve_period_end(url_group, Map.get(opts, :period_end))
     selection_start = resolve_selection_start(url_group, period_days, period_end)
     data_start = clamp_selection_to_coverage(selection_start, url_group.earliest_date)
@@ -46,7 +58,7 @@ defmodule GscAnalytics.ContentInsights.UrlInsights do
     performance =
       calculate_performance_from_time_series(
         time_series,
-        url_group.canonical_url || decoded_url,
+        canonical_url,
         account_id,
         %{
           range_start: coverage.range_start,
@@ -57,7 +69,7 @@ defmodule GscAnalytics.ContentInsights.UrlInsights do
         }
       )
 
-    backlink_target = url_group.canonical_url || decoded_url
+    backlink_target = canonical_url
     backlinks = BacklinkContext.list_for_url(backlink_target)
 
     effective_range =
@@ -70,14 +82,14 @@ defmodule GscAnalytics.ContentInsights.UrlInsights do
 
     top_queries =
       fetch_top_queries(
-        url_group.urls || [],
+        urls,
         account_id,
         Map.get(effective_range, :start_date),
         Map.get(effective_range, :end_date)
       )
 
     %{
-      url: url_group.canonical_url || decoded_url,
+      url: canonical_url,
       requested_url: url_group.requested_url,
       url_group: url_group,
       performance: performance,
@@ -251,11 +263,7 @@ defmodule GscAnalytics.ContentInsights.UrlInsights do
     end
   end
 
-  defp build_selection_summary(_view_mode, nil, nil), do: "No range"
-  defp build_selection_summary(_view_mode, nil, _finish), do: "No range"
-  defp build_selection_summary(_view_mode, _start, nil), do: "No range"
-
-  defp build_selection_summary(view_mode, start, finish) do
+  defp build_selection_summary(view_mode, %Date{} = start, %Date{} = finish) do
     {range_start, range_end} = normalize_date_range(start, finish)
 
     case view_mode do
@@ -284,6 +292,8 @@ defmodule GscAnalytics.ContentInsights.UrlInsights do
         pluralize(days, "day")
     end
   end
+
+  defp build_selection_summary(_view_mode, _start, _finish), do: "No range"
 
   defp months_between(%Date{} = start, %Date{} = finish) do
     (finish.year - start.year) * 12 + (finish.month - start.month) + 1
@@ -401,8 +411,6 @@ defmodule GscAnalytics.ContentInsights.UrlInsights do
     }
   end
 
-  defp maybe_filter_series_by_end(series, nil), do: series
-
   defp maybe_filter_series_by_end(series, %Date{} = period_end) do
     Enum.filter(series, fn row ->
       case extract_comparison_date(row) do
@@ -411,6 +419,8 @@ defmodule GscAnalytics.ContentInsights.UrlInsights do
       end
     end)
   end
+
+  defp maybe_filter_series_by_end(series, _period_end), do: series
 
   defp extract_comparison_date(%{period_end: %Date{} = period_end}), do: period_end
   defp extract_comparison_date(%{date: %Date{} = date}), do: date
@@ -467,23 +477,30 @@ defmodule GscAnalytics.ContentInsights.UrlInsights do
     |> min_date(Date.utc_today())
   end
 
-  defp resolve_selection_start(%{earliest_date: earliest}, :all, _period_end)
-       when not is_nil(earliest),
-       do: earliest
+  defp resolve_selection_start(url_group, period_days, period_end) do
+    earliest = Map.get(url_group, :earliest_date)
 
-  defp resolve_selection_start(_url_group, :all, %Date{} = period_end), do: period_end
+    case period_end do
+      %Date{} = end_date ->
+        cond do
+          period_days == :all and match?(%Date{}, earliest) ->
+            earliest
 
-  defp resolve_selection_start(_url_group, period_days, %Date{} = period_end)
-       when is_integer(period_days) and period_days > 0 do
-    days_back = max(period_days - 1, 0)
-    Date.add(period_end, -days_back)
+          period_days == :all ->
+            end_date
+
+          is_integer(period_days) and period_days > 0 ->
+            days_back = max(period_days - 1, 0)
+            Date.add(end_date, -days_back)
+
+          true ->
+            nil
+        end
+
+      _ ->
+        nil
+    end
   end
-
-  defp resolve_selection_start(url_group, period_days, nil) when is_integer(period_days) do
-    resolve_selection_start(url_group, period_days, Date.utc_today())
-  end
-
-  defp resolve_selection_start(_url_group, _period_days, _period_end), do: nil
 
   defp clamp_selection_to_coverage(nil, _earliest), do: nil
   defp clamp_selection_to_coverage(_selection_start, nil), do: nil
@@ -498,13 +515,12 @@ defmodule GscAnalytics.ContentInsights.UrlInsights do
   defp presentable_query(""), do: ""
   defp presentable_query(value), do: value
 
-  defp min_date(nil, other), do: other
-  defp min_date(other, nil), do: other
-
   defp min_date(a, b) do
-    case Date.compare(a, b) do
-      :gt -> b
-      _ -> a
+    cond do
+      is_nil(a) -> b
+      is_nil(b) -> a
+      Date.compare(a, b) == :gt -> b
+      true -> a
     end
   end
 
