@@ -104,11 +104,11 @@ defmodule GscAnalytics.Analytics.SummaryStats do
 
   defp format_stats(stats) do
     %{
-      total_urls: convert_to_integer(stats.total_urls) || 0,
-      total_clicks: convert_to_integer(stats.total_clicks) || 0,
-      total_impressions: convert_to_integer(stats.total_impressions) || 0,
-      avg_position: Float.round(convert_to_float(stats.avg_position) || 0.0, 2),
-      avg_ctr: Float.round(convert_to_float(stats.avg_ctr) || 0.0, 2)
+      total_urls: convert_to_integer(stats.total_urls),
+      total_clicks: convert_to_integer(stats.total_clicks),
+      total_impressions: convert_to_integer(stats.total_impressions),
+      avg_position: stats.avg_position |> convert_to_float() |> Float.round(2),
+      avg_ctr: stats.avg_ctr |> convert_to_float() |> Float.round(2)
     }
     |> maybe_add_date_fields(stats)
   end
@@ -134,11 +134,7 @@ defmodule GscAnalytics.Analytics.SummaryStats do
 
   defp maybe_add_day_span(nil), do: nil
 
-  defp maybe_add_day_span(%{earliest_date: nil} = stats), do: stats
-
-  defp maybe_add_day_span(%{latest_date: nil} = stats), do: stats
-
-  defp maybe_add_day_span(%{earliest_date: earliest, latest_date: latest} = stats) do
+  defp maybe_add_day_span(%{earliest_date: %Date{} = earliest, latest_date: %Date{} = latest} = stats) do
     days =
       latest
       |> Date.diff(earliest)
@@ -147,6 +143,8 @@ defmodule GscAnalytics.Analytics.SummaryStats do
 
     Map.put(stats, :days_with_data, days)
   end
+
+  defp maybe_add_day_span(stats), do: stats
 
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)

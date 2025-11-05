@@ -765,7 +765,6 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
 
   defp format_duration(_), do: "—"
 
-  defp truncate_error(value), do: truncate_error(value, 160)
   defp truncate_error(nil, _limit), do: nil
 
   defp truncate_error(error, limit) do

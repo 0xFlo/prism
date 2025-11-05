@@ -43,8 +43,7 @@ defmodule GscAnalytics.Crawler.HttpStatus do
     - `:max_redirects` - Maximum redirect depth to follow (default: #{@default_max_redirects})
 
   ## Returns
-    - `{:ok, result}` - Successfully checked (even if URL is broken)
-    - `{:error, reason}` - Request failed
+    - `{:ok, result}` - The inspection outcome; when a request fails, the error is stored in `result.error`
 
   ## Examples
 

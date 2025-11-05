@@ -57,12 +57,18 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
           Map.put(account, :oauth, oauth)
         end)
 
+      account_options =
+        Enum.map(accounts, fn %{id: id, display_name: display_name} ->
+          {display_name, id}
+        end)
+
       accounts_by_id = Map.new(accounts, fn account -> {account.id, account} end)
 
       socket =
         socket
         |> assign(:accounts_by_id, accounts_by_id)
-        |> assign(:account_options, Accounts.gsc_account_options(current_scope))
+        |> assign(:account_options, account_options)
+        |> assign(:oauth_tokens_by_account, oauth_tokens)
         |> reload_property_state()
 
       requested_account_id = params |> Map.get("account_id") |> parse_account_param()
@@ -199,10 +205,16 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
     accounts_by_id = Map.get(socket.assigns, :accounts_by_id, %{})
     accounts = Map.values(accounts_by_id)
     scope = Map.get(socket.assigns, :current_scope)
+    existing_tokens = Map.get(socket.assigns, :oauth_tokens_by_account)
 
     # Use preloaded properties instead of querying
-    properties_by_account =
-      load_properties_by_account_from_cache(accounts, scope, preloaded_properties)
+    {properties_by_account, oauth_tokens} =
+      load_properties_by_account_from_cache(
+        accounts,
+        scope,
+        preloaded_properties,
+        existing_tokens
+      )
 
     property_lookup = build_property_lookup(properties_by_account)
     property_options = build_property_options(properties_by_account, accounts_by_id)
@@ -212,6 +224,7 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
       |> assign(:properties_by_account, properties_by_account)
       |> assign(:property_lookup, property_lookup)
       |> assign(:property_options_all, property_options)
+      |> assign(:oauth_tokens_by_account, oauth_tokens)
 
     account_id = socket.assigns[:current_account_id]
     property_id = socket.assigns[:current_property_id]
@@ -335,79 +348,101 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
     end
   end
 
-  defp load_properties_by_account(accounts, scope) do
+  defp load_properties_by_account(accounts, scope, oauth_tokens_map \\ nil) do
     # Batch load ALL properties for ALL accounts in a single query
     # This prevents N+1 queries (was calling list_properties once per account)
     account_ids = Enum.map(accounts, & &1.id)
     all_properties = batch_load_all_properties(account_ids)
 
-    # Batch load OAuth tokens to avoid N+1 OAuth token queries
-    oauth_tokens = GscAnalytics.Auth.batch_get_oauth_tokens(scope, account_ids)
+    # Reuse preloaded OAuth tokens when available to avoid duplicate queries
+    oauth_tokens = ensure_oauth_tokens(oauth_tokens_map, scope, accounts)
 
-    Enum.reduce(accounts, %{}, fn account, acc ->
-      # Get pre-loaded properties for this account
-      saved_properties = Map.get(all_properties, account.id, [])
+    properties_by_account =
+      Enum.reduce(accounts, %{}, fn account, acc ->
+        # Get pre-loaded properties for this account
+        saved_properties = Map.get(all_properties, account.id, [])
 
-      # Only show properties that are accessible via current OAuth token
-      # This prevents showing stale properties from previous Google accounts
-      properties =
-        case Map.get(oauth_tokens, account.id) do
-          nil ->
-            # No OAuth token - don't show any properties in navigation
-            []
+        # Only show properties that are accessible via current OAuth token
+        # This prevents showing stale properties from previous Google accounts
+        properties =
+          case Map.get(oauth_tokens, account.id) do
+            nil ->
+              # No OAuth token - don't show any properties in navigation
+              []
 
-          _token ->
-            # OAuth token exists - get API-accessible properties
-            # Note: We pass saved_properties to avoid re-querying the database
-            case get_api_accessible_properties(scope, account.id, saved_properties) do
-              {:ok, api_property_urls} ->
-                # Use pre-loaded properties, filtered by API access
-                saved_properties
-                |> Enum.filter(fn prop ->
-                  MapSet.member?(api_property_urls, prop.property_url)
-                end)
+            _token ->
+              # OAuth token exists - get API-accessible properties
+              # Note: We pass saved_properties to avoid re-querying the database
+              case get_api_accessible_properties(scope, account.id, saved_properties) do
+                {:ok, api_property_urls} ->
+                  # Use pre-loaded properties, filtered by API access
+                  saved_properties
+                  |> Enum.filter(fn prop ->
+                    MapSet.member?(api_property_urls, prop.property_url)
+                  end)
 
-              {:error, _} ->
-                # If OAuth API call fails, don't show any properties in navigation
-                []
-            end
-        end
+                {:error, _} ->
+                  # If OAuth API call fails, don't show any properties in navigation
+                  []
+              end
+          end
 
-      Map.put(acc, account.id, properties)
-    end)
+        Map.put(acc, account.id, properties)
+      end)
+
+    {properties_by_account, oauth_tokens}
   end
 
   # Same as load_properties_by_account but uses preloaded properties instead of querying
-  defp load_properties_by_account_from_cache(accounts, scope, all_properties) do
-    # Batch load OAuth tokens to avoid N+1 OAuth token queries
+  defp load_properties_by_account_from_cache(
+         accounts,
+         scope,
+         all_properties,
+         oauth_tokens_map \\ nil
+       ) do
+    oauth_tokens = ensure_oauth_tokens(oauth_tokens_map, scope, accounts)
+
+    properties_by_account =
+      Enum.reduce(accounts, %{}, fn account, acc ->
+        # Get pre-loaded properties for this account
+        saved_properties = Map.get(all_properties, account.id, [])
+
+        # Only show properties that are accessible via current OAuth token
+        properties =
+          case Map.get(oauth_tokens, account.id) do
+            nil ->
+              []
+
+            _token ->
+              case get_api_accessible_properties(scope, account.id, saved_properties) do
+                {:ok, api_property_urls} ->
+                  saved_properties
+                  |> Enum.filter(fn prop ->
+                    MapSet.member?(api_property_urls, prop.property_url)
+                  end)
+
+                {:error, _} ->
+                  []
+              end
+          end
+
+        Map.put(acc, account.id, properties)
+      end)
+
+    {properties_by_account, oauth_tokens}
+  end
+
+  defp ensure_oauth_tokens(nil, scope, accounts) do
     account_ids = Enum.map(accounts, & &1.id)
-    oauth_tokens = GscAnalytics.Auth.batch_get_oauth_tokens(scope, account_ids)
+    fetch_oauth_tokens(scope, account_ids)
+  end
 
-    Enum.reduce(accounts, %{}, fn account, acc ->
-      # Get pre-loaded properties for this account
-      saved_properties = Map.get(all_properties, account.id, [])
+  defp ensure_oauth_tokens(tokens, _scope, _accounts) when is_map(tokens), do: tokens
 
-      # Only show properties that are accessible via current OAuth token
-      properties =
-        case Map.get(oauth_tokens, account.id) do
-          nil ->
-            []
+  defp fetch_oauth_tokens(_scope, []), do: %{}
 
-          _token ->
-            case get_api_accessible_properties(scope, account.id, saved_properties) do
-              {:ok, api_property_urls} ->
-                saved_properties
-                |> Enum.filter(fn prop ->
-                  MapSet.member?(api_property_urls, prop.property_url)
-                end)
-
-              {:error, _} ->
-                []
-            end
-        end
-
-      Map.put(acc, account.id, properties)
-    end)
+  defp fetch_oauth_tokens(scope, account_ids) do
+    GscAnalytics.Auth.batch_get_oauth_tokens(scope, account_ids)
   end
 
   # Helper to get API-accessible property URLs without re-querying the database
@@ -526,19 +561,20 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
     accounts_by_id = Map.get(socket.assigns, :accounts_by_id, %{})
     accounts = Map.values(accounts_by_id)
     scope = Map.get(socket.assigns, :current_scope)
+    existing_tokens = Map.get(socket.assigns, :oauth_tokens_by_account)
 
     # Check if properties were already loaded in this request lifecycle
     # This prevents N+1 queries when reload_property_state is called multiple times
     # during mount → handle_params → assign_current_account → assign_current_property
-    properties_by_account =
+    {properties_by_account, oauth_tokens} =
       case Map.get(socket.assigns, :_properties_cache) do
         nil ->
           # First load - query database and cache the result
-          load_properties_by_account(accounts, scope)
+          load_properties_by_account(accounts, scope, existing_tokens)
 
         cached ->
           # Reuse cached properties from earlier in this request
-          cached
+          {cached, ensure_oauth_tokens(existing_tokens, scope, accounts)}
       end
 
     property_lookup = build_property_lookup(properties_by_account)
@@ -549,6 +585,7 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
     |> assign(:property_lookup, property_lookup)
     |> assign(:property_options_all, property_options)
     |> assign(:_properties_cache, properties_by_account)
+    |> assign(:oauth_tokens_by_account, oauth_tokens)
   end
 
   defp map_property_to_account(_socket, nil), do: :error
