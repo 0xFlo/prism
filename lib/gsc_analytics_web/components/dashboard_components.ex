@@ -21,6 +21,8 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
   - `view_mode` - Display mode ("basic" or "all") controls column visibility
   - `sort_by` - Current sort column
   - `sort_direction` - Sort direction ("asc" or "desc")
+  - `account_id` - Currently selected workspace/account id (used to preserve context)
+  - `property_id` - Currently selected property id (optional, preserves property context)
 
   ## Example
       <.url_table
@@ -35,6 +37,8 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
   attr :sort_by, :string, default: "clicks"
   attr :sort_direction, :string, default: "desc"
   attr :period_label, :string, default: "Last 30 days"
+  attr :account_id, :integer, default: nil
+  attr :property_id, :string, default: nil
 
   def url_table(assigns) do
     ~H"""
@@ -80,8 +84,13 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
               <!-- URL column -->
               <td class={"#{if @view_mode == "all", do: "max-w-sm", else: "max-w-md"}"}>
                 <div class="tooltip tooltip-right" data-tip={url.url}>
+                  <% params =
+                    []
+                    |> maybe_put_param(:url, url.url)
+                    |> maybe_put_param(:account_id, @account_id)
+                    |> maybe_put_param(:property_id, @property_id) %>
                   <a
-                    href={~p"/dashboard/url?url=#{URI.encode(url.url)}"}
+                    href={~p"/dashboard/url?#{params}"}
                     class={"link link-primary font-mono #{if @view_mode == "all", do: "text-xs", else: "text-sm"}"}
                   >
                     {truncate_url(url.url, if(@view_mode == "all", do: 40, else: 60))}
@@ -326,6 +335,10 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
     </div>
     """
   end
+
+  defp maybe_put_param(params, _key, nil), do: params
+  defp maybe_put_param(params, _key, ""), do: params
+  defp maybe_put_param(params, key, value), do: [{key, value} | params]
 
   @doc """
   Renders pagination controls with page navigation and item count.

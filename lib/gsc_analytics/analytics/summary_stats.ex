@@ -134,7 +134,9 @@ defmodule GscAnalytics.Analytics.SummaryStats do
 
   defp maybe_add_day_span(nil), do: nil
 
-  defp maybe_add_day_span(%{earliest_date: %Date{} = earliest, latest_date: %Date{} = latest} = stats) do
+  defp maybe_add_day_span(
+         %{earliest_date: %Date{} = earliest, latest_date: %Date{} = latest} = stats
+       ) do
     days =
       latest
       |> Date.diff(earliest)

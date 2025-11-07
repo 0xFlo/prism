@@ -3,6 +3,7 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
 
   alias GscAnalytics.ContentInsights
   alias GscAnalyticsWeb.Live.AccountHelpers
+  alias GscAnalyticsWeb.Live.DashboardParams
   alias GscAnalyticsWeb.Presenters.ChartDataPresenter
 
   import GscAnalyticsWeb.Dashboard.HTMLHelpers
@@ -12,7 +13,8 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
   def mount(params, _session, socket) do
     # LiveView best practice: Use assign_new/3 for safe defaults
     # This prevents runtime errors from missing assigns and makes the component more resilient
-    {socket, account} = AccountHelpers.init_account_assigns(socket, params)
+    {socket, account, _property} =
+      AccountHelpers.init_account_and_property_assigns(socket, params)
 
     # Redirect to Settings if no workspaces exist
     if is_nil(account) do
@@ -30,26 +32,36 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
        |> assign_new(:insights, fn -> nil end)
        |> assign_new(:view_mode, fn -> "daily" end)
        |> assign_new(:period_days, fn -> 30 end)
+       |> assign_new(:visible_series, fn -> [:clicks, :impressions] end)
        |> assign_new(:encoded_url, fn -> nil end)
        |> assign_new(:queries_sort_by, fn -> "clicks" end)
        |> assign_new(:queries_sort_direction, fn -> "desc" end)
        |> assign_new(:backlinks_sort_by, fn -> "first_seen_at" end)
-       |> assign_new(:backlinks_sort_direction, fn -> "desc" end)}
+       |> assign_new(:backlinks_sort_direction, fn -> "desc" end)
+       |> assign_new(:period_label, fn -> DashboardParams.period_label(30) end)}
     end
   end
 
   @impl true
   def handle_params(%{"url" => url} = params, uri, socket)
       when is_binary(url) and byte_size(url) > 0 do
-    socket = AccountHelpers.assign_current_account(socket, params)
+    socket =
+      socket
+      |> AccountHelpers.assign_current_account(params)
+      |> AccountHelpers.assign_current_property(params, skip_reload: true)
+
     account_id = socket.assigns.current_account_id
+    property = socket.assigns.current_property
+    property_url = property && property.property_url
     view_mode = normalize_view_mode(params["view"])
-    period_days = parse_period(params["period"])
+    period_days = DashboardParams.parse_period(params["period"])
+    visible_series = DashboardParams.parse_visible_series(params["series"])
 
     insights =
       ContentInsights.url_insights(url, view_mode, %{
         period_days: period_days,
-        account_id: account_id
+        account_id: account_id,
+        property_url: property_url
       })
 
     current_path = URI.parse(uri).path || "/dashboard/url"
@@ -91,7 +103,9 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
      |> assign(:current_path, current_path)
      |> assign(:view_mode, view_mode)
      |> assign(:period_days, period_days)
+     |> assign(:period_label, DashboardParams.period_label(period_days))
      |> assign(:insights, enriched_insights)
+     |> assign(:visible_series, visible_series)
      |> assign(:encoded_url, encoded_url)
      |> assign(:queries_sort_by, queries_sort_by)
      |> assign(:queries_sort_direction, queries_sort_dir)
@@ -118,12 +132,13 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
 
   @impl true
   def handle_event("change_period", %{"period" => period}, socket) do
-    period_days = parse_period(period)
+    period_days = DashboardParams.parse_period(period)
     params = build_params(socket, %{period: period})
 
     {:noreply,
      socket
      |> assign(:period_days, period_days)
+     |> assign(:period_label, DashboardParams.period_label(period_days))
      |> push_patch(to: ~p"/dashboard/url?#{params}")}
   end
 
@@ -160,46 +175,65 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
   end
 
   @impl true
+  def handle_event("toggle_series", %{"metric" => metric_str}, socket) do
+    metric = String.to_existing_atom(metric_str)
+    current_series = socket.assigns.visible_series
+
+    new_series =
+      if metric in current_series do
+        List.delete(current_series, metric)
+      else
+        [metric | current_series]
+      end
+
+    new_series = if Enum.empty?(new_series), do: [metric], else: new_series
+    encoded_series = DashboardParams.encode_series(new_series)
+
+    updated_socket = assign(socket, :visible_series, new_series)
+    params = build_params(updated_socket, %{series: encoded_series})
+
+    {:noreply, push_patch(updated_socket, to: ~p"/dashboard/url?#{params}")}
+  end
+
+  @impl true
   def handle_event("change_account", %{"account_id" => account_id}, socket) do
-    params = build_params(socket, %{account_id: account_id})
+    params = build_params(socket, %{account_id: account_id, property_id: nil})
     {:noreply, push_patch(socket, to: ~p"/dashboard/url?#{params}")}
   end
 
   # Helper to build URL params preserving current state
   defp build_params(socket, overrides) do
-    %{
-      url: socket.assigns[:encoded_url] || "",
-      view: Map.get(overrides, :view, socket.assigns.view_mode),
-      period: Map.get(overrides, :period, socket.assigns.period_days),
-      queries_sort: Map.get(overrides, :queries_sort, socket.assigns.queries_sort_by),
-      queries_dir: Map.get(overrides, :queries_dir, socket.assigns.queries_sort_direction),
-      backlinks_sort: Map.get(overrides, :backlinks_sort, socket.assigns.backlinks_sort_by),
-      backlinks_dir: Map.get(overrides, :backlinks_dir, socket.assigns.backlinks_sort_direction),
-      account_id: Map.get(overrides, :account_id, socket.assigns.current_account_id)
-    }
+    base_params = [
+      {:url, Map.get(overrides, :url, socket.assigns[:encoded_url] || "")},
+      {:view, Map.get(overrides, :view, socket.assigns.view_mode)},
+      {:period, Map.get(overrides, :period, socket.assigns.period_days)},
+      {:queries_sort, Map.get(overrides, :queries_sort, socket.assigns.queries_sort_by)},
+      {:queries_dir, Map.get(overrides, :queries_dir, socket.assigns.queries_sort_direction)},
+      {:backlinks_sort, Map.get(overrides, :backlinks_sort, socket.assigns.backlinks_sort_by)},
+      {:backlinks_dir,
+       Map.get(overrides, :backlinks_dir, socket.assigns.backlinks_sort_direction)},
+      {:series,
+       Map.get(
+         overrides,
+         :series,
+         DashboardParams.encode_series(socket.assigns.visible_series || [:clicks, :impressions])
+       )},
+      {:account_id, Map.get(overrides, :account_id, socket.assigns.current_account_id)},
+      {:property_id, Map.get(overrides, :property_id, socket.assigns[:current_property_id])}
+    ]
+
+    base_params
+    |> Enum.reduce([], fn
+      {:url, value}, acc -> [{:url, value} | acc]
+      {_key, value}, acc when value in [nil, ""] -> acc
+      {key, value}, acc -> [{key, value} | acc]
+    end)
+    |> Enum.reverse()
   end
 
   defp normalize_view_mode("weekly"), do: "weekly"
   defp normalize_view_mode("monthly"), do: "monthly"
   defp normalize_view_mode(_), do: "daily"
-
-  defp parse_period(nil), do: 30
-  defp parse_period("7"), do: 7
-  defp parse_period("30"), do: 30
-  defp parse_period("90"), do: 90
-  defp parse_period("180"), do: 180
-  defp parse_period("365"), do: 365
-  defp parse_period("all"), do: 10000
-  defp parse_period(value) when is_integer(value) and value > 0, do: value
-
-  defp parse_period(value) when is_binary(value) do
-    case Integer.parse(value) do
-      {int, _} when int > 0 -> int
-      _ -> 30
-    end
-  end
-
-  defp parse_period(_), do: 30
 
   defp normalize_sort_direction("asc"), do: "asc"
   defp normalize_sort_direction("desc"), do: "desc"

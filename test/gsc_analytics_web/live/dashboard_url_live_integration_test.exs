@@ -136,7 +136,7 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
         |> render_click()
 
       # Assert: Weekly view active
-      assert html =~ "Weekly" or html =~ "Week"
+      assert view_toggle_active?(html, "weekly")
 
       # Action: Switch to monthly view
       html =
@@ -145,7 +145,7 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
         |> render_click()
 
       # Assert: Monthly view active
-      assert html =~ "Monthly" or html =~ "Month"
+      assert view_toggle_active?(html, "monthly")
     end
 
     test "view mode persists in URL params", %{conn: conn, account_id: account_id} do
@@ -163,13 +163,13 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
       {:ok, _view, html} = live(conn, ~p"/dashboard/url?url=#{encoded_url}&view=weekly")
 
       # Assert: URL params reflect view mode (view loads with weekly active)
-      assert html =~ "Weekly" or html =~ "Week"
+      assert view_toggle_active?(html, "weekly")
 
       # Action: Refresh page (simulate bookmark/reload)
       {:ok, _view, html} = live(conn, ~p"/dashboard/url?url=#{encoded_url}&view=weekly")
 
       # Assert: Weekly view still active
-      assert html =~ "Weekly" or html =~ "Week"
+      assert view_toggle_active?(html, "weekly")
     end
   end
 
@@ -365,29 +365,74 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
       url = "https://example.com/shareable-article"
       populate_url_data(account_id, url, ~D[2025-10-15], %{clicks: 500, impressions: 5000})
 
+      for days_ago <- 1..6 do
+        date = Date.add(~D[2025-10-15], -days_ago)
+        populate_url_data(account_id, url, date, %{clicks: 480, impressions: 4800})
+      end
+
       # Action: Load page with full URL (simulating shared link)
       encoded_url = URI.encode_www_form(url)
       {:ok, _view, html} = live(conn, ~p"/dashboard/url?url=#{encoded_url}&view=weekly")
 
       # Assert: Page loads with correct state
       assert html =~ "shareable-article"
-      assert html =~ "Weekly"
+      assert view_toggle_active?(html, "weekly")
+    end
+  end
+
+  describe "URL detail respects property scope" do
+    test "property selection persists across interactions", %{
+      conn: conn,
+      account_id: account_id,
+      property: property
+    } do
+      url = "https://example.com/property-specific"
+      populate_url_data(account_id, url, ~D[2025-10-10], %{clicks: 42, impressions: 420})
+
+      {:ok, view, _html} = live(conn, ~p"/dashboard/url?url=#{url}")
+
+      view
+      |> element("button", "Weekly")
+      |> render_click()
+
+      expected_params = [
+        {:url, url},
+        {:view, "weekly"},
+        {:period, 30},
+        {:queries_sort, "clicks"},
+        {:queries_dir, "desc"},
+        {:backlinks_sort, "first_seen_at"},
+        {:backlinks_dir, "desc"},
+        {:series, "clicks,impressions"},
+        {:account_id, account_id},
+        {:property_id, property.id}
+      ]
+
+      assert_patch(view, ~p"/dashboard/url?#{expected_params}")
     end
   end
 
   # Helper functions
+
+  defp view_toggle_active?(html, view) do
+    pattern =
+      ~r/<button[^>]*(phx-value-view="#{view}"[^>]*data-state="active"|data-state="active"[^>]*phx-value-view="#{view}")/m
+
+    Regex.match?(pattern, html)
+  end
 
   defp populate_url_data(account_id, url, date, opts) do
     clicks = Map.get(opts, :clicks, 100)
     impressions = Map.get(opts, :impressions, 1000)
     position = Map.get(opts, :position, 10.0)
     top_queries = Map.get(opts, :top_queries, nil)
+    property_url = Map.get(opts, :property_url, @property_url)
 
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
     record = %{
       account_id: account_id,
-      property_url: @property_url,
+      property_url: property_url,
       url: url,
       date: date,
       clicks: clicks,

@@ -118,7 +118,7 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
       # Action: Search for "blog"
       html =
         view
-        |> element("#search-input")
+        |> element("#dashboard-search-form")
         # Live search
         |> render_change(%{"search" => "blog"})
 
@@ -142,7 +142,7 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
       # Action: Search for non-existent term
       html =
         view
-        |> element("#search-input")
+        |> element("#dashboard-search-form")
         |> render_change(%{"search" => "nonexistent"})
 
       # Assert: Shows no results message
@@ -159,7 +159,7 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
 
       # Action: Perform search
       view
-      |> element("#search-input")
+      |> element("#dashboard-search-form")
       |> render_change(%{"search" => "test"})
 
       assert render(view) =~ ~r/id="search-input"[^>]*value="test"/
@@ -261,7 +261,7 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
 
       # Action 1: Search for "blog"
       view
-      |> element("#search-input")
+      |> element("#dashboard-search-form")
       |> render_change(%{"search" => "blog"})
 
       # Action 2: Sort by clicks
@@ -276,7 +276,7 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
       # Action 3: Refine search to "elixir"
       html =
         view
-        |> element("#search-input")
+        |> element("#dashboard-search-form")
         |> render_change(%{"search" => "elixir"})
 
       # Assert: Only elixir blog posts shown
@@ -299,7 +299,7 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
       view |> element("th[phx-value-column=clicks]") |> render_click()
 
       view
-      |> element("#search-input")
+      |> element("#dashboard-search-form")
       |> render_change(%{"search" => "page-1"})
 
       view |> element("th[phx-value-column=position]") |> render_click()

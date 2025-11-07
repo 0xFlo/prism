@@ -26,10 +26,12 @@ defmodule GscAnalytics.ContentInsights.UrlInsights do
   """
   def fetch(url, view_mode, opts \\ %{}) when is_binary(url) do
     account_id = Accounts.resolve_account_id(opts)
+    property_url = Map.get(opts, :property_url)
     period_days = resolve_period_days(Map.get(opts, :period_days))
     decoded_url = URI.decode(url)
 
-    url_group = UrlGroups.resolve(decoded_url, %{account_id: account_id})
+    url_group =
+      UrlGroups.resolve(decoded_url, %{account_id: account_id, property_url: property_url})
 
     canonical_url =
       case url_group do
@@ -50,7 +52,8 @@ defmodule GscAnalytics.ContentInsights.UrlInsights do
     {time_series, label, coverage} =
       build_time_series_for_view(view_mode, url_group, account_id, %{
         period_start: data_start,
-        period_end: period_end
+        period_end: period_end,
+        property_url: property_url
       })
 
     selection_summary = build_selection_summary(view_mode, selection_start, period_end)
@@ -65,7 +68,8 @@ defmodule GscAnalytics.ContentInsights.UrlInsights do
           range_end: coverage.range_end,
           selection_start: selection_start,
           selection_end: period_end,
-          coverage_summary: coverage.summary
+          coverage_summary: coverage.summary,
+          property_url: property_url
         }
       )
 
@@ -85,7 +89,8 @@ defmodule GscAnalytics.ContentInsights.UrlInsights do
         urls,
         account_id,
         Map.get(effective_range, :start_date),
-        Map.get(effective_range, :end_date)
+        Map.get(effective_range, :end_date),
+        property_url
       )
 
     %{
@@ -113,6 +118,7 @@ defmodule GscAnalytics.ContentInsights.UrlInsights do
   defp calculate_performance_from_time_series(time_series, url, account_id, opts) do
     total_clicks = Enum.reduce(time_series, 0, fn ts, acc -> acc + (ts.clicks || 0) end)
     total_impressions = Enum.reduce(time_series, 0, fn ts, acc -> acc + (ts.impressions || 0) end)
+    property_url = Map.get(opts, :property_url)
 
     total_weighted_position =
       Enum.reduce(time_series, 0.0, fn ts, acc ->
@@ -128,15 +134,15 @@ defmodule GscAnalytics.ContentInsights.UrlInsights do
     end_dates = Enum.map(time_series, fn ts -> Map.get(ts, :period_end, ts.date) end)
 
     http_data =
-      from(p in Performance,
-        where: p.url == ^url and p.account_id == ^account_id,
-        select: %{
-          http_status: p.http_status,
-          redirect_url: p.redirect_url,
-          http_checked_at: p.http_checked_at
-        },
-        limit: 1
-      )
+      Performance
+      |> where([p], p.url == ^url and p.account_id == ^account_id)
+      |> maybe_filter_property(property_url)
+      |> select([p], %{
+        http_status: p.http_status,
+        redirect_url: p.redirect_url,
+        http_checked_at: p.http_checked_at
+      })
+      |> limit(1)
       |> Repo.one()
 
     {data_range_start, data_range_end} =
@@ -184,8 +190,11 @@ defmodule GscAnalytics.ContentInsights.UrlInsights do
          view_mode,
          %{urls: urls, earliest_date: earliest},
          account_id,
-         %{period_start: period_start, period_end: period_end}
+         config
        ) do
+    period_start = Map.get(config, :period_start)
+    period_end = Map.get(config, :period_end)
+    property_url = Map.get(config, :property_url)
     label = view_label(view_mode)
 
     cond do
@@ -199,7 +208,11 @@ defmodule GscAnalytics.ContentInsights.UrlInsights do
         {[], label, %{summary: "No data", range_start: nil, range_end: nil}}
 
       true ->
-        query_opts = %{account_id: account_id, start_date: period_start}
+        query_opts = %{
+          account_id: account_id,
+          start_date: period_start,
+          property_url: property_url
+        }
 
         time_series =
           case view_mode do
@@ -348,47 +361,48 @@ defmodule GscAnalytics.ContentInsights.UrlInsights do
     "#{value} #{singular}s"
   end
 
-  defp fetch_top_queries(urls, _account_id, _start_date, _end_date) when urls in [nil, []],
-    do: []
+  defp fetch_top_queries(urls, _account_id, _start_date, _end_date, _property_url)
+       when urls in [nil, []],
+       do: []
 
-  defp fetch_top_queries(_urls, _account_id, nil, _end_date), do: []
-  defp fetch_top_queries(_urls, _account_id, _start_date, nil), do: []
+  defp fetch_top_queries(_urls, _account_id, nil, _end_date, _property_url), do: []
+  defp fetch_top_queries(_urls, _account_id, _start_date, nil, _property_url), do: []
 
-  defp fetch_top_queries(urls, account_id, start_date, end_date) do
+  defp fetch_top_queries(urls, account_id, start_date, end_date, property_url) do
     urls = urls |> Enum.uniq() |> Enum.reject(&is_nil/1)
 
     if urls == [] do
       []
     else
-      from(ts in TimeSeries,
-        where: ts.account_id == ^account_id,
-        where: ts.url in ^urls,
-        where: ts.date >= ^start_date and ts.date <= ^end_date,
-        where: fragment("array_length(?, 1) > 0", ts.top_queries),
-        cross_join: q in fragment("unnest(?)", ts.top_queries),
-        group_by: fragment("LOWER(TRIM(COALESCE(?->>'query', '')))", q),
-        order_by: [desc: fragment("SUM((?->>'clicks')::bigint)", q)],
-        limit: 50,
-        select: %{
-          display_query: fragment("MIN(TRIM(COALESCE(?->>'query', '')))", q),
-          normalized_query: fragment("LOWER(TRIM(COALESCE(?->>'query', '')))", q),
-          clicks: fragment("SUM((?->>'clicks')::bigint)", q),
-          impressions: fragment("SUM((?->>'impressions')::bigint)", q),
-          ctr:
-            fragment(
-              "COALESCE(SUM((?->>'clicks')::bigint)::float / NULLIF(SUM((?->>'impressions')::bigint), 0), 0)",
-              q,
-              q
-            ),
-          position:
-            fragment(
-              "COALESCE(SUM((?->>'position')::float * (?->>'impressions')::bigint) / NULLIF(SUM((?->>'impressions')::bigint), 0), 0)",
-              q,
-              q,
-              q
-            )
-        }
-      )
+      TimeSeries
+      |> where([ts], ts.account_id == ^account_id)
+      |> where([ts], ts.url in ^urls)
+      |> where([ts], ts.date >= ^start_date and ts.date <= ^end_date)
+      |> where([ts], fragment("array_length(?, 1) > 0", ts.top_queries))
+      |> maybe_filter_property(property_url)
+      |> join(:cross, [ts], q in fragment("unnest(?)", ts.top_queries))
+      |> group_by([_ts, q], fragment("LOWER(TRIM(COALESCE(?->>'query', '')))", q))
+      |> order_by([_ts, q], desc: fragment("SUM((?->>'clicks')::bigint)", q))
+      |> limit(50)
+      |> select([_ts, q], %{
+        display_query: fragment("MIN(TRIM(COALESCE(?->>'query', '')))", q),
+        normalized_query: fragment("LOWER(TRIM(COALESCE(?->>'query', '')))", q),
+        clicks: fragment("SUM((?->>'clicks')::bigint)", q),
+        impressions: fragment("SUM((?->>'impressions')::bigint)", q),
+        ctr:
+          fragment(
+            "COALESCE(SUM((?->>'clicks')::bigint)::float / NULLIF(SUM((?->>'impressions')::bigint), 0), 0)",
+            q,
+            q
+          ),
+        position:
+          fragment(
+            "COALESCE(SUM((?->>'position')::float * (?->>'impressions')::bigint) / NULLIF(SUM((?->>'impressions')::bigint), 0), 0)",
+            q,
+            q,
+            q
+          )
+      })
       |> Repo.all()
       |> Enum.map(&normalize_query_row/1)
     end
@@ -449,6 +463,11 @@ defmodule GscAnalytics.ContentInsights.UrlInsights do
   end
 
   defp extract_primary_date(_), do: nil
+
+  defp maybe_filter_property(query, nil), do: query
+
+  defp maybe_filter_property(query, property_url),
+    do: where(query, [row], field(row, :property_url) == ^property_url)
 
   defp resolve_period_days(nil), do: @default_period_days
   defp resolve_period_days(:all), do: :all

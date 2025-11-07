@@ -100,10 +100,10 @@ defmodule GscAnalytics.ContentInsights.UrlInsightsTest do
 
     assert insights.range_summary =~ "day"
     assert insights.data_coverage_summary =~ "day"
-    assert insights.data_range_start == ~D[2024-12-15]
-    assert insights.data_range_end == ~D[2025-02-02]
+    assert insights.data_range_start == ~D[2024-12-16]
+    assert insights.data_range_end == ~D[2025-02-01]
 
-    assert Enum.any?(insights.chart_events, &(&1.date == "2025-01-15"))
+    assert Enum.any?(insights.chart_events, &(&1.date == "2025-02-01"))
   end
 
   test "weekly view normalizes chart events to week start", %{old_url: old_url} do
@@ -114,7 +114,7 @@ defmodule GscAnalytics.ContentInsights.UrlInsightsTest do
       })
 
     assert insights.label == "Week Starting"
-    assert Enum.any?(insights.chart_events, fn event -> event.date == "2025-01-13" end)
+    assert Enum.any?(insights.chart_events, fn event -> event.date == "2025-01-27" end)
   end
 
   test "monthly view normalizes chart events to month start", %{old_url: old_url} do
@@ -125,7 +125,7 @@ defmodule GscAnalytics.ContentInsights.UrlInsightsTest do
       })
 
     assert insights.label == "Month"
-    assert Enum.any?(insights.chart_events, fn event -> event.date == "2025-01-01" end)
+    assert Enum.any?(insights.chart_events, fn event -> event.date == "2025-02-01" end)
   end
 
   test "aggregates top queries across url group", %{old_url: old_url} do
@@ -141,9 +141,9 @@ defmodule GscAnalytics.ContentInsights.UrlInsightsTest do
 
     assert shared
     assert shared.query == "Shared Query"
-    assert_in_delta shared.clicks, 18, 0.0001
-    assert_in_delta shared.impressions, 280, 0.0001
-    assert_in_delta shared.ctr, 18 / 280, 0.0001
+    assert_in_delta shared.clicks, 9, 0.0001
+    assert_in_delta shared.impressions, 140, 0.0001
+    assert_in_delta shared.ctr, 9 / 140, 0.0001
 
     assert legacy
     assert new_query
@@ -189,6 +189,27 @@ defmodule GscAnalytics.ContentInsights.UrlInsightsTest do
     assert_in_delta shared.impressions, 150, 0.0001
   end
 
+  test "ignores metrics from other properties within the same account", %{new_url: new_url} do
+    other_property = "sc-domain:alt.com"
+
+    insert_series(new_url, ~D[2025-02-03], %{
+      clicks: 999,
+      impressions: 9999,
+      position: 1.0,
+      property_url: other_property
+    })
+
+    insights =
+      ContentInsights.url_insights(new_url, "daily", %{
+        account_id: @account_id,
+        property_url: @property_url,
+        period_days: 7
+      })
+
+    assert Enum.map(insights.time_series, & &1.date) == [~D[2025-02-01], ~D[2025-02-02]]
+    assert insights.performance.clicks == 55
+  end
+
   defp insert_series(url, date, overrides) do
     defaults = %{
       clicks: 10,
@@ -200,10 +221,11 @@ defmodule GscAnalytics.ContentInsights.UrlInsightsTest do
     }
 
     attrs = Map.merge(defaults, overrides)
+    property_url = Map.get(overrides, :property_url, @property_url)
 
     %TimeSeries{
       account_id: @account_id,
-      property_url: @property_url,
+      property_url: property_url,
       url: url,
       date: date,
       period_type: :daily,

@@ -32,13 +32,14 @@ defmodule GscAnalytics.ContentInsights.UrlPerformance do
     page = normalize_page(Map.get(opts, :page))
     period_days = Map.get(opts, :period_days, 30)
     search = Map.get(opts, :search)
+    search_pattern = build_search_pattern(search)
 
     offset = (page - 1) * limit
 
     query =
       account_id
-      |> build_hybrid_query(property_url, period_days, opts)
-      |> apply_search_filter(search)
+      |> build_hybrid_query(property_url, period_days, search_pattern)
+      |> apply_search_filter(search_pattern)
 
     total_count = count_urls(query)
 
@@ -67,81 +68,111 @@ defmodule GscAnalytics.ContentInsights.UrlPerformance do
     }
   end
 
-  defp build_hybrid_query(account_id, property_url, period_days, _opts) do
+  defp build_hybrid_query(account_id, property_url, period_days, search_pattern) do
     period_start = Date.add(Date.utc_today(), -period_days)
 
     period_query =
-      from ts in TimeSeries,
-        where:
-          ts.account_id == ^account_id and ts.property_url == ^property_url and
-            ts.date >= ^period_start,
-        group_by: ts.url,
-        select: %{
-          url: ts.url,
-          period_clicks: sum(ts.clicks),
-          period_impressions: sum(ts.impressions),
-          period_position:
-            fragment(
-              "SUM(? * ?) / NULLIF(SUM(?), 0)",
-              ts.position,
-              ts.impressions,
-              ts.impressions
-            ),
-          period_ctr: fragment("SUM(?)::float / NULLIF(SUM(?), 0)", ts.clicks, ts.impressions)
-        }
+      TimeSeries
+      |> where(
+        [ts],
+        ts.account_id == ^account_id and ts.property_url == ^property_url and
+          ts.date >= ^period_start
+      )
+      |> maybe_filter_time_series(search_pattern)
+      |> group_by([ts], ts.url)
+      |> select([ts], %{
+        url: ts.url,
+        period_clicks: sum(ts.clicks),
+        period_impressions: sum(ts.impressions),
+        period_position:
+          fragment(
+            "SUM(? * ?) / NULLIF(SUM(?), 0)",
+            ts.position,
+            ts.impressions,
+            ts.impressions
+          ),
+        period_ctr: fragment("SUM(?)::float / NULLIF(SUM(?), 0)", ts.clicks, ts.impressions)
+      })
 
     backlink_query =
-      from b in Backlink,
-        group_by: b.target_url,
-        select: %{
-          target_url: b.target_url,
-          backlink_count: count(b.id),
-          backlinks_last_imported: max(b.imported_at)
-        }
+      Backlink
+      |> maybe_filter_backlinks(search_pattern)
+      |> group_by([b], b.target_url)
+      |> select([b], %{
+        target_url: b.target_url,
+        backlink_count: count(b.id),
+        backlinks_last_imported: max(b.imported_at)
+      })
 
-    from ls in "url_lifetime_stats",
-      where: ls.account_id == ^account_id and ls.property_url == ^property_url,
-      left_join: pm in subquery(period_query),
-      on: pm.url == ls.url,
-      left_join: bl in subquery(backlink_query),
-      on: bl.target_url == ls.url,
-      left_join: p in Performance,
-      on: p.url == ls.url and p.account_id == ^account_id and p.property_url == ^property_url,
-      select: %{
-        url: ls.url,
-        lifetime_clicks: ls.lifetime_clicks,
-        lifetime_impressions: ls.lifetime_impressions,
-        lifetime_avg_position: ls.avg_position,
-        lifetime_avg_ctr: ls.avg_ctr,
-        first_seen_date: ls.first_seen_date,
-        last_seen_date: ls.last_seen_date,
-        days_with_data: ls.days_with_data,
-        period_clicks: coalesce(pm.period_clicks, 0),
-        period_impressions: coalesce(pm.period_impressions, 0),
-        period_position: coalesce(pm.period_position, 0.0),
-        period_ctr: coalesce(pm.period_ctr, 0.0),
-        backlink_count: coalesce(bl.backlink_count, 0),
-        backlinks_last_imported: bl.backlinks_last_imported,
-        http_status: p.http_status,
-        redirect_url: p.redirect_url,
-        http_checked_at: p.http_checked_at,
-        data_available:
-          fragment(
-            "(? > 0 OR ? > 0)",
-            ls.lifetime_clicks,
-            ls.lifetime_impressions
-          )
-      }
+    from(ls in "url_lifetime_stats")
+    |> where([ls], ls.account_id == ^account_id and ls.property_url == ^property_url)
+    |> join(:left, [ls], pm in subquery(period_query), on: pm.url == ls.url)
+    |> join(:left, [ls, pm], bl in subquery(backlink_query), on: bl.target_url == ls.url)
+    |> join(:left, [ls, pm, bl], p in Performance,
+      on: p.url == ls.url and p.account_id == ^account_id and p.property_url == ^property_url
+    )
+    |> maybe_filter_lifetime_stats(search_pattern)
+    |> select([ls, pm, bl, p], %{
+      url: ls.url,
+      lifetime_clicks: ls.lifetime_clicks,
+      lifetime_impressions: ls.lifetime_impressions,
+      lifetime_avg_position: ls.avg_position,
+      lifetime_avg_ctr: ls.avg_ctr,
+      first_seen_date: ls.first_seen_date,
+      last_seen_date: ls.last_seen_date,
+      days_with_data: ls.days_with_data,
+      period_clicks: coalesce(pm.period_clicks, 0),
+      period_impressions: coalesce(pm.period_impressions, 0),
+      period_position: coalesce(pm.period_position, 0.0),
+      period_ctr: coalesce(pm.period_ctr, 0.0),
+      backlink_count: coalesce(bl.backlink_count, 0),
+      backlinks_last_imported: bl.backlinks_last_imported,
+      http_status: p.http_status,
+      redirect_url: p.redirect_url,
+      http_checked_at: p.http_checked_at,
+      data_available:
+        fragment(
+          "(? > 0 OR ? > 0)",
+          ls.lifetime_clicks,
+          ls.lifetime_impressions
+        )
+    })
   end
 
   defp apply_search_filter(query, nil), do: query
-  defp apply_search_filter(query, ""), do: query
 
-  defp apply_search_filter(query, search) do
-    pattern = "%#{search}%"
-
+  defp apply_search_filter(query, pattern) do
     from row in query,
       where: ilike(row.url, ^pattern)
+  end
+
+  defp build_search_pattern(search) when is_binary(search) do
+    search
+    |> String.trim()
+    |> case do
+      "" -> nil
+      term -> "%#{term}%"
+    end
+  end
+
+  defp build_search_pattern(_), do: nil
+
+  defp maybe_filter_time_series(query, nil), do: query
+
+  defp maybe_filter_time_series(query, pattern) do
+    where(query, [ts], ilike(ts.url, ^pattern))
+  end
+
+  defp maybe_filter_backlinks(query, nil), do: query
+
+  defp maybe_filter_backlinks(query, pattern) do
+    where(query, [b], ilike(b.target_url, ^pattern))
+  end
+
+  defp maybe_filter_lifetime_stats(query, nil), do: query
+
+  defp maybe_filter_lifetime_stats(query, pattern) do
+    where(query, [ls, _pm, _bl, _p], ilike(ls.url, ^pattern))
   end
 
   defp apply_sort(query, sort_by, sort_direction, period_days) do

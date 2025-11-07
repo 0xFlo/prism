@@ -261,13 +261,17 @@
             </.link>
           </div>
           <div class="flex items-center gap-3">
-            <div class="relative">
+            <form
+              id="dashboard-search-form"
+              phx-change="search"
+              phx-submit="search"
+              class="relative"
+            >
               <input
                 id="search-input"
                 type="text"
                 name="search"
                 value={@search}
-                phx-change="search"
                 phx-debounce="300"
                 placeholder="Search URLs..."
                 class="input input-sm input-bordered w-64"
@@ -283,7 +287,7 @@
                   ✕
                 </button>
               <% end %>
-            </div>
+            </form>
             <.link
               href={
                 ~p"/dashboard/export?#{%{view_mode: @view_mode, sort_by: @sort_by, limit: @limit}}"
@@ -302,6 +306,8 @@
           sort_by={@sort_by}
           sort_direction={@sort_direction}
           period_label={@period_label}
+          account_id={@current_account_id}
+          property_id={@current_property_id}
         />
       </div>
       <.pagination

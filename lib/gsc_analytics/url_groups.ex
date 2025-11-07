@@ -47,11 +47,12 @@ defmodule GscAnalytics.UrlGroups do
   @spec resolve(String.t(), map()) :: t()
   def resolve(url, opts \\ %{}) when is_binary(url) do
     account_id = Accounts.resolve_account_id(opts)
+    property_url = Map.get(opts, :property_url)
     decoded_url = URI.decode(url)
 
     redirect_rows =
       decoded_url
-      |> fetch_redirect_chain(account_id)
+      |> fetch_redirect_chain(account_id, property_url)
       |> sanitize_redirect_rows()
 
     redirect_map = build_redirect_map(redirect_rows)
@@ -112,7 +113,7 @@ defmodule GscAnalytics.UrlGroups do
       (redirect_events ++ gsc_migration_events)
       |> Enum.sort_by(&(&1.checked_at || default_epoch()), DateTime)
 
-    {earliest, latest} = time_bounds(urls, account_id)
+    {earliest, latest} = time_bounds(urls, account_id, property_url)
 
     %{
       requested_url: decoded_url,
@@ -134,18 +135,20 @@ defmodule GscAnalytics.UrlGroups do
 
   defp sanitize_redirect_rows(rows), do: rows
 
-  defp fetch_redirect_chain(url, account_id) do
+  defp fetch_redirect_chain(url, account_id, property_url) do
     url
-    |> do_fetch_redirect_chain(account_id, %{}, MapSet.new(), MapSet.new())
+    |> do_fetch_redirect_chain(account_id, property_url, %{}, MapSet.new(), MapSet.new())
     |> case do
       {:ok, rows} -> rows
       :error -> %{}
     end
   end
 
-  defp do_fetch_redirect_chain(nil, _account_id, rows, _processed, _queued), do: {:ok, rows}
+  defp do_fetch_redirect_chain(nil, _account_id, _property_url, rows, _processed, _queued),
+    do: {:ok, rows}
 
-  defp do_fetch_redirect_chain(url, account_id, rows, processed, queued) when is_binary(url) do
+  defp do_fetch_redirect_chain(url, account_id, property_url, rows, processed, queued)
+       when is_binary(url) do
     cond do
       MapSet.member?(processed, url) ->
         {:ok, rows}
@@ -165,16 +168,16 @@ defmodule GscAnalytics.UrlGroups do
           {:ok, rows}
         else
           query =
-            from(p in Performance,
-              where: p.account_id == ^account_id,
-              where: p.url in ^batch or p.redirect_url in ^batch,
-              select: %{
-                url: p.url,
-                redirect_url: p.redirect_url,
-                http_status: p.http_status,
-                http_checked_at: p.http_checked_at
-              }
-            )
+            Performance
+            |> where([p], p.account_id == ^account_id)
+            |> where([p], p.url in ^batch or p.redirect_url in ^batch)
+            |> maybe_filter_property(property_url)
+            |> select([p], %{
+              url: p.url,
+              redirect_url: p.redirect_url,
+              http_status: p.http_status,
+              http_checked_at: p.http_checked_at
+            })
 
           results = Repo.all(query)
 
@@ -199,7 +202,15 @@ defmodule GscAnalytics.UrlGroups do
 
             [next | rest] ->
               queued = Enum.reduce(rest, MapSet.new(), &MapSet.put(&2, &1))
-              do_fetch_redirect_chain(next, account_id, updated_rows, newly_seen, queued)
+
+              do_fetch_redirect_chain(
+                next,
+                account_id,
+                property_url,
+                updated_rows,
+                newly_seen,
+                queued
+              )
           end
         end
     end
@@ -269,17 +280,17 @@ defmodule GscAnalytics.UrlGroups do
     end
   end
 
-  defp time_bounds([], _account_id), do: {nil, nil}
+  defp time_bounds([], _account_id, _property_url), do: {nil, nil}
 
-  defp time_bounds(urls, account_id) do
-    from(ts in TimeSeries,
-      where: ts.account_id == ^account_id,
-      where: ts.url in ^urls,
-      select: %{
-        earliest: min(ts.date),
-        latest: max(ts.date)
-      }
-    )
+  defp time_bounds(urls, account_id, property_url) do
+    TimeSeries
+    |> where([ts], ts.account_id == ^account_id)
+    |> where([ts], ts.url in ^urls)
+    |> maybe_filter_property(property_url)
+    |> select([ts], %{
+      earliest: min(ts.date),
+      latest: max(ts.date)
+    })
     |> Repo.one()
     |> case do
       %{earliest: earliest, latest: latest} -> {earliest, latest}
@@ -299,4 +310,9 @@ defmodule GscAnalytics.UrlGroups do
   end
 
   defp has_fragment?(_), do: false
+
+  defp maybe_filter_property(query, nil), do: query
+
+  defp maybe_filter_property(query, property_url),
+    do: where(query, [row], field(row, :property_url) == ^property_url)
 end
