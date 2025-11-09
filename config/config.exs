@@ -104,12 +104,22 @@ config :gsc_analytics, Oban,
   # Base plugins that run in all environments
   plugins: [
     # Prune completed jobs after 7 days
-    {Oban.Plugins.Pruner, max_age: 60 * 60 * 24 * 7}
+    {Oban.Plugins.Pruner, max_age: 60 * 60 * 24 * 7},
+    # Cron scheduler for recurring jobs
+    {Oban.Plugins.Cron,
+     crontab: [
+       # Prune old SERP snapshots daily at 2 AM
+       {"0 2 * * *", GscAnalytics.Workers.SerpPruningWorker}
+     ]}
   ],
   queues: [
     default: 10,
     # GSC sync runs one job at a time to avoid rate limits
-    gsc_sync: 1
+    gsc_sync: 1,
+    # SERP position checks (3 concurrent)
+    serp_check: 3,
+    # Maintenance tasks (1 at a time)
+    maintenance: 1
   ]
 
 # Import environment specific config. This must remain at the bottom

@@ -2,6 +2,8 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
   use GscAnalyticsWeb, :live_view
 
   alias GscAnalytics.ContentInsights
+  alias GscAnalytics.DataSources.SERP.Core.Persistence, as: SerpPersistence
+  alias GscAnalytics.Workers.SerpCheckWorker
   alias GscAnalyticsWeb.Live.AccountHelpers
   alias GscAnalyticsWeb.Live.DashboardParams
   alias GscAnalyticsWeb.Presenters.ChartDataPresenter
@@ -106,6 +108,9 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
         visible_series: visible_series
       })
 
+    # Load latest SERP snapshot for this URL
+    serp_snapshot = SerpPersistence.latest_for_url(account_id, property_url, url)
+
     {:noreply,
      socket
      |> assign(:current_path, current_path)
@@ -123,7 +128,8 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
      |> assign(:property_label, property_label)
      |> assign(:property_favicon_url, property_favicon_url)
      |> assign(:dashboard_return_path, links.return_path)
-     |> assign(:dashboard_export_path, links.export_path)}
+     |> assign(:dashboard_export_path, links.export_path)
+     |> assign(:serp_snapshot, serp_snapshot)}
   end
 
   def handle_params(_params, uri, socket) do
@@ -215,6 +221,37 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
     {:noreply, push_url_patch(socket, %{property_id: property_id})}
   end
 
+  @impl true
+  def handle_event("check_serp_position", _params, socket) do
+    url = socket.assigns.insights.url
+    property_url = socket.assigns.current_property.property_url
+    account_id = socket.assigns.current_account_id
+
+    # Infer keyword from top query
+    keyword =
+      socket.assigns.insights
+      |> Map.get(:queries, [])
+      |> Enum.sort_by(& &1.clicks, :desc)
+      |> List.first()
+      |> case do
+        nil -> "generic keyword"
+        query -> query.query
+      end
+
+    # Queue Oban job
+    %{
+      "account_id" => account_id,
+      "property_url" => property_url,
+      "url" => url,
+      "keyword" => keyword,
+      "geo" => "us"
+    }
+    |> SerpCheckWorker.new()
+    |> Oban.insert()
+
+    {:noreply, put_flash(socket, :info, "SERP check queued for '#{keyword}'")}
+  end
+
   defp build_url_params(socket, overrides, assign_overrides) do
     socket.assigns
     |> Map.merge(assign_overrides)
@@ -266,5 +303,6 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
     |> assign_new(:backlinks_sort_direction, fn -> "desc" end)
     |> assign_new(:dashboard_return_path, fn -> ~p"/dashboard" end)
     |> assign_new(:dashboard_export_path, fn -> ~p"/dashboard/export" end)
+    |> assign_new(:serp_snapshot, fn -> nil end)
   end
 end
