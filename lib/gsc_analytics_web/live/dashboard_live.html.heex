@@ -110,6 +110,29 @@
         <div class="flex items-center justify-between px-6 py-4">
           <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100">All URLs</h2>
           <div class="flex items-center gap-3">
+            <%!-- View Mode Toggle --%>
+            <div class="join">
+              <button
+                phx-click="change_view_mode"
+                phx-value-view_mode="basic"
+                class={[
+                  "btn btn-sm join-item",
+                  if(@view_mode == "basic", do: "btn-active", else: "btn-ghost")
+                ]}
+              >
+                <.icon name="hero-view-columns" class="h-4 w-4" /> Basic
+              </button>
+              <button
+                phx-click="change_view_mode"
+                phx-value-view_mode="all"
+                class={[
+                  "btn btn-sm join-item",
+                  if(@view_mode == "all", do: "btn-active", else: "btn-ghost")
+                ]}
+              >
+                <.icon name="hero-table-cells" class="h-4 w-4" /> All
+              </button>
+            </div>
             <form
               id="dashboard-search-form"
               phx-change="search"
@@ -148,6 +171,16 @@
           </div>
         </div>
       </div>
+      <%!-- Filter Bar --%>
+      <.filter_bar
+        filter_http_status={@filter_http_status}
+        filter_position={@filter_position}
+        filter_clicks={@filter_clicks}
+        filter_ctr={@filter_ctr}
+        filter_backlinks={@filter_backlinks}
+        filter_redirect={@filter_redirect}
+        filter_first_seen={@filter_first_seen}
+      />
       <div class="px-6 py-4">
         <.url_table
           urls={@urls}

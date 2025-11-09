@@ -112,6 +112,24 @@ defmodule GscAnalyticsWeb.Dashboard.Columns do
         sortable: true
       },
       %{
+        key: :http_status,
+        label: "HTTP Status",
+        visible_in: [:all],
+        getter: & &1.http_status,
+        formatter: &format_http_status/2,
+        align: "text-center",
+        sortable: true
+      },
+      %{
+        key: :backlinks,
+        label: "Backlinks",
+        visible_in: [:all],
+        getter: & &1.backlink_count,
+        formatter: &format_number/2,
+        align: "text-right",
+        sortable: true
+      },
+      %{
         key: :first_seen_date,
         label: "Active Since",
         visible_in: [:all],
@@ -225,6 +243,9 @@ defmodule GscAnalyticsWeb.Dashboard.Columns do
   defp format_date(nil, _), do: "—"
   defp format_date(%Date{} = date, :csv), do: Date.to_string(date)
   defp format_date(%Date{} = date, :html), do: date
+
+  defp format_http_status(nil, _), do: "—"
+  defp format_http_status(status, _) when is_integer(status), do: to_string(status)
 
   defp escape_csv_field(field) when is_binary(field) do
     if String.contains?(field, [",", "\n", "\""]) do

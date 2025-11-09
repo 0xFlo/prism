@@ -9,6 +9,7 @@ defmodule GscAnalytics.ContentInsights.UrlPerformance do
 
   alias GscAnalytics.Accounts
   alias GscAnalytics.Analytics.TimeSeriesAggregator
+  alias GscAnalytics.ContentInsights.Filters
   alias GscAnalytics.Repo
   alias GscAnalytics.Schemas.{Backlink, Performance, TimeSeries}
 
@@ -34,12 +35,24 @@ defmodule GscAnalytics.ContentInsights.UrlPerformance do
     search = Map.get(opts, :search)
     search_pattern = build_search_pattern(search)
 
+    # Extract filter parameters
+    filters = %{
+      http_status: Map.get(opts, :filter_http_status),
+      position: Map.get(opts, :filter_position),
+      clicks: Map.get(opts, :filter_clicks),
+      ctr: Map.get(opts, :filter_ctr),
+      backlinks: Map.get(opts, :filter_backlinks),
+      redirect: Map.get(opts, :filter_redirect),
+      first_seen: Map.get(opts, :filter_first_seen)
+    }
+
     offset = (page - 1) * limit
 
     query =
       account_id
       |> build_hybrid_query(property_url, period_days, search_pattern)
       |> apply_search_filter(search_pattern)
+      |> apply_filters(filters)
 
     total_count = count_urls(query)
 
@@ -461,4 +474,18 @@ defmodule GscAnalytics.ContentInsights.UrlPerformance do
   defp normalize_sort_direction("desc"), do: :desc
   defp normalize_sort_direction(:desc), do: :desc
   defp normalize_sort_direction(_), do: :desc
+
+  # Apply all filters from the filters map to the query.
+  # Uses the composable Filters module to apply each filter in sequence.
+  # All filter functions are nil-safe (no-op when filter value is nil).
+  defp apply_filters(query, filters) do
+    query
+    |> Filters.apply_http_status(filters.http_status)
+    |> Filters.apply_position_range(filters.position)
+    |> Filters.apply_clicks_threshold(filters.clicks)
+    |> Filters.apply_ctr_range(filters.ctr)
+    |> Filters.apply_backlink_count(filters.backlinks)
+    |> Filters.apply_has_redirect(filters.redirect)
+    |> Filters.apply_first_seen_after(filters.first_seen)
+  end
 end

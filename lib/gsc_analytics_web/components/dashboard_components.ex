@@ -16,7 +16,7 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
   @doc """
   Renders a URL in breadcrumb-style hierarchical format.
 
-  Displays URLs as: `domain / path1 / ... / page-name`
+  Displays URLs as: `path1 / ... / page-name` (domain omitted to save space)
 
   ## Attributes
   - `url` - The full URL to display (required)
@@ -39,39 +39,51 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
     assigns =
       assigns
       |> assign(:breadcrumb, breadcrumb)
+      |> assign(:domain, breadcrumb.domain)
       |> assign(:has_path, breadcrumb.segments != [])
 
     ~H"""
-    <div class="flex items-center gap-1 font-mono text-xs sm:text-sm overflow-hidden">
-      <!-- Domain (always visible, muted) -->
-      <span class="text-slate-500 dark:text-slate-400 shrink-0">
-        {@breadcrumb.domain}
-      </span>
-
+    <div class="flex items-center gap-1 text-xs sm:text-sm overflow-hidden min-w-0">
       <%= if @has_path do %>
         <!-- Path segments with separators -->
-        <%= for segment <- @breadcrumb.segments do %>
-          <span class="text-slate-400 dark:text-slate-500 shrink-0">/</span>
+        <%= for {segment, index} <- Enum.with_index(@breadcrumb.segments) do %>
+          <%= if index > 0 do %>
+            <span class="text-slate-400 dark:text-slate-500 shrink-0">/</span>
+          <% end %>
 
           <%= case segment.type do %>
             <% :ellipsis -> %>
               <span class="text-slate-400 dark:text-slate-500 shrink-0">...</span>
+            <% :domain -> %>
+              <!-- Domain prefix for single-segment URLs -->
+              <span class="text-slate-500 dark:text-slate-400 shrink-0">
+                {@domain}
+              </span>
             <% :last -> %>
-              <!-- Last segment (page name) - emphasized and clickable -->
+              <!-- Last segment (page name) - emphasized, clickable, truncates if too long -->
               <a
                 href={@link_to || ~p"/dashboard/url?url=#{@url}"}
-                class="link link-primary font-semibold truncate hover:underline"
+                class="link link-primary font-semibold hover:underline truncate max-w-xs"
                 title={segment.text}
               >
                 {segment.text}
               </a>
             <% :path -> %>
-              <!-- Middle path segment -->
-              <span class="text-slate-600 dark:text-slate-300 truncate" title={segment.text}>
+              <!-- Middle path segment - show fully or hide via ellipsis -->
+              <span class="text-slate-600 dark:text-slate-300 shrink-0" title={segment.text}>
                 {segment.text}
               </span>
           <% end %>
         <% end %>
+      <% else %>
+        <!-- No path - show domain only (fallback for domain-only URLs like homepage) -->
+        <a
+          href={@link_to || ~p"/dashboard/url?url=#{@url}"}
+          class="link link-primary font-semibold hover:underline min-w-0 overflow-hidden text-ellipsis whitespace-nowrap"
+          title={@breadcrumb.domain}
+        >
+          {@breadcrumb.domain}
+        </a>
       <% end %>
     </div>
     """
@@ -145,27 +157,30 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
             </tr>
           <% else %>
             <tr :for={url <- @urls} :key={url.url} class="hover">
-              <!-- URL column -->
-              <td class={"#{if @view_mode == "all", do: "max-w-sm", else: "max-w-md"}"}>
-                <div class="tooltip tooltip-right" data-tip={url.url}>
+              <!-- URL column with responsive width -->
+              <td class="max-w-sm sm:max-w-md lg:max-w-xl xl:max-w-2xl">
+                <div class="tooltip tooltip-bottom w-full" data-tip={url.url}>
                   <% params =
                     []
                     |> maybe_put_param(:url, url.url)
                     |> maybe_put_param(:account_id, @account_id)
                     |> maybe_put_param(:property_id, @property_id) %>
-                  <a
-                    href={~p"/dashboard/url?#{params}"}
-                    class={"link link-primary font-mono #{if @view_mode == "all", do: "text-xs", else: "text-sm"}"}
-                  >
-                    {truncate_url(url.url, if(@view_mode == "all", do: 40, else: 60))}
-                  </a>
+                  <.url_breadcrumb
+                    url={url.url}
+                    link_to={~p"/dashboard/url?#{params}"}
+                    max_segments={if @view_mode == "all", do: 2, else: 3}
+                  />
                 </div>
                 <%= if url.redirect_url do %>
-                  <div class="text-xs text-gray-500 mt-1 font-mono flex items-center gap-1">
-                    <span>→</span>
-                    <span class="truncate" title={url.redirect_url}>
-                      {truncate_url(url.redirect_url, if(@view_mode == "all", do: 35, else: 50))}
-                    </span>
+                  <div class="mt-1 flex items-center gap-1">
+                    <span class="text-xs text-slate-400 dark:text-slate-500 shrink-0">→</span>
+                    <div class="tooltip tooltip-bottom flex-1" data-tip={url.redirect_url}>
+                      <.url_breadcrumb
+                        url={url.redirect_url}
+                        link_to={~p"/dashboard/url?#{params}"}
+                        max_segments={if @view_mode == "all", do: 2, else: 2}
+                      />
+                    </div>
                   </div>
                 <% end %>
               </td>
@@ -219,9 +234,18 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
                   <% end %>
                 </td>
               <% end %>
-              <!-- Clicks -->
-              <td class="text-right font-semibold text-green-700">
-                {format_number(url.selected_clicks || 0)}
+              <!-- Clicks with trend indicator -->
+              <td class="text-right">
+                <div class="flex items-center justify-end gap-1.5">
+                  <span class="font-semibold text-green-700 dark:text-green-600">
+                    {format_number(url.selected_clicks || 0)}
+                  </span>
+                  <%= if url.wow_growth_last4w && url.wow_growth_last4w != 0 do %>
+                    <span class={"text-xs font-medium #{trend_color(url.wow_growth_last4w)}"}>
+                      {trend_arrow(url.wow_growth_last4w)}{abs(Float.round(url.wow_growth_last4w, 1))}%
+                    </span>
+                  <% end %>
+                </div>
               </td>
               <!-- Impressions (only in 'all' mode) -->
               <%= if column_visible?(:impressions, @view_mode) do %>
@@ -1243,5 +1267,193 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
       {value, "all"} when value in ["all", 10_000] -> true
       {value, opt} -> to_string(value) == to_string(opt)
     end
+  end
+
+  @doc """
+  Renders a comprehensive filter bar with dropdown selects for all filter categories.
+
+  ## Attributes
+  - `filter_http_status` - Current HTTP status filter value
+  - `filter_position` - Current position range filter value
+  - `filter_clicks` - Current clicks threshold filter value
+  - `filter_ctr` - Current CTR range filter value
+  - `filter_backlinks` - Current backlink count filter value
+  - `filter_redirect` - Current redirect filter value
+  - `filter_first_seen` - Current first seen date filter value
+  - `active_filters_count` - Number of currently active filters (for badge display)
+  """
+  attr :filter_http_status, :string, default: nil
+  attr :filter_position, :string, default: nil
+  attr :filter_clicks, :string, default: nil
+  attr :filter_ctr, :string, default: nil
+  attr :filter_backlinks, :string, default: nil
+  attr :filter_redirect, :string, default: nil
+  attr :filter_first_seen, :any, default: nil
+
+  def filter_bar(assigns) do
+    # Count active filters for badge
+    active_count =
+      [
+        assigns.filter_http_status,
+        assigns.filter_position,
+        assigns.filter_clicks,
+        assigns.filter_ctr,
+        assigns.filter_backlinks,
+        assigns.filter_redirect,
+        assigns.filter_first_seen
+      ]
+      |> Enum.reject(&is_nil/1)
+      |> length()
+
+    assigns = assign(assigns, :active_filters_count, active_count)
+
+    ~H"""
+    <div class="border-b border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-800/50">
+      <div class="px-6 py-4">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+          <div class="flex items-center gap-2">
+            <.icon name="hero-funnel" class="h-5 w-5 text-slate-600 dark:text-slate-400" />
+            <h3 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Filters</h3>
+            <%= if @active_filters_count > 0 do %>
+              <span class="badge badge-primary badge-sm">{@active_filters_count}</span>
+            <% end %>
+          </div>
+
+          <%= if @active_filters_count > 0 do %>
+            <button
+              phx-click="clear_filters"
+              class="btn btn-ghost btn-sm gap-2 text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
+            >
+              <.icon name="hero-x-mark" class="h-4 w-4" /> Clear all filters
+            </button>
+          <% end %>
+        </div>
+
+        <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <%!-- HTTP Status Filter --%>
+          <div>
+            <label class="label label-text text-xs">HTTP Status</label>
+            <select
+              phx-change="filter_http_status"
+              name="http_status"
+              class="select select-sm select-bordered w-full"
+            >
+              <option value="" selected={is_nil(@filter_http_status)}>All statuses</option>
+              <option value="ok" selected={@filter_http_status == "ok"}>200 OK</option>
+              <option value="redirect" selected={@filter_http_status == "redirect"}>
+                3xx Redirect
+              </option>
+              <option value="broken" selected={@filter_http_status == "broken"}>
+                4xx/5xx Broken
+              </option>
+              <option value="unchecked" selected={@filter_http_status == "unchecked"}>
+                Unchecked
+              </option>
+            </select>
+          </div>
+          <%!-- Position Range Filter --%>
+          <div>
+            <label class="label label-text text-xs">Position Range</label>
+            <select
+              phx-change="filter_position"
+              name="position"
+              class="select select-sm select-bordered w-full"
+            >
+              <option value="" selected={is_nil(@filter_position)}>All positions</option>
+              <option value="top3" selected={@filter_position == "top3"}>Top 3 (Podium)</option>
+              <option value="top10" selected={@filter_position == "top10"}>
+                Top 10 (Page 1)
+              </option>
+              <option value="page2" selected={@filter_position == "page2"}>
+                Page 2 (11-20)
+              </option>
+              <option value="poor" selected={@filter_position == "poor"}>Poor (>20)</option>
+              <option value="unranked" selected={@filter_position == "unranked"}>
+                Unranked
+              </option>
+            </select>
+          </div>
+          <%!-- Clicks Threshold Filter --%>
+          <div>
+            <label class="label label-text text-xs">Clicks</label>
+            <select
+              phx-change="filter_clicks"
+              name="clicks"
+              class="select select-sm select-bordered w-full"
+            >
+              <option value="" selected={is_nil(@filter_clicks)}>All click counts</option>
+              <option value="10+" selected={@filter_clicks == "10+"}>10+ clicks</option>
+              <option value="100+" selected={@filter_clicks == "100+"}>100+ clicks</option>
+              <option value="1000+" selected={@filter_clicks == "1000+"}>
+                1000+ clicks (High performers)
+              </option>
+              <option value="none" selected={@filter_clicks == "none"}>
+                No clicks (Impressions only)
+              </option>
+            </select>
+          </div>
+          <%!-- CTR Range Filter --%>
+          <div>
+            <label class="label label-text text-xs">CTR Performance</label>
+            <select phx-change="filter_ctr" name="ctr" class="select select-sm select-bordered w-full">
+              <option value="" selected={is_nil(@filter_ctr)}>All CTR ranges</option>
+              <option value="high" selected={@filter_ctr == "high"}>High (>5%)</option>
+              <option value="good" selected={@filter_ctr == "good"}>Good (3-5%)</option>
+              <option value="average" selected={@filter_ctr == "average"}>
+                Average (1-3%)
+              </option>
+              <option value="low" selected={@filter_ctr == "low"}>
+                Low (&lt;1%, needs optimization)
+              </option>
+            </select>
+          </div>
+          <%!-- Backlinks Filter --%>
+          <div>
+            <label class="label label-text text-xs">Backlinks</label>
+            <select
+              phx-change="filter_backlinks"
+              name="backlinks"
+              class="select select-sm select-bordered w-full"
+            >
+              <option value="" selected={is_nil(@filter_backlinks)}>All backlink counts</option>
+              <option value="any" selected={@filter_backlinks == "any"}>Has backlinks</option>
+              <option value="none" selected={@filter_backlinks == "none"}>No backlinks</option>
+              <option value="10+" selected={@filter_backlinks == "10+"}>10+ backlinks</option>
+              <option value="100+" selected={@filter_backlinks == "100+"}>
+                100+ backlinks (Authority)
+              </option>
+            </select>
+          </div>
+          <%!-- Redirect Filter --%>
+          <div>
+            <label class="label label-text text-xs">Redirects</label>
+            <select
+              phx-change="filter_redirect"
+              name="redirect"
+              class="select select-sm select-bordered w-full"
+            >
+              <option value="" selected={is_nil(@filter_redirect)}>All redirect states</option>
+              <option value="yes" selected={@filter_redirect == "yes"}>Has redirect</option>
+              <option value="no" selected={@filter_redirect == "no"}>No redirect</option>
+            </select>
+          </div>
+          <%!-- First Seen Date Filter --%>
+          <div>
+            <label class="label label-text text-xs">First Seen</label>
+            <select
+              phx-change="filter_first_seen"
+              name="first_seen"
+              class="select select-sm select-bordered w-full"
+            >
+              <option value="" selected={is_nil(@filter_first_seen)}>All dates</option>
+              <option value="7d" selected={@filter_first_seen == "7d"}>Last 7 days</option>
+              <option value="30d" selected={@filter_first_seen == "30d"}>Last 30 days</option>
+              <option value="90d" selected={@filter_first_seen == "90d"}>Last 90 days</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+    """
   end
 end

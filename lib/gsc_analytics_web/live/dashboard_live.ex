@@ -80,6 +80,15 @@ defmodule GscAnalyticsWeb.DashboardLive do
     # Parse visible series for chart (default to clicks + impressions)
     visible_series = DashboardParams.parse_visible_series(params["series"])
 
+    # Parse filter parameters using safe whitelist validation
+    filter_http_status = DashboardParams.parse_http_status(params["http_status"])
+    filter_position = DashboardParams.parse_position_range(params["position"])
+    filter_clicks = DashboardParams.parse_clicks_threshold(params["clicks"])
+    filter_ctr = DashboardParams.parse_ctr_range(params["ctr"])
+    filter_backlinks = DashboardParams.parse_backlink_count(params["backlinks"])
+    filter_redirect = DashboardParams.parse_has_redirect(params["redirect"])
+    filter_first_seen = DashboardParams.parse_first_seen_after(params["first_seen"])
+
     # Extract path from URI for active nav detection
     current_path = URI.parse(uri).path || "/"
 
@@ -107,7 +116,14 @@ defmodule GscAnalyticsWeb.DashboardLive do
         sort_direction: sort_direction,
         search: search,
         period_days: period_days,
-        chart_view: chart_view
+        chart_view: chart_view,
+        filter_http_status: filter_http_status,
+        filter_position: filter_position,
+        filter_clicks: filter_clicks,
+        filter_ctr: filter_ctr,
+        filter_backlinks: filter_backlinks,
+        filter_redirect: filter_redirect,
+        filter_first_seen: filter_first_seen
       })
 
     {:noreply,
@@ -142,6 +158,13 @@ defmodule GscAnalyticsWeb.DashboardLive do
          else: "GSC Analytics Dashboard"
        )
      )
+     |> assign(:filter_http_status, filter_http_status)
+     |> assign(:filter_position, filter_position)
+     |> assign(:filter_clicks, filter_clicks)
+     |> assign(:filter_ctr, filter_ctr)
+     |> assign(:filter_backlinks, filter_backlinks)
+     |> assign(:filter_redirect, filter_redirect)
+     |> assign(:filter_first_seen, filter_first_seen)
      |> assign_display_labels()
      |> assign_mom_indicators()
      |> assign_date_labels()}
@@ -242,6 +265,56 @@ defmodule GscAnalyticsWeb.DashboardLive do
   end
 
   @impl true
+  def handle_event("filter_http_status", %{"http_status" => value}, socket) do
+    {:noreply, push_dashboard_patch(socket, %{http_status: value, page: 1})}
+  end
+
+  @impl true
+  def handle_event("filter_position", %{"position" => value}, socket) do
+    {:noreply, push_dashboard_patch(socket, %{position: value, page: 1})}
+  end
+
+  @impl true
+  def handle_event("filter_clicks", %{"clicks" => value}, socket) do
+    {:noreply, push_dashboard_patch(socket, %{clicks: value, page: 1})}
+  end
+
+  @impl true
+  def handle_event("filter_ctr", %{"ctr" => value}, socket) do
+    {:noreply, push_dashboard_patch(socket, %{ctr: value, page: 1})}
+  end
+
+  @impl true
+  def handle_event("filter_backlinks", %{"backlinks" => value}, socket) do
+    {:noreply, push_dashboard_patch(socket, %{backlinks: value, page: 1})}
+  end
+
+  @impl true
+  def handle_event("filter_redirect", %{"redirect" => value}, socket) do
+    {:noreply, push_dashboard_patch(socket, %{redirect: value, page: 1})}
+  end
+
+  @impl true
+  def handle_event("filter_first_seen", %{"first_seen" => value}, socket) do
+    {:noreply, push_dashboard_patch(socket, %{first_seen: value, page: 1})}
+  end
+
+  @impl true
+  def handle_event("clear_filters", _params, socket) do
+    {:noreply,
+     push_dashboard_patch(socket, %{
+       http_status: nil,
+       position: nil,
+       clicks: nil,
+       ctr: nil,
+       backlinks: nil,
+       redirect: nil,
+       first_seen: nil,
+       page: 1
+     })}
+  end
+
+  @impl true
   def handle_event("goto_page", %{"page" => page}, socket) do
     # Navigate to specific page
     page_num = DashboardUtils.normalize_page(page)
@@ -329,7 +402,14 @@ defmodule GscAnalyticsWeb.DashboardLive do
         search: opts.search,
         period_days: opts.period_days,
         account_id: account_id,
-        property_url: property_url
+        property_url: property_url,
+        filter_http_status: opts[:filter_http_status],
+        filter_position: opts[:filter_position],
+        filter_clicks: opts[:filter_clicks],
+        filter_ctr: opts[:filter_ctr],
+        filter_backlinks: opts[:filter_backlinks],
+        filter_redirect: opts[:filter_redirect],
+        filter_first_seen: opts[:filter_first_seen]
       })
 
     stats = SummaryStats.fetch(%{account_id: account_id, property_url: property_url})

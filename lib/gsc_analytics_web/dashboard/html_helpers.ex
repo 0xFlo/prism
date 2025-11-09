@@ -164,23 +164,34 @@ defmodule GscAnalyticsWeb.Dashboard.HTMLHelpers do
 
   # Build full segments list without collapsing
   defp build_segments_list(path_parts, query, preserve_query) do
-    path_parts
-    |> Enum.with_index()
-    |> Enum.map(fn {segment, index} ->
-      is_last = index == length(path_parts) - 1
+    segments =
+      path_parts
+      |> Enum.with_index()
+      |> Enum.map(fn {segment, index} ->
+        is_last = index == length(path_parts) - 1
 
-      if is_last do
-        build_last_segment(segment, query, preserve_query)
-      else
-        %{text: segment, type: :path}
-      end
-    end)
+        if is_last do
+          build_last_segment(segment, query, preserve_query)
+        else
+          %{text: segment, type: :path}
+        end
+      end)
+
+    # For single-segment URLs, prepend domain placeholder to show hierarchy
+    # This makes "about-us" display as "domain / about-us" instead of just "about-us"
+    if length(path_parts) == 1 do
+      [%{text: :domain_placeholder, type: :domain} | segments]
+    else
+      segments
+    end
   end
 
   # Build the last segment, optionally including query params
   defp build_last_segment(segment, query, true = _preserve_query) when not is_nil(query) do
     # Truncate query if too long
-    query_display = if String.length(query) > 20, do: String.slice(query, 0, 20) <> "...", else: query
+    query_display =
+      if String.length(query) > 20, do: String.slice(query, 0, 20) <> "...", else: query
+
     %{text: "#{segment}?#{query_display}", type: :last}
   end
 
@@ -189,21 +200,40 @@ defmodule GscAnalyticsWeb.Dashboard.HTMLHelpers do
   end
 
   @doc """
-  Get badge color based on value
+  Get badge color based on value with realistic thresholds.
+
+  ## CTR Thresholds (based on industry averages):
+  - Excellent (>3%): Green - Top 10% performers
+  - Good (1.5-3%): Blue - Above average
+  - Average (0.8-1.5%): Orange - Typical performance
+  - Needs attention (<0.8%): Red - Below average
+
+  ## Position Thresholds:
+  - Excellent (1-5): Green - First page, top results
+  - Good (6-15): Blue - First page visibility
+  - Average (16-30): Orange - Second/third page
+  - Needs improvement (>30): Red - Low visibility
+
+  ## Growth Thresholds:
+  - Strong growth (>10%): Green
+  - Moderate change (-10% to +10%): Orange
+  - Declining (< -10%): Red
   """
   def get_badge_color(value, type) do
     case type do
       :ctr ->
         cond do
-          value > 5.0 -> "badge-success"
-          value > 2.0 -> "badge-warning"
+          value > 3.0 -> "badge-success"
+          value > 1.5 -> "badge-info"
+          value > 0.8 -> "badge-warning"
           true -> "badge-error"
         end
 
       :position ->
         cond do
-          value <= 3 -> "badge-success"
-          value <= 10 -> "badge-warning"
+          value <= 5 -> "badge-success"
+          value <= 15 -> "badge-info"
+          value <= 30 -> "badge-warning"
           true -> "badge-error"
         end
 
@@ -218,6 +248,20 @@ defmodule GscAnalyticsWeb.Dashboard.HTMLHelpers do
         "badge-ghost"
     end
   end
+
+  @doc """
+  Get trend arrow indicator for positive/negative/neutral changes.
+  """
+  def trend_arrow(value) when value > 0, do: "↑"
+  def trend_arrow(value) when value < 0, do: "↓"
+  def trend_arrow(_), do: "→"
+
+  @doc """
+  Get color class for trend indicators based on magnitude.
+  """
+  def trend_color(value) when value > 5, do: "text-green-600 dark:text-green-400"
+  def trend_color(value) when value < -5, do: "text-red-600 dark:text-red-400"
+  def trend_color(_), do: "text-slate-400 dark:text-slate-500"
 
   @doc """
   Format date for display
