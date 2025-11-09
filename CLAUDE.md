@@ -80,7 +80,32 @@ GscAnalytics.DataSources.GSC.Core.Sync.sync_full_history("sc-domain:scrapfly.io"
 GscAnalytics.DataSources.GSC.Core.Client.list_sites(1)
 ```
 
-### URL Health Checking (HTTP Status)
+### URL Health Checking (HTTP Status) - FULLY AUTOMATED
+
+The application includes a **sophisticated, fully automated HTTP status checking system** that runs in the background. Manual intervention is rarely needed.
+
+#### Automatic Triggers (No Manual Action Required)
+
+**1. During GSC Sync** - New URLs automatically queued
+- Every time URLs are synced from Google Search Console, they're automatically queued for HTTP status checking
+- Triggered via `GscAnalytics.DataSources.GSC.Core.Persistence.enqueue_http_status_checks/3`
+- Smart backpressure: Spreads checks over time to avoid queue overload
+  - Small batches (<500 URLs): Immediate, high priority
+  - Large batches (>5000 URLs): 30-minute spread, lower priority
+
+**2. Daily Re-checks** - Automatic via HttpStatusRecheckWorker
+- Runs every day at **3 AM UTC** (cron: `"0 3 * * *"`)
+- Multi-tenant: Processes all active workspaces automatically
+- Always enabled (independent of `ENABLE_AUTO_SYNC` flag)
+
+**3. Smart Re-check Intervals** - Based on previous status
+- Broken links (4xx/5xx): Re-checked every **3 days**
+- Redirects (3xx): Re-checked every **7 days**
+- Healthy (2xx): Re-checked every **30 days**
+- Never checked: Checked within **1-30 minutes** (staggered)
+- Recently checked (<7 days): Skipped to save resources
+
+#### Manual Checks (Optional - For Immediate Verification)
 
 ```elixir
 # In IEx console (iex -S mix phx.server):
@@ -89,26 +114,69 @@ GscAnalytics.DataSources.GSC.Core.Client.list_sites(1)
 GscAnalytics.Crawler.check_url("https://example.com")
 
 # Check all stale URLs (unchecked or >7 days old)
-GscAnalytics.Crawler.check_all(account_id: 1, filter: :stale)
+GscAnalytics.Crawler.check_all(account_id: 5, filter: :stale)
 
 # Check all broken links (4xx/5xx)
-GscAnalytics.Crawler.check_all(account_id: 1, filter: :broken)
+GscAnalytics.Crawler.check_all(account_id: 5, filter: :broken)
 
 # Check all redirected URLs (3xx)
-GscAnalytics.Crawler.check_all(account_id: 1, filter: :redirected)
+GscAnalytics.Crawler.check_all(account_id: 5, filter: :redirected)
+
+# Check all URLs (use with caution on large datasets)
+GscAnalytics.Crawler.check_all(account_id: 5, filter: :all)
 ```
 
-**⚠️ Important Workflow Dependency:**
-The HTTP status checker requires URLs to be synced from Google Search Console first. URLs are only available for HTTP checking when:
-1. They have been synced via `Core.Sync` operations (above)
-2. The `data_available` field is set to `true` (meaning GSC returned performance data)
+#### Important Workflow Dependency
+
+**The HTTP status checker requires URLs to be synced from Google Search Console first.**
+
+URLs are only available for HTTP checking when:
+1. They have been synced via `Core.Sync` operations (see GSC Sync Operations above)
+2. The `data_available` field is set to `true` (meaning GSC returned performance data with search traffic)
+
+**Why `data_available` matters:**
+- The crawler intentionally filters to URLs with `data_available == true`
+- This focuses on SEO-relevant URLs (those with actual search traffic)
+- URLs without search traffic are not checked to optimize resource usage
 
 **Recommended Workflow:**
 1. **First**: Run a GSC sync to populate the database with URLs that have search traffic
-2. **Then**: Run HTTP status checks to validate URL health
-3. **Regularly**: Schedule both syncs and health checks to maintain data freshness
+2. **Automatic**: HTTP checks run automatically in the background (no action needed)
+3. **Optional**: Use manual checks for immediate verification of specific URL groups
 
-The crawler intentionally filters to URLs with `data_available == true` because it focuses on SEO-relevant URLs (those with actual search traffic). URLs without search traffic are not checked to optimize resource usage.
+#### Architecture
+
+**Workers:**
+- `HttpStatusCheckWorker` - Processes URL batches (50 URLs/job, 10 concurrent requests)
+- `HttpStatusRecheckWorker` - Scheduled daily re-checks (3 AM UTC)
+
+**Database Fields:**
+- `http_status` - HTTP status code (200, 404, 500, etc.)
+- `http_checked_at` - Timestamp of last check
+- `redirect_url` - Final destination after redirects
+- `http_redirect_chain` - Complete redirect path (for debugging)
+
+**Optimized Indexes:**
+- Composite index: `[:account_id, :property_url, :http_checked_at, :http_status]`
+- Partial index (never checked): `[:account_id, :property_url]` WHERE `http_status IS NULL`
+- Partial index (broken links): `[:account_id, :http_checked_at]` WHERE `http_status >= 400`
+
+#### Troubleshooting
+
+**"Processing 0 URLs" in logs:**
+1. Check if GSC sync has run: `GscAnalytics.Repo.aggregate(GscAnalytics.Schemas.Performance, :count)`
+2. Verify `data_available` flags: Check debug logs for "URL check filter" messages
+3. Confirm property URL matches: Ensure property_url in database matches the one being queried
+4. Run a GSC sync if no data exists: Visit `/dashboard/sync` or use IEx commands above
+
+**Check logs for debugging:**
+```bash
+# Watch live HTTP check activity
+tail -f logs/gsc_audit.log | grep http_check
+
+# View recent check statistics
+grep "http_check" logs/gsc_audit.log | tail -20
+```
 
 ## Architecture Overview
 

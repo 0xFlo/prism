@@ -131,6 +131,9 @@ defmodule GscAnalytics.Crawler.BatchProcessor do
 
   ## Options
     - `:account_id` - Account ID (default: 1)
+    - `:property_url` - Optional property URL to scope URLs
+    - `:property_id` - Optional property identifier (stored as metadata)
+    - `:property_label` - Optional human label for UI metadata
     - `:filter` - Filter to apply (:all, :stale, :broken, :redirected)
     - `:concurrency` - Number of concurrent requests (default: #{@default_concurrency})
     - `:delay_ms` - Delay between requests in milliseconds (default: #{@default_delay_ms})
@@ -150,14 +153,22 @@ defmodule GscAnalytics.Crawler.BatchProcessor do
   def process_all(opts \\ []) do
     account_id = Keyword.get(opts, :account_id, 1)
     filter = Keyword.get(opts, :filter, :stale)
+    property_url = Keyword.get(opts, :property_url)
+    property_id = Keyword.get(opts, :property_id)
+    property_label = Keyword.get(opts, :property_label)
 
     # Fetch URLs to check
-    urls = fetch_urls_to_check(account_id, filter)
+    urls = fetch_urls_to_check(account_id, filter, property_url)
 
     Logger.info("Processing #{length(urls)} URLs for account #{account_id} (filter: #{filter})")
 
     # Start progress tracking
-    ProgressTracker.start_check(length(urls))
+    ProgressTracker.start_check(length(urls), %{
+      account_id: account_id,
+      property_id: property_id,
+      property_url: property_url,
+      property_label: property_label
+    })
 
     # Process all URLs concurrently (Task.async_stream handles concurrency limits)
     {:ok, results} = process_batch(urls, opts)
@@ -173,7 +184,24 @@ defmodule GscAnalytics.Crawler.BatchProcessor do
   # Private - URL Fetching
   # ============================================================================
 
-  defp fetch_urls_to_check(account_id, filter) do
+  defp fetch_urls_to_check(account_id, filter, property_url) do
+    # Debug: Log counts with a single optimized query
+    counts =
+      from(p in Performance,
+        where: p.account_id == ^account_id,
+        select: %{
+          total: count(p.id),
+          available: fragment("COUNT(*) FILTER (WHERE ? = true)", p.data_available)
+        }
+      )
+      |> filter_by_property(property_url)
+      |> Repo.one()
+
+    Logger.debug(
+      "URL check filter - account: #{account_id}, property: #{inspect(property_url)}, " <>
+        "total_rows: #{counts.total}, data_available: #{counts.available}, filter: #{filter}"
+    )
+
     base_query =
       from(p in Performance,
         where: p.account_id == ^account_id,
@@ -181,6 +209,7 @@ defmodule GscAnalytics.Crawler.BatchProcessor do
         order_by: [desc: p.clicks],
         select: p.url
       )
+      |> filter_by_property(property_url)
 
     query =
       case filter do
@@ -200,7 +229,11 @@ defmodule GscAnalytics.Crawler.BatchProcessor do
           base_query |> Performance.needs_http_check(7)
       end
 
-    Repo.all(query)
+    urls = Repo.all(query)
+
+    Logger.debug("Fetched #{length(urls)} URLs matching filter criteria")
+
+    urls
   end
 
   # ============================================================================
@@ -252,5 +285,11 @@ defmodule GscAnalytics.Crawler.BatchProcessor do
           stats
       end
     end)
+  end
+
+  defp filter_by_property(query, nil), do: query
+
+  defp filter_by_property(query, property_url) when is_binary(property_url) do
+    where(query, [p], p.property_url == ^property_url)
   end
 end

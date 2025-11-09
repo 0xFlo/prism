@@ -4,30 +4,134 @@
   current_account={@current_account}
   current_account_id={@current_account_id}
   account_options={@account_options}
+  current_property={@current_property}
+  current_property_id={@current_property_id}
+  property_options={@property_options}
 >
   <div class="mx-auto w-full max-w-7xl px-6 py-10">
-    <div class="flex flex-wrap items-end justify-between gap-6">
+    <div class="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
       <div class="space-y-2">
         <p class="text-sm font-medium uppercase tracking-widest text-slate-500">
           Health Monitoring
         </p>
         <h1 class="text-4xl font-semibold text-slate-900">URL Status Checker</h1>
         <p class="text-base text-slate-500">
-          Check HTTP status codes for all URLs and identify broken links or redirects.
+          Automatically monitors HTTP status codes for all synced URLs. Detects broken links, redirects, and server errors.
         </p>
       </div>
-      <.link
-        navigate={~p"/dashboard"}
-        class="btn btn-ghost gap-2 text-slate-600 hover:text-slate-900"
-      >
-        <.icon name="hero-arrow-left" class="h-5 w-5" /> Back to dashboard
-      </.link>
+      <div class="w-full space-y-4 lg:max-w-sm">
+        <div class="rounded-2xl border border-slate-200 bg-white/80 p-5 shadow-sm backdrop-blur">
+          <div class="flex items-start gap-3">
+            <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+              <.icon name="hero-globe-alt" class="h-5 w-5" />
+            </div>
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                Property switcher
+              </p>
+              <p class="text-sm text-slate-600">
+                Pick which Search Console property to crawl.
+              </p>
+            </div>
+          </div>
+          <div class="mt-4">
+            <.property_selector
+              property_options={@property_options || []}
+              property_label={@property_label}
+              property_favicon_url={@property_favicon_url}
+              current_property_id={@current_property_id}
+              empty_message="No properties available. Visit Settings to add one."
+            />
+          </div>
+          <p
+            :if={is_nil(@current_property)}
+            class="mt-3 flex items-center gap-2 text-xs text-rose-600"
+          >
+            <.icon name="hero-exclamation-triangle" class="h-4 w-4" />
+            Select or add a property to enable the crawler.
+          </p>
+          <div
+            :if={@current_property}
+            class="mt-4 inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-600"
+          >
+            <span class="uppercase tracking-widest text-slate-400">Active</span>
+            <%= if @property_favicon_url do %>
+              <img src={@property_favicon_url} alt="" class="h-4 w-4 rounded-full" />
+            <% else %>
+              <.icon name="hero-globe-americas" class="h-4 w-4" />
+            <% end %>
+            <span class="font-medium text-slate-700">
+              {@property_label || "Unnamed property"}
+            </span>
+          </div>
+        </div>
+        <.link
+          navigate={~p"/dashboard"}
+          class="btn btn-ghost w-full justify-center gap-2 text-slate-600 hover:text-slate-900"
+        >
+          <.icon name="hero-arrow-left" class="h-5 w-5" /> Back to dashboard
+        </.link>
+      </div>
     </div>
 
+    <%!-- Background Activity Badge --%>
+    <%= if @queue_stats.queued > 0 || @queue_stats.executing > 0 do %>
+      <div class="mt-6 rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50 to-sky-50 p-4 shadow-sm">
+        <div class="flex items-center justify-between gap-4">
+          <div class="flex items-center gap-3">
+            <div class="relative">
+              <.icon name="hero-arrow-path" class="h-5 w-5 text-blue-600 animate-spin" />
+              <span class="absolute -right-1 -top-1 flex h-3 w-3">
+                <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75">
+                </span>
+                <span class="relative inline-flex h-3 w-3 rounded-full bg-blue-500"></span>
+              </span>
+            </div>
+            <div>
+              <p class="text-sm font-semibold text-blue-900">
+                Background checks active
+              </p>
+              <p class="text-xs text-blue-700">
+                <%= if @queue_stats.executing > 0 do %>
+                  <%= @queue_stats.executing %> running · <%= @queue_stats.queued %> queued
+                <% else %>
+                  <%= @queue_stats.queued %> queued
+                <% end %>
+                <%= if @queue_stats.scheduled > 0 do %>
+                  · <%= @queue_stats.scheduled %> scheduled
+                <% end %>
+              </p>
+            </div>
+          </div>
+          <%= if @queue_stats.last_completed_at do %>
+            <div class="text-right text-xs text-blue-600">
+              <div class="font-medium">Last completed</div>
+              <div class="text-blue-500">
+                {Calendar.strftime(@queue_stats.last_completed_at, "%I:%M:%S %p")}
+              </div>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
+
     <section class="mt-10 rounded-3xl border border-slate-200 bg-white/80 p-8 shadow-sm backdrop-blur">
-      <h2 class="text-xl font-semibold text-slate-900">Check URL Health</h2>
+      <h2 class="text-xl font-semibold text-slate-900">Manual URL Check</h2>
       <p class="mt-2 text-sm text-slate-500">
-        Start a background check to validate HTTP status codes for your URLs.
+        Run an immediate manual check for specific URL groups. URLs are automatically checked in the background after syncing.
+      </p>
+      <p
+        :if={@property_label}
+        class="mt-1 inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600"
+      >
+        <.icon name="hero-globe-europe-africa" class="h-4 w-4 text-slate-500" /> Target property:
+        <span class="text-slate-900">{@property_label}</span>
+      </p>
+      <p
+        :if={is_nil(@current_property)}
+        class="mt-1 flex items-center gap-2 text-sm text-rose-600"
+      >
+        <.icon name="hero-lock-open" class="h-4 w-4" /> Select a property to enable manual checks.
       </p>
 
       <.form
@@ -36,58 +140,87 @@
         phx-submit="start_check"
         class="mt-6 space-y-5"
       >
-        <.input
-          field={@form[:filter]}
-          type="select"
-          label="URLs to check"
-          options={@filter_options}
-          class="select select-bordered w-full"
-          disabled={@progress.running?}
-        />
-
         <div
           :if={@global_stats.total_checked == 0 && @global_stats.unchecked == 0}
           class="rounded-2xl border border-blue-200 bg-blue-50/80 p-4 text-sm text-blue-800"
         >
           <div class="flex items-start gap-3">
             <.icon name="hero-information-circle" class="mt-0.5 h-5 w-5 shrink-0" />
-            <div class="space-y-2">
-              <p class="font-semibold">No URLs available for checking</p>
-              <p class="text-blue-700">
-                The HTTP status checker requires URLs to be synced from Google Search Console first.
-                Visit the
-                <.link navigate={~p"/dashboard/sync"} class="font-medium underline">
-                  Sync Status page
+            <div class="space-y-3">
+              <div>
+                <p class="font-semibold">No URLs available for checking</p>
+                <p class="text-blue-700">
+                  The URL Health Monitor requires URLs from Google Search Console to function.
+                </p>
+              </div>
+
+              <div class="space-y-1 text-xs text-blue-700">
+                <p class="font-medium">Why am I seeing this?</p>
+                <ul class="ml-4 list-disc space-y-0.5">
+                  <li>No GSC sync has been run for this property yet, or</li>
+                  <li>The most recent sync found no URLs with search traffic, or</li>
+                  <li>
+                    URLs exist but don't have
+                    <code class="rounded bg-blue-100 px-1 py-0.5 font-mono text-blue-900">
+                      data_available
+                    </code>
+                    flag set
+                  </li>
+                </ul>
+              </div>
+
+              <div class="flex flex-col gap-2 sm:flex-row">
+                <.link
+                  navigate={~p"/dashboard/sync"}
+                  class="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-300 bg-blue-100 px-4 py-2 font-medium text-blue-900 hover:bg-blue-200"
+                >
+                  <.icon name="hero-arrow-path" class="h-4 w-4" /> Run GSC Sync
                 </.link>
-                to run a GSC sync and populate the database with URLs that have search traffic.
-              </p>
+                <.link
+                  navigate={~p"/dashboard"}
+                  class="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-300 bg-white px-4 py-2 font-medium text-blue-800 hover:bg-blue-50"
+                >
+                  <.icon name="hero-chart-bar" class="h-4 w-4" /> View Dashboard
+                </.link>
+              </div>
             </div>
           </div>
         </div>
 
         <div
-          :if={@global_stats.unchecked > 0 && @global_stats.total_checked == 0}
-          class="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 text-sm text-emerald-800"
+          :if={@global_stats.unchecked > 0}
+          class="rounded-2xl border border-purple-200 bg-purple-50/80 p-4 text-sm text-purple-800"
         >
           <div class="flex items-start gap-3">
-            <.icon name="hero-check-circle" class="mt-0.5 h-5 w-5 shrink-0" />
+            <.icon name="hero-clock" class="mt-0.5 h-5 w-5 shrink-0" />
             <div>
               <p class="font-semibold">
-                {format_number(@global_stats.unchecked)} URLs ready for checking
+                Automatic status checking enabled
               </p>
-              <p class="mt-1 text-emerald-700">
-                Select a filter above and click "Start check" to begin validating HTTP status codes.
+              <p class="mt-1 text-purple-700">
+                {format_number(@global_stats.unchecked)} URLs will be checked automatically in the background
+                after GSC sync. Use the manual check below for immediate verification of specific URLs.
               </p>
             </div>
           </div>
         </div>
 
+        <.input
+          field={@form[:filter]}
+          type="select"
+          label="Manual check (optional)"
+          options={@filter_options}
+          class="select select-bordered w-full"
+          disabled={@progress.running?}
+        />
+
         <button
           type="submit"
           class={[
             "btn btn-primary w-full gap-2 text-base",
-            @progress.running? && "btn-disabled opacity-70"
+            (@progress.running? || is_nil(@current_property)) && "btn-disabled opacity-70"
           ]}
+          disabled={@progress.running? || is_nil(@current_property)}
           phx-disable-with="Starting…"
         >
           <.icon
@@ -95,10 +228,212 @@
             class={if @progress.running?, do: "h-5 w-5 animate-spin", else: "h-5 w-5"}
           />
           <span>
-            {if @progress.running?, do: "Check in progress", else: "Start check"}
+            {if @progress.running?, do: "Manual check in progress", else: "Run manual check"}
           </span>
         </button>
+        <p
+          :if={is_nil(@current_property)}
+          class="text-center text-xs text-rose-600"
+        >
+          <.icon name="hero-exclamation-circle" class="inline h-4 w-4" /> Add a property in
+          <.link navigate={~p"/users/settings"} class="underline">
+            Settings
+          </.link>
+          to unlock automated checks.
+        </p>
       </.form>
+    </section>
+    <%!-- Automation Status Card --%>
+    <section
+      :if={@global_stats.total_checked > 0 || @global_stats.unchecked > 0}
+      class="mt-6 rounded-3xl border border-emerald-200 bg-emerald-50/50 p-6 shadow-sm backdrop-blur"
+    >
+      <div class="flex items-start gap-4">
+        <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-100">
+          <.icon name="hero-bolt" class="h-6 w-6 text-emerald-600" />
+        </div>
+        <div class="flex-1 space-y-3">
+          <div>
+            <h3 class="text-lg font-semibold text-emerald-900">
+              Automatic HTTP Checking Active
+            </h3>
+            <p class="mt-1 text-sm text-emerald-700">
+              URLs are checked automatically in the background. No manual intervention required.
+            </p>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
+            <div class="rounded-lg border border-emerald-200 bg-white/70 p-3">
+              <div class="font-semibold text-emerald-900">After Sync</div>
+              <div class="mt-1 text-emerald-600">New URLs checked within 1-30 min</div>
+            </div>
+            <div class="rounded-lg border border-emerald-200 bg-white/70 p-3">
+              <div class="font-semibold text-emerald-900">Daily Re-check</div>
+              <div class="mt-1 text-emerald-600">Every day at 3 AM UTC</div>
+            </div>
+            <div class="rounded-lg border border-emerald-200 bg-white/70 p-3">
+              <div class="font-semibold text-emerald-900">Broken Links</div>
+              <div class="mt-1 text-emerald-600">Re-checked every 3 days</div>
+            </div>
+            <div class="rounded-lg border border-emerald-200 bg-white/70 p-3">
+              <div class="font-semibold text-emerald-900">Healthy URLs</div>
+              <div class="mt-1 text-emerald-600">Re-checked every 30 days</div>
+            </div>
+          </div>
+
+          <details class="text-xs text-emerald-700">
+            <summary class="cursor-pointer font-medium hover:text-emerald-900">
+              How it works →
+            </summary>
+            <div class="mt-2 space-y-1 pl-4">
+              <p>
+                • <strong>After GSC Sync:</strong>
+                New URLs discovered are automatically queued for HTTP checking
+              </p>
+              <p>
+                • <strong>Smart Re-checks:</strong>
+                Redirects re-checked every 7 days, healthy URLs every 30 days
+              </p>
+              <p>
+                • <strong>Scheduled Daily:</strong>
+                HttpStatusRecheckWorker runs at 3 AM UTC for all workspaces
+              </p>
+              <p>
+                • <strong>Resource Optimized:</strong>
+                Only checks URLs with search traffic (data_available = true)
+              </p>
+            </div>
+          </details>
+        </div>
+      </div>
+    </section>
+    <%!-- HTTP Status Summary Card --%>
+    <section
+      :if={@global_stats.total_checked > 0}
+      class="mt-6 rounded-3xl border border-slate-200 bg-white/80 p-6 shadow-sm backdrop-blur"
+    >
+      <div class="flex items-center justify-between">
+        <h3 class="text-lg font-semibold text-slate-900">URL Health Overview</h3>
+        <span class="badge badge-ghost text-xs">
+          {format_number(@global_stats.total_checked + @global_stats.unchecked)} total URLs
+        </span>
+      </div>
+
+      <div class="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+        <%!-- Healthy URLs --%>
+        <div class="rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
+          <div class="flex items-center gap-2">
+            <.icon name="hero-check-circle" class="h-5 w-5 text-emerald-600" />
+            <div class="text-xs font-medium uppercase tracking-wide text-emerald-600">
+              Healthy
+            </div>
+          </div>
+          <div class="mt-2 text-2xl font-bold text-emerald-900">
+            {format_number(@global_stats.status_2xx)}
+          </div>
+          <div class="mt-1 text-xs text-emerald-600">
+            {@global_stats.percent_2xx}% of checked
+          </div>
+        </div>
+        <%!-- Redirects --%>
+        <div class="rounded-xl border border-amber-100 bg-amber-50/50 p-4">
+          <div class="flex items-center gap-2">
+            <.icon name="hero-arrow-path" class="h-5 w-5 text-amber-600" />
+            <div class="text-xs font-medium uppercase tracking-wide text-amber-600">
+              Redirects
+            </div>
+          </div>
+          <div class="mt-2 text-2xl font-bold text-amber-900">
+            {format_number(@global_stats.status_3xx)}
+          </div>
+          <div class="mt-1 text-xs text-amber-600">
+            {@global_stats.percent_3xx}% of checked
+          </div>
+        </div>
+        <%!-- Client Errors --%>
+        <div class="rounded-xl border border-rose-100 bg-rose-50/50 p-4">
+          <div class="flex items-center gap-2">
+            <.icon name="hero-exclamation-triangle" class="h-5 w-5 text-rose-600" />
+            <div class="text-xs font-medium uppercase tracking-wide text-rose-600">
+              4xx Errors
+            </div>
+          </div>
+          <div class="mt-2 text-2xl font-bold text-rose-900">
+            {format_number(@global_stats.status_4xx)}
+          </div>
+          <div class="mt-1 text-xs text-rose-600">
+            {@global_stats.percent_4xx}% of checked
+          </div>
+        </div>
+        <%!-- Server Errors --%>
+        <div class="rounded-xl border border-red-100 bg-red-50/50 p-4">
+          <div class="flex items-center gap-2">
+            <.icon name="hero-x-circle" class="h-5 w-5 text-red-600" />
+            <div class="text-xs font-medium uppercase tracking-wide text-red-600">
+              5xx Errors
+            </div>
+          </div>
+          <div class="mt-2 text-2xl font-bold text-red-900">
+            {format_number(@global_stats.status_5xx)}
+          </div>
+          <div class="mt-1 text-xs text-red-600">
+            {@global_stats.percent_5xx}% of checked
+          </div>
+        </div>
+        <%!-- Unchecked --%>
+        <div class="rounded-xl border border-slate-100 bg-slate-50/50 p-4">
+          <div class="flex items-center gap-2">
+            <.icon name="hero-clock" class="h-5 w-5 text-slate-600" />
+            <div class="text-xs font-medium uppercase tracking-wide text-slate-600">
+              Pending
+            </div>
+          </div>
+          <div class="mt-2 text-2xl font-bold text-slate-900">
+            {format_number(@global_stats.unchecked)}
+          </div>
+          <div class="mt-1 text-xs text-slate-600">
+            Not checked yet
+          </div>
+        </div>
+        <%!-- Total Checked --%>
+        <div class="rounded-xl border border-blue-100 bg-blue-50/50 p-4">
+          <div class="flex items-center gap-2">
+            <.icon name="hero-chart-bar" class="h-5 w-5 text-blue-600" />
+            <div class="text-xs font-medium uppercase tracking-wide text-blue-600">
+              Checked
+            </div>
+          </div>
+          <div class="mt-2 text-2xl font-bold text-blue-900">
+            {format_number(@global_stats.total_checked)}
+          </div>
+          <div class="mt-1 text-xs text-blue-600">
+            {Float.round(
+              @global_stats.total_checked /
+                max(@global_stats.total_checked + @global_stats.unchecked, 1) * 100,
+              1
+            )}%
+            complete
+          </div>
+        </div>
+      </div>
+      <%!-- Quick Actions --%>
+      <div
+        :if={@global_stats.status_4xx > 0 || @global_stats.status_5xx > 0}
+        class="mt-6 flex flex-wrap items-center gap-3 rounded-xl border border-rose-100 bg-rose-50/50 p-4"
+      >
+        <div class="flex items-center gap-2 text-sm text-rose-700">
+          <.icon name="hero-exclamation-circle" class="h-5 w-5" />
+          <span class="font-medium">
+            {format_number(@global_stats.status_4xx + @global_stats.status_5xx)} broken links detected
+          </span>
+        </div>
+        <.link
+          navigate={~p"/dashboard"}
+          class="btn btn-sm ml-auto gap-2 border-rose-200 bg-white text-rose-700 hover:bg-rose-100"
+        >
+          <.icon name="hero-list-bullet" class="h-4 w-4" /> View broken URLs
+        </.link>
+      </div>
     </section>
 
     <div class="mt-8 grid grid-cols-1 gap-8 xl:grid-cols-[1.6fr,1fr]">
@@ -117,6 +452,13 @@
                 "Checking #{@progress.checked}/#{@progress.total_urls} URLs"
               else
                 "No check in progress"
+              end}
+            </p>
+            <p class="mt-1 text-xs uppercase tracking-widest text-slate-400">
+              {if @property_label do
+                "Property · #{@property_label}"
+              else
+                "Property selection required"
               end}
             </p>
           </div>
@@ -250,38 +592,39 @@
     </div>
 
     <section class="mt-8 rounded-3xl border border-slate-200 bg-white/80 p-8 shadow-sm backdrop-blur">
-      <h2 class="text-xl font-semibold text-slate-900">Filter Options</h2>
-      <div class="mt-4 grid grid-cols-1 gap-6 md:grid-cols-4">
-        <div class="rounded-2xl border border-sky-100 bg-sky-50/80 p-6">
-          <h3 class="text-sm font-semibold uppercase tracking-widest text-sky-600">
-            Stale (Default)
-          </h3>
-          <p class="mt-3 text-sm text-slate-600">
-            Checks URLs that haven't been checked or are older than 7 days. Recommended for regular maintenance.
-          </p>
-        </div>
+      <h2 class="text-xl font-semibold text-slate-900">How Automatic Checking Works</h2>
+      <div class="mt-4 grid grid-cols-1 gap-6 md:grid-cols-3">
         <div class="rounded-2xl border border-emerald-100 bg-emerald-50/80 p-6">
-          <h3 class="text-sm font-semibold uppercase tracking-widest text-emerald-600">
-            All URLs
-          </h3>
+          <div class="flex items-center gap-2">
+            <.icon name="hero-arrow-path" class="h-5 w-5 text-emerald-600" />
+            <h3 class="text-sm font-semibold uppercase tracking-widest text-emerald-600">
+              After GSC Sync
+            </h3>
+          </div>
           <p class="mt-3 text-sm text-slate-600">
-            Checks every URL in the database regardless of last check date. Use for comprehensive audits.
-          </p>
-        </div>
-        <div class="rounded-2xl border border-amber-100 bg-amber-50/80 p-6">
-          <h3 class="text-sm font-semibold uppercase tracking-widest text-amber-600">
-            Broken Links
-          </h3>
-          <p class="mt-3 text-sm text-slate-600">
-            Re-checks only URLs with 4xx or 5xx status codes to verify if issues are fixed.
+            New URLs discovered during Google Search Console sync are automatically queued for HTTP status validation within 60 seconds.
           </p>
         </div>
         <div class="rounded-2xl border border-purple-100 bg-purple-50/80 p-6">
-          <h3 class="text-sm font-semibold uppercase tracking-widest text-purple-600">
-            Redirected
-          </h3>
+          <div class="flex items-center gap-2">
+            <.icon name="hero-clock" class="h-5 w-5 text-purple-600" />
+            <h3 class="text-sm font-semibold uppercase tracking-widest text-purple-600">
+              Periodic Re-checks
+            </h3>
+          </div>
           <p class="mt-3 text-sm text-slate-600">
-            Checks URLs returning 3xx codes to ensure redirects are still active and valid.
+            URLs with 2xx status are re-checked every 30 days. Broken links (4xx/5xx) are verified every 3 days to detect fixes.
+          </p>
+        </div>
+        <div class="rounded-2xl border border-sky-100 bg-sky-50/80 p-6">
+          <div class="flex items-center gap-2">
+            <.icon name="hero-bolt" class="h-5 w-5 text-sky-600" />
+            <h3 class="text-sm font-semibold uppercase tracking-widest text-sky-600">
+              Manual Override
+            </h3>
+          </div>
+          <p class="mt-3 text-sm text-slate-600">
+            Use the manual check above to immediately verify specific URL groups like stale URLs, broken links, or redirects.
           </p>
         </div>
       </div>
@@ -290,7 +633,11 @@
     <section class="mt-8 rounded-3xl border border-slate-200 bg-white/80 p-8 shadow-sm backdrop-blur">
       <h2 class="text-xl font-semibold text-slate-900">Site Health Overview</h2>
       <p class="mt-2 text-sm text-slate-500">
-        Persistent status statistics across all URLs in your database
+        {if @property_label do
+          "Persistent status statistics for #{@property_label}"
+        else
+          "Persistent status statistics across all URLs in your database"
+        end}
       </p>
 
       <dl class="mt-6 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
@@ -387,7 +734,11 @@
         <div>
           <h2 class="text-xl font-semibold text-slate-900">Problem URLs</h2>
           <p class="mt-2 text-sm text-slate-500">
-            URLs with 3xx redirects, 4xx client errors, or 5xx server errors
+            {if @property_label do
+              "Issues detected for #{@property_label}"
+            else
+              "Select a property above to inspect 3xx/4xx/5xx issues"
+            end}
           </p>
         </div>
         <div class="flex gap-2">
@@ -441,10 +792,16 @@
         >
           <.icon name="hero-check-circle" class="mx-auto h-12 w-12 text-emerald-500" />
           <p class="mt-3 text-sm font-medium text-slate-600">
-            No problem URLs found
+            {if is_nil(@current_property),
+              do: "No property selected",
+              else: "No problem URLs found"}
           </p>
           <p class="mt-1 text-xs text-slate-500">
-            All checked URLs are returning successful status codes
+            {if is_nil(@current_property) do
+              "Use the property switcher above to scope the crawler."
+            else
+              "All checked URLs are returning successful status codes"
+            end}
           </p>
         </div>
 

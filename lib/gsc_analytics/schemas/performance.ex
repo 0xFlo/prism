@@ -5,6 +5,32 @@ defmodule GscAnalytics.Schemas.Performance do
   Stores aggregated performance metrics for URLs including clicks,
   impressions, CTR, and average position. Supports multi-tenancy
   through account_id field.
+
+  ## Key Fields
+
+  ### data_available (boolean)
+  Critical flag indicating whether this URL has GSC performance data with actual search traffic.
+
+  - `true`: URL has clicks, impressions, or other search traffic data from GSC
+  - `false`: URL exists in GSC but has no search traffic (no clicks, no impressions)
+  - Default: `false`
+
+  **Usage**: The HTTP status checker filters to only URLs with `data_available == true`
+  to focus on SEO-relevant URLs. This optimizes resource usage by skipping URLs
+  that don't receive search traffic.
+
+  **Set by**: `GscAnalytics.DataSources.GSC.Core.Persistence.process_url_response/4`
+  based on whether GSC API returns performance metrics for the URL.
+
+  ### HTTP Status Fields
+  - `http_status`: HTTP status code from crawler (200, 404, 500, etc.)
+  - `http_checked_at`: Timestamp of last HTTP check
+  - `redirect_url`: Final destination URL after following redirects
+  - `http_redirect_chain`: Complete redirect path for debugging
+
+  These fields are automatically populated by the HTTP status checking system:
+  - `HttpStatusCheckWorker` - Processes new URLs after GSC sync
+  - `HttpStatusRecheckWorker` - Re-checks stale URLs daily at 3 AM UTC
   """
 
   use Ecto.Schema
