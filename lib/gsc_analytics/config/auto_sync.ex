@@ -120,19 +120,33 @@ defmodule GscAnalytics.Config.AutoSync do
       {Oban.Plugins.Pruner, max_age: 60 * 60 * 24 * 7}
     ]
 
+    # SERP pruning and HTTP rechecking cron - always enabled (independent of auto-sync)
+    always_on_cron =
+      {Oban.Plugins.Cron,
+       crontab: [
+         # Prune old SERP snapshots daily at 2 AM
+         {"0 2 * * *", GscAnalytics.Workers.SerpPruningWorker},
+         # Re-check stale HTTP status codes daily at 3 AM
+         {"0 3 * * *", GscAnalytics.Workers.HttpStatusRecheckWorker}
+       ]}
+
     if enabled?() do
       base_plugins ++
         [
           # Rescue orphaned jobs after 30 minutes
           {Oban.Plugins.Lifeline, rescue_after: :timer.minutes(30)},
-          # Schedule periodic sync jobs
+          # Schedule periodic sync jobs + SERP pruning + HTTP rechecking
           {Oban.Plugins.Cron,
            crontab: [
-             {cron_schedule(), GscAnalytics.Workers.GscSyncWorker}
+             {cron_schedule(), GscAnalytics.Workers.GscSyncWorker},
+             # Prune old SERP snapshots daily at 2 AM
+             {"0 2 * * *", GscAnalytics.Workers.SerpPruningWorker},
+             # Re-check stale HTTP status codes daily at 3 AM
+             {"0 3 * * *", GscAnalytics.Workers.HttpStatusRecheckWorker}
            ]}
         ]
     else
-      base_plugins
+      base_plugins ++ [always_on_cron]
     end
   end
 

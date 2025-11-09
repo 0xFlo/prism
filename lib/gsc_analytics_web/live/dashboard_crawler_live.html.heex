@@ -307,6 +307,60 @@
         </div>
       </div>
     </section>
+    <%!-- Queue Status Widget --%>
+    <%= if @queue_stats.queued > 0 || @queue_stats.executing > 0 || @queue_stats.scheduled > 0 do %>
+      <section class="mt-6 rounded-3xl border border-blue-200 bg-blue-50/50 p-6 shadow-sm backdrop-blur">
+        <div class="flex items-start gap-4">
+          <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-100">
+            <.icon name="hero-queue-list" class="h-6 w-6 text-blue-600" />
+          </div>
+          <div class="flex-1">
+            <h3 class="text-lg font-semibold text-blue-900">
+              Background Queue Status
+            </h3>
+            <p class="mt-1 text-sm text-blue-700">
+              Live metrics from the HTTP check queue
+            </p>
+
+            <div class="mt-4 grid grid-cols-3 gap-3">
+              <div class="rounded-xl border border-blue-200 bg-white/70 p-4 text-center">
+                <div class="text-2xl font-bold text-blue-900">
+                  {@queue_stats.queued}
+                </div>
+                <div class="mt-1 text-xs font-medium uppercase tracking-wide text-blue-600">
+                  Queued
+                </div>
+              </div>
+              <div class="rounded-xl border border-blue-200 bg-white/70 p-4 text-center">
+                <div class="text-2xl font-bold text-emerald-900">
+                  {@queue_stats.executing}
+                </div>
+                <div class="mt-1 text-xs font-medium uppercase tracking-wide text-emerald-600">
+                  Running
+                </div>
+              </div>
+              <div class="rounded-xl border border-blue-200 bg-white/70 p-4 text-center">
+                <div class="text-2xl font-bold text-slate-900">
+                  {@queue_stats.scheduled}
+                </div>
+                <div class="mt-1 text-xs font-medium uppercase tracking-wide text-slate-600">
+                  Scheduled
+                </div>
+              </div>
+            </div>
+
+            <%= if @queue_stats.last_completed_at do %>
+              <div class="mt-3 flex items-center gap-2 text-xs text-blue-700">
+                <.icon name="hero-check-circle" class="h-4 w-4" />
+                <span>
+                  Last completed: {Calendar.strftime(@queue_stats.last_completed_at, "%b %d at %I:%M %p")}
+                </span>
+              </div>
+            <% end %>
+          </div>
+        </div>
+      </section>
+    <% end %>
     <%!-- HTTP Status Summary Card --%>
     <section
       :if={@global_stats.total_checked > 0}

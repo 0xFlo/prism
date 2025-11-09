@@ -163,6 +163,9 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
     urls_to_refresh = Enum.map(rows, fn row -> get_in(row, ["keys", Access.at(0)]) end)
     refresh_lifetime_stats_incrementally(account_id, site_url, urls_to_refresh)
 
+    # Enqueue automatic HTTP status checks for new URLs
+    enqueue_http_status_checks(account_id, site_url, urls_to_refresh)
+
     url_count
   end
 
@@ -605,4 +608,126 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
   end
 
   defp safe_truncate(value, _max_length), do: value
+
+  # ============================================================================
+  # Automatic HTTP Status Checking
+  # ============================================================================
+
+  # Enqueue HTTP status checks for newly discovered URLs.
+  # This function is called automatically after URL sync to validate
+  # HTTP status codes in the background. Only URLs that haven't been
+  # checked recently are enqueued.
+  #
+  # CRITICAL: This filters URLs to only enqueue those that actually need
+  # checking, preventing duplicate work and race conditions.
+  #
+  # BACKPRESSURE: For large batches (>1000 URLs), implements intelligent
+  # throttling by spreading job scheduling over time to prevent queue
+  # overload and resource exhaustion.
+  defp enqueue_http_status_checks(account_id, property_url, urls) do
+    # Only enqueue if the worker module is available (may not be in test env)
+    if Code.ensure_loaded?(GscAnalytics.Workers.HttpStatusCheckWorker) do
+      # Filter to only URLs that need checking (unchecked or stale)
+      # This prevents duplicate enqueueing on re-syncs
+      urls_needing_check = filter_urls_needing_check(account_id, property_url, urls)
+
+      if urls_needing_check != [] do
+        # Apply backpressure for large batches
+        enqueue_opts = apply_backpressure(length(urls_needing_check))
+
+        # Use Task.Supervisor for proper error handling and monitoring
+        case Task.Supervisor.start_child(
+               GscAnalytics.TaskSupervisor,
+               fn ->
+                 GscAnalytics.Workers.HttpStatusCheckWorker.enqueue_new_urls(
+                   [
+                     account_id: account_id,
+                     property_url: property_url,
+                     urls: urls_needing_check
+                   ] ++ enqueue_opts
+                 )
+               end,
+               restart: :transient
+             ) do
+          {:ok, _pid} ->
+            Logger.debug(
+              "Enqueued HTTP checks for #{length(urls_needing_check)}/#{length(urls)} URLs #{format_enqueue_opts(enqueue_opts)}"
+            )
+
+          {:error, reason} ->
+            Logger.error("Failed to start HTTP check enqueue task: #{inspect(reason)}")
+        end
+      else
+        Logger.debug("All #{length(urls)} URLs recently checked, skipping enqueue")
+      end
+    end
+
+    :ok
+  rescue
+    e ->
+      Logger.error("Failed to enqueue HTTP status checks: #{inspect(e)}")
+      :ok
+  end
+
+  # Apply backpressure based on batch size to prevent overwhelming
+  # the Oban queue and consuming too many resources at once.
+  #
+  # Strategy:
+  # - Small batches (< 500): Immediate, high priority
+  # - Medium batches (500-2000): Delayed start, spread over 5 minutes
+  # - Large batches (2000-5000): Lower priority, spread over 15 minutes
+  # - Huge batches (> 5000): Background priority, spread over 30 minutes
+  defp apply_backpressure(url_count) do
+    cond do
+      url_count < 500 ->
+        # Small batch: immediate, high priority
+        [priority: 1, schedule_in: 60]
+
+      url_count < 2000 ->
+        # Medium batch: spread over 5 minutes
+        delay = :rand.uniform(300)
+        [priority: 2, schedule_in: delay]
+
+      url_count < 5000 ->
+        # Large batch: spread over 15 minutes, lower priority
+        delay = :rand.uniform(900)
+        [priority: 2, schedule_in: delay]
+
+      true ->
+        # Huge batch: spread over 30 minutes, background priority
+        delay = :rand.uniform(1800)
+        [priority: 3, schedule_in: delay]
+    end
+  end
+
+  defp format_enqueue_opts(opts) do
+    priority = Keyword.get(opts, :priority)
+    schedule_in = Keyword.get(opts, :schedule_in)
+    "(priority: #{priority}, delay: #{schedule_in}s)"
+  end
+
+  # Filter URLs to only those that need HTTP status checking.
+  # Returns URLs that are either:
+  # - Never checked (http_status IS NULL)
+  # - Stale (checked > 7 days ago)
+  # This prevents duplicate work when re-syncing the same date ranges.
+  defp filter_urls_needing_check(account_id, property_url, urls) do
+    seven_days_ago = DateTime.utc_now() |> DateTime.add(-7, :day)
+
+    # Query for URLs that need checking
+    url_status_map =
+      from(p in GscAnalytics.Schemas.Performance,
+        where:
+          p.account_id == ^account_id and
+            p.property_url == ^property_url and
+            p.url in ^urls and
+            (is_nil(p.http_status) or p.http_checked_at < ^seven_days_ago),
+        select: p.url
+      )
+      |> Repo.all()
+      |> MapSet.new()
+
+    # Return only URLs that are in the "needs checking" set
+    Enum.filter(urls, fn url -> MapSet.member?(url_status_map, url) end)
+  end
 end

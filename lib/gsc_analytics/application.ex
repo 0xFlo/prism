@@ -80,9 +80,7 @@ defmodule GscAnalytics.Application do
           Logger.info("Scheduled initial GSC sync to run immediately on startup")
 
         {:error, reason} ->
-          Logger.warning(
-            "Failed to schedule initial GSC sync on startup: #{inspect(reason)}"
-          )
+          Logger.warning("Failed to schedule initial GSC sync on startup: #{inspect(reason)}")
       end
     end
   end
