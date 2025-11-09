@@ -32,7 +32,7 @@ defmodule GscAnalytics.Analytics.SiteTrends do
   def fetch("weekly", opts) do
     account_id = Accounts.resolve_account_id(opts)
     property_url = Map.get(opts, :property_url) || raise ArgumentError, "property_url is required"
-    first_date = get_first_data_date(account_id, property_url)
+    first_date = resolve_first_data_date(account_id, property_url, opts)
 
     today = Date.utc_today()
     days_available = max(Date.diff(today, first_date), 0)
@@ -63,7 +63,7 @@ defmodule GscAnalytics.Analytics.SiteTrends do
   def fetch("monthly", opts) do
     account_id = Accounts.resolve_account_id(opts)
     property_url = Map.get(opts, :property_url) || raise ArgumentError, "property_url is required"
-    first_date = get_first_data_date(account_id, property_url)
+    first_date = resolve_first_data_date(account_id, property_url, opts)
 
     today = Date.utc_today()
     months_available = max(months_between(first_date, today) + 1, 1)
@@ -93,7 +93,7 @@ defmodule GscAnalytics.Analytics.SiteTrends do
   def fetch(_view_mode, opts) do
     account_id = Accounts.resolve_account_id(opts)
     property_url = Map.get(opts, :property_url) || raise ArgumentError, "property_url is required"
-    first_date = get_first_data_date(account_id, property_url)
+    first_date = resolve_first_data_date(account_id, property_url, opts)
 
     days_available =
       Date.utc_today()
@@ -122,7 +122,40 @@ defmodule GscAnalytics.Analytics.SiteTrends do
     {series, "Date"}
   end
 
+  @doc """
+  Return the earliest available Search Console date for the given
+  account/property pair. The value comes from `url_lifetime_stats`, which keeps
+  the answer in a compact table so we avoid scanning the entire
+  `gsc_time_series` partition on every dashboard refresh.
+  """
+  def first_data_date(account_id, property_url) do
+    get_first_data_date(account_id, property_url)
+  end
+
+  defp resolve_first_data_date(account_id, property_url, opts) when is_map(opts) do
+    case Map.get(opts, :first_data_date) do
+      %Date{} = date -> date
+      _ -> get_first_data_date(account_id, property_url)
+    end
+  end
+
+  defp resolve_first_data_date(account_id, property_url, _opts) do
+    get_first_data_date(account_id, property_url)
+  end
+
   defp get_first_data_date(account_id, property_url) do
+    from(ls in "url_lifetime_stats",
+      where: ls.account_id == ^account_id and ls.property_url == ^property_url,
+      select: min(ls.first_seen_date)
+    )
+    |> Repo.one()
+    |> case do
+      nil -> fallback_first_data_date(account_id, property_url)
+      date -> date
+    end
+  end
+
+  defp fallback_first_data_date(account_id, property_url) do
     TimeSeries
     |> where(
       [ts],
@@ -178,19 +211,27 @@ defmodule GscAnalytics.Analytics.SiteTrends do
     account_id = Accounts.resolve_account_id(opts)
     property_url = Map.get(opts, :property_url) || raise ArgumentError, "property_url is required"
     period_days = requested_period_days(opts)
+    first_date = resolve_first_data_date(account_id, property_url, opts)
 
-    start_date =
-      case period_days do
-        nil ->
-          get_first_data_date(account_id, property_url)
+    case resolve_period_range(period_days, first_date) do
+      {:all_time, _} ->
+        aggregate_lifetime_period_totals(account_id, property_url)
 
-        days when days >= 10_000 ->
-          get_first_data_date(account_id, property_url)
+      {:range, start_date} ->
+        aggregate_period_totals(account_id, property_url, start_date)
+    end
+  end
 
-        days ->
-          Date.utc_today() |> Date.add(-days)
-      end
+  defp resolve_period_range(nil, first_date), do: {:all_time, first_date}
 
+  defp resolve_period_range(days, first_date) when is_integer(days) and days >= 10_000,
+    do: {:all_time, first_date}
+
+  defp resolve_period_range(days, _first_date) when is_integer(days) and days > 0 do
+    {:range, Date.add(Date.utc_today(), -days)}
+  end
+
+  defp aggregate_period_totals(account_id, property_url, start_date) do
     TimeSeries
     |> where(
       [ts],
@@ -205,17 +246,44 @@ defmodule GscAnalytics.Analytics.SiteTrends do
       avg_position: avg(ts.position)
     })
     |> Repo.one()
-    |> case do
-      nil ->
-        %{total_clicks: 0, total_impressions: 0, avg_ctr: 0.0, avg_position: 0.0}
+    |> format_period_totals()
+  end
 
-      result ->
-        %{
-          total_clicks: result.total_clicks || 0,
-          total_impressions: result.total_impressions || 0,
-          avg_ctr: result.avg_ctr || 0.0,
-          avg_position: result.avg_position || 0.0
-        }
-    end
+  defp aggregate_lifetime_period_totals(account_id, property_url) do
+    from(ls in "url_lifetime_stats",
+      where: ls.account_id == ^account_id and ls.property_url == ^property_url,
+      select: %{
+        total_clicks: sum(coalesce(ls.lifetime_clicks, 0)),
+        total_impressions: sum(coalesce(ls.lifetime_impressions, 0)),
+        avg_ctr:
+          fragment(
+            "CAST(SUM(COALESCE(?, 0)) AS FLOAT) / NULLIF(SUM(COALESCE(?, 0)), 0)",
+            ls.lifetime_clicks,
+            ls.lifetime_impressions
+          ),
+        avg_position:
+          fragment(
+            "SUM(COALESCE(?, 0) * COALESCE(?, 0)) / NULLIF(SUM(COALESCE(?, 0)), 0)",
+            ls.avg_position,
+            ls.lifetime_impressions,
+            ls.lifetime_impressions
+          )
+      }
+    )
+    |> Repo.one()
+    |> format_period_totals()
+  end
+
+  defp format_period_totals(nil) do
+    %{total_clicks: 0, total_impressions: 0, avg_ctr: 0.0, avg_position: 0.0}
+  end
+
+  defp format_period_totals(result) do
+    %{
+      total_clicks: result.total_clicks || 0,
+      total_impressions: result.total_impressions || 0,
+      avg_ctr: result.avg_ctr || 0.0,
+      avg_position: result.avg_position || 0.0
+    }
   end
 end

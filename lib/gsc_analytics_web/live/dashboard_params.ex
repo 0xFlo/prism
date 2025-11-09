@@ -87,4 +87,73 @@ defmodule GscAnalyticsWeb.Live.DashboardParams do
   def period_label(@all_period), do: "All time"
   def period_label(value) when is_integer(value) and value > 0, do: "#{value} days"
   def period_label(_), do: "Selected period"
+
+  @doc """
+  Build a sanitized params map for the main dashboard view.
+
+  Accepts a struct or assigns map (anything implementing the Access behaviour).
+  """
+  @spec build_dashboard_query(map(), map()) :: keyword()
+  def build_dashboard_query(assigns, overrides \\ %{}) do
+    overrides = Map.new(overrides)
+
+    [
+      {:view_mode, Map.get(overrides, :view_mode, Map.get(assigns, :view_mode))},
+      {:sort_by, Map.get(overrides, :sort_by, Map.get(assigns, :sort_by))},
+      {:sort_direction, Map.get(overrides, :sort_direction, Map.get(assigns, :sort_direction))},
+      {:limit, Map.get(overrides, :limit, Map.get(assigns, :limit))},
+      {:page, Map.get(overrides, :page, Map.get(assigns, :page))},
+      {:chart_view, Map.get(overrides, :chart_view, Map.get(assigns, :chart_view))},
+      {:search, Map.get(overrides, :search, Map.get(assigns, :search))},
+      {:period, Map.get(overrides, :period, Map.get(assigns, :period_days))},
+      {:property_id, Map.get(overrides, :property_id, Map.get(assigns, :current_property_id))},
+      {:account_id, Map.get(overrides, :account_id, Map.get(assigns, :current_account_id))},
+      {:series,
+       Map.get(
+         overrides,
+         :series,
+         encode_series(Map.get(assigns, :visible_series, @default_series))
+       )}
+    ]
+    |> reject_blank_values()
+  end
+
+  @doc """
+  Build a params map for the single URL dashboard view.
+  """
+  @spec build_url_query(map(), map()) :: keyword()
+  def build_url_query(assigns, overrides \\ %{}) do
+    overrides = Map.new(overrides)
+
+    [
+      {:url, Map.get(overrides, :url, Map.get(assigns, :encoded_url) || "")},
+      {:view, Map.get(overrides, :view, Map.get(assigns, :chart_view))},
+      {:period, Map.get(overrides, :period, Map.get(assigns, :period_days))},
+      {:queries_sort, Map.get(overrides, :queries_sort, Map.get(assigns, :queries_sort_by))},
+      {:queries_dir, Map.get(overrides, :queries_dir, Map.get(assigns, :queries_sort_direction))},
+      {:backlinks_sort,
+       Map.get(overrides, :backlinks_sort, Map.get(assigns, :backlinks_sort_by))},
+      {:backlinks_dir,
+       Map.get(overrides, :backlinks_dir, Map.get(assigns, :backlinks_sort_direction))},
+      {:series,
+       Map.get(
+         overrides,
+         :series,
+         encode_series(Map.get(assigns, :visible_series, @default_series))
+       )},
+      {:account_id, Map.get(overrides, :account_id, Map.get(assigns, :current_account_id))},
+      {:property_id, Map.get(overrides, :property_id, Map.get(assigns, :current_property_id))}
+    ]
+    |> reject_blank_values()
+  end
+
+  defp reject_blank_values(params) do
+    params
+    |> Enum.reduce([], fn
+      {:url, value}, acc -> [{:url, value} | acc]
+      {_key, value}, acc when value in [nil, ""] -> acc
+      entry, acc -> [entry | acc]
+    end)
+    |> Enum.reverse()
+  end
 end

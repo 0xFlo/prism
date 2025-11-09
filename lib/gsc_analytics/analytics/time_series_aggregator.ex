@@ -297,6 +297,7 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregator do
   def batch_calculate_wow_growth(urls, opts \\ %{}) when is_list(urls) do
     start_date = Map.get(opts, :start_date)
     account_id = Map.get(opts, :account_id)
+    property_url = Map.get(opts, :property_url)
     weeks_back = Map.get(opts, :weeks_back, 1)
 
     start_time = System.monotonic_time()
@@ -330,7 +331,7 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregator do
             )
         }
       )
-      |> maybe_filter_account_cte(account_id)
+      |> maybe_filter_account_and_property(account_id, property_url)
 
     # CTE 2: Compute LAG values once to avoid repetition in growth calculations
     with_lag_cte =
@@ -423,6 +424,7 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregator do
   def batch_calculate_wow_growth_legacy(urls, recent_weeks \\ 4, opts \\ %{})
       when is_list(urls) do
     account_id = Map.get(opts, :account_id)
+    property_url = Map.get(opts, :property_url)
     total_weeks = recent_weeks * 2
     days = total_weeks * 7
     start_date = Date.add(Date.utc_today(), -days)
@@ -430,7 +432,7 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregator do
     time_series_data =
       TimeSeries
       |> where([ts], ts.url in ^urls and ts.date >= ^start_date)
-      |> maybe_filter_account(account_id)
+      |> maybe_filter_account_and_property(account_id, property_url)
       |> order_by([ts], asc: ts.url, asc: ts.date)
       |> Repo.all()
 
@@ -774,13 +776,6 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregator do
   defp maybe_filter_account(query, nil), do: query
 
   defp maybe_filter_account(query, account_id) do
-    where(query, [ts], ts.account_id == ^account_id)
-  end
-
-  # For use in CTEs where we might need to filter by account
-  defp maybe_filter_account_cte(query, nil), do: query
-
-  defp maybe_filter_account_cte(query, account_id) do
     where(query, [ts], ts.account_id == ^account_id)
   end
 end

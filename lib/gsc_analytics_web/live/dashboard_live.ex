@@ -333,19 +333,22 @@ defmodule GscAnalyticsWeb.DashboardLive do
       })
 
     stats = SummaryStats.fetch(%{account_id: account_id, property_url: property_url})
+    first_data_date = SiteTrends.first_data_date(account_id, property_url)
 
     {site_trends, chart_label} =
       SiteTrends.fetch(opts.chart_view, %{
         account_id: account_id,
         property_url: property_url,
-        period_days: opts.period_days
+        period_days: opts.period_days,
+        first_data_date: first_data_date
       })
 
     period_totals =
       SiteTrends.fetch_period_totals(%{
         account_id: account_id,
         property_url: property_url,
-        period_days: opts.period_days
+        period_days: opts.period_days,
+        first_data_date: first_data_date
       })
 
     %Snapshot{
@@ -378,34 +381,15 @@ defmodule GscAnalyticsWeb.DashboardLive do
   defp normalize_sort_by(other) when is_binary(other), do: other
   defp normalize_sort_by(_), do: "clicks"
 
-  # Display label helpers - extract inline template computations to proper assigns
-  defp build_query_params(socket, overrides) do
-    base = %{
-      view_mode: socket.assigns.view_mode,
-      sort_by: socket.assigns.sort_by,
-      sort_direction: socket.assigns.sort_direction,
-      limit: socket.assigns.limit,
-      page: socket.assigns.page,
-      chart_view: socket.assigns.chart_view,
-      search: socket.assigns.search,
-      period: socket.assigns.period_days,
-      property_id: socket.assigns.current_property_id,
-      series: DashboardParams.encode_series(socket.assigns.visible_series)
-    }
-
-    base
-    |> Map.merge(overrides)
-    |> Enum.reject(fn
-      {_key, value} when value in [nil, ""] -> true
-      _ -> false
-    end)
-    |> Map.new()
-  end
-
   defp push_dashboard_patch(socket, overrides) do
-    params = build_query_params(socket, overrides)
+    params =
+      socket.assigns
+      |> DashboardParams.build_dashboard_query(overrides)
+
     push_patch(socket, to: ~p"/dashboard?#{params}")
   end
+
+  # Display label helpers - extract inline template computations to proper assigns
 
   defp assign_display_labels(socket) do
     period_label_text = DashboardParams.period_label(socket.assigns.period_days)

@@ -168,13 +168,7 @@ class ChartJsPerformanceChart {
     const timeSeries = this.readTimeSeries()
     if (!timeSeries.length) return
 
-    const labels = timeSeries.map(point => {
-      // Handle week ranges (period_end exists)
-      if (point.period_end) {
-        return `${point.date} - ${point.period_end}`
-      }
-      return point.date
-    })
+    const labels = this.buildLabels(timeSeries)
 
     const datasets = this.buildDatasets(timeSeries)
     const scales = this.buildScales()
@@ -318,6 +312,15 @@ class ChartJsPerformanceChart {
     })
 
     return datasets
+  }
+
+  buildLabels(timeSeries) {
+    return timeSeries.map(point => {
+      if (point.period_end) {
+        return `${point.date} - ${point.period_end}`
+      }
+      return point.date
+    })
   }
 
   /**
@@ -473,29 +476,12 @@ class ChartJsPerformanceChart {
       return
     }
 
-    // Recalculate axis assignments based on new visible series (fast - no data iteration)
-    const axisAssignments = this.assignAxes()
-
-    // Update datasets with new axis assignments and visibility
-    this.chart.data.datasets.forEach((dataset) => {
-      const seriesKey = Object.keys(this.seriesConfig).find(
-        key => this.seriesConfig[key].label === dataset.label
-      )
-
-      if (seriesKey) {
-        const shouldBeVisible = this.visibleSeries.includes(seriesKey)
-        dataset.hidden = !shouldBeVisible
-
-        // Update yAxisID for ALL datasets (visible and hidden)
-        // Hidden datasets get 'y_hidden' to prevent Chart.js from rendering their axes
-        const assignment = axisAssignments[seriesKey]
-        dataset.yAxisID = assignment ? assignment.axisID : 'y_hidden'
-      }
-    })
+    // Replace labels/data wholesale so new time series actually renders
+    this.chart.data.labels = this.buildLabels(timeSeries)
+    this.chart.data.datasets = this.buildDatasets(timeSeries)
 
     // Rebuild scales dynamically (Chart.js handles autoscaling)
-    const newScales = this.buildScales()
-    this.chart.options.scales = newScales
+    this.chart.options.scales = this.buildScales()
 
     // Ensure canvas dimensions are correct before update
     this.chart.resize()

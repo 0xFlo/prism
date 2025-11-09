@@ -97,6 +97,21 @@ config :hammer,
        cleanup_interval_ms: 60_000
      ]}
 
+# Configure Oban for background job processing
+# Note: Plugins and cron configuration are managed at runtime via GscAnalytics.Config.AutoSync
+config :gsc_analytics, Oban,
+  repo: GscAnalytics.Repo,
+  # Base plugins that run in all environments
+  plugins: [
+    # Prune completed jobs after 7 days
+    {Oban.Plugins.Pruner, max_age: 60 * 60 * 24 * 7}
+  ],
+  queues: [
+    default: 10,
+    # GSC sync runs one job at a time to avoid rate limits
+    gsc_sync: 1
+  ]
+
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"

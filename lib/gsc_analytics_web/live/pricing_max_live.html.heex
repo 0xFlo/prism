@@ -1,0 +1,350 @@
+<div class="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+  <!-- Navigation Bar with Sticky CTA -->
+  <nav class="sticky top-0 z-50 bg-slate-900/80 backdrop-blur-lg border-b border-slate-800">
+    <div class="container mx-auto px-4 py-4 flex items-center justify-between">
+      <.link navigate={~p"/"} class="flex items-center gap-2">
+        <.icon name="hero-cpu-chip" class="h-7 w-7 text-indigo-400" />
+        <span class="text-xl font-bold text-white">Prism AI</span>
+      </.link>
+      <div class="flex items-center gap-4">
+        <.link
+          navigate={~p"/"}
+          class="text-slate-300 hover:text-white transition-colors text-sm"
+        >
+          Home
+        </.link>
+        <.link
+          navigate={~p"/pricing"}
+          class="text-slate-300 hover:text-white transition-colors text-sm"
+        >
+          Pricing
+        </.link>
+        <.button phx-click="schedule_demo" class="btn btn-primary btn-sm">
+          Schedule Max Demo
+        </.button>
+      </div>
+    </div>
+  </nav>
+  
+<!-- Hero Section -->
+  <div class="relative overflow-hidden">
+    <div class="container mx-auto px-4 py-20 text-center">
+      <div class="max-w-5xl mx-auto space-y-8">
+        <!-- Max Badge -->
+        <div class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-500/20 border border-emerald-500/30 rounded-full">
+          <.icon name="hero-sparkles" class="h-5 w-5 text-emerald-400" />
+          <span class="text-emerald-300 font-semibold text-sm uppercase tracking-wide">
+            Max Plan
+          </span>
+        </div>
+
+        <h1 class="text-6xl md:text-7xl font-extrabold text-white leading-tight">
+          Your AI SEO Team<br />
+          <span class="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-emerald-400">
+            That Never Stops Working
+          </span>
+        </h1>
+
+        <p class="text-xl md:text-2xl text-slate-300 max-w-4xl mx-auto leading-relaxed">
+          The Max plan combines unlimited monitoring, autonomous AI agents, and 20x capacity—built for enterprises doing ambitious SEO at scale.
+        </p>
+        
+<!-- Key Stats -->
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-8 pt-8">
+          <div class="text-center">
+            <div class="text-5xl font-extrabold text-white mb-2">20x</div>
+            <div class="text-slate-400">More usage than Business*</div>
+          </div>
+          <div class="hidden sm:block w-px h-16 bg-slate-700"></div>
+          <div class="text-center">
+            <div class="text-5xl font-extrabold text-white mb-2">24/7</div>
+            <div class="text-slate-400">Autonomous AI agent</div>
+          </div>
+          <div class="hidden sm:block w-px h-16 bg-slate-700"></div>
+          <div class="text-center">
+            <div class="text-5xl font-extrabold text-white mb-2">∞</div>
+            <div class="text-slate-400">Unlimited data retention</div>
+          </div>
+        </div>
+        
+<!-- Primary CTAs -->
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-4 pt-6">
+          <.button
+            phx-click="schedule_demo"
+            class="btn btn-lg bg-gradient-to-r from-indigo-600 to-emerald-600 hover:from-indigo-500 hover:to-emerald-500 text-white border-none"
+          >
+            <.icon name="hero-calendar" class="h-5 w-5" /> Schedule Max Demo
+          </.button>
+          <.link
+            navigate={~p"/pricing"}
+            class="btn btn-outline btn-lg text-white border-white/30 hover:bg-white/10"
+          >
+            <.icon name="hero-arrow-left" class="h-5 w-5" /> Compare All Plans
+          </.link>
+        </div>
+
+        <p class="text-xs text-slate-500 pt-4">
+          * Usage includes API calls, syncs, and AI analysis operations
+        </p>
+      </div>
+    </div>
+  </div>
+  
+<!-- Role-Based Use Cases (Tabbed Interface) -->
+  <div class="container mx-auto px-4 py-20">
+    <div class="max-w-7xl mx-auto">
+      <div class="text-center mb-12">
+        <h2 class="text-4xl font-bold text-white mb-4">
+          Built For Ambitious Teams
+        </h2>
+        <p class="text-xl text-slate-300 max-w-3xl mx-auto">
+          See how Max solves real challenges across different roles and industries
+        </p>
+      </div>
+      
+<!-- Tab Navigation -->
+      <div class="flex flex-wrap items-center justify-center gap-3 mb-12">
+        <%= for use_case <- @use_cases do %>
+          <button
+            phx-click="switch_use_case"
+            phx-value-use_case={use_case.id}
+            class={[
+              "flex items-center gap-2 px-6 py-3 rounded-full font-semibold transition-all duration-200",
+              @active_use_case == use_case.id &&
+                "bg-gradient-to-r from-indigo-600 to-emerald-600 text-white shadow-lg",
+              @active_use_case != use_case.id &&
+                "bg-slate-800/50 text-slate-300 hover:bg-slate-800 border border-slate-700/50"
+            ]}
+          >
+            <.icon name={use_case.icon} class="h-5 w-5" />
+            <span>{use_case.role}</span>
+          </button>
+        <% end %>
+      </div>
+      
+<!-- Tab Content -->
+      <div class="bg-slate-800/30 backdrop-blur-sm rounded-2xl border border-slate-700/50 p-8">
+        <%= for use_case <- @use_cases do %>
+          <.use_case_tab use_case={use_case} active={@active_use_case == use_case.id} />
+        <% end %>
+      </div>
+    </div>
+  </div>
+  
+<!-- AI Agent Capabilities -->
+  <div class="container mx-auto px-4 py-20">
+    <div class="max-w-7xl mx-auto">
+      <div class="text-center mb-16">
+        <h2 class="text-4xl font-bold text-white mb-4">
+          Autonomous AI Agent
+        </h2>
+        <p class="text-xl text-slate-300 max-w-2xl mx-auto">
+          Your agent monitors, analyzes, and alerts—without manual input
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+        <div class="bg-slate-800/50 border border-indigo-500/30 rounded-2xl p-8 hover:border-indigo-500/50 transition-all">
+          <div class="inline-flex items-center justify-center w-12 h-12 rounded-lg bg-indigo-500/20 mb-4">
+            <.icon name="hero-clock" class="h-6 w-6 text-indigo-400" />
+          </div>
+          <h3 class="text-xl font-bold text-white mb-3">
+            Autonomous Monitoring
+          </h3>
+          <p class="text-slate-300 leading-relaxed">
+            Your agent runs analysis while you sleep. Never miss a ranking drop or opportunity.
+          </p>
+        </div>
+
+        <div class="bg-slate-800/50 border border-emerald-500/30 rounded-2xl p-8 hover:border-emerald-500/50 transition-all">
+          <div class="inline-flex items-center justify-center w-12 h-12 rounded-lg bg-emerald-500/20 mb-4">
+            <.icon name="hero-light-bulb" class="h-6 w-6 text-emerald-400" />
+          </div>
+          <h3 class="text-xl font-bold text-white mb-3">
+            Predictive Alerts
+          </h3>
+          <p class="text-slate-300 leading-relaxed">
+            Know about issues before they impact traffic. AI detects anomalies early.
+          </p>
+        </div>
+
+        <div class="bg-slate-800/50 border border-purple-500/30 rounded-2xl p-8 hover:border-purple-500/50 transition-all">
+          <div class="inline-flex items-center justify-center w-12 h-12 rounded-lg bg-purple-500/20 mb-4">
+            <.icon name="hero-user-group" class="h-6 w-6 text-purple-400" />
+          </div>
+          <h3 class="text-xl font-bold text-white mb-3">
+            Competitor Intelligence
+          </h3>
+          <p class="text-slate-300 leading-relaxed">
+            Track top 10 competitors automatically. See where they're gaining ground.
+          </p>
+        </div>
+
+        <div class="bg-slate-800/50 border border-amber-500/30 rounded-2xl p-8 hover:border-amber-500/50 transition-all">
+          <div class="inline-flex items-center justify-center w-12 h-12 rounded-lg bg-amber-500/20 mb-4">
+            <.icon name="hero-cog-6-tooth" class="h-6 w-6 text-amber-400" />
+          </div>
+          <h3 class="text-xl font-bold text-white mb-3">
+            Custom Workflows
+          </h3>
+          <p class="text-slate-300 leading-relaxed">
+            Build if-then automation without code. Connect to Slack, email, webhooks.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+<!-- What's Included -->
+  <div class="container mx-auto px-4 py-20">
+    <div class="max-w-5xl mx-auto">
+      <div class="bg-gradient-to-br from-indigo-500/10 to-emerald-500/10 backdrop-blur-sm rounded-3xl p-12 border border-indigo-400/30">
+        <div class="text-center mb-12">
+          <h2 class="text-4xl font-bold text-white mb-4">
+            Everything Included in Max
+          </h2>
+          <div class="text-6xl font-extrabold text-white mb-2">
+            {@max_tier.price}
+          </div>
+          <div class="text-xl text-slate-300">
+            per {@max_tier.period}
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+          <%= for feature <- @max_tier.features do %>
+            <div class="flex items-start gap-3">
+              <.icon
+                name="hero-check-circle-solid"
+                class="h-6 w-6 text-emerald-400 flex-shrink-0 mt-0.5"
+              />
+              <span class="text-slate-200 text-lg">{feature}</span>
+            </div>
+          <% end %>
+        </div>
+
+        <div class="text-center">
+          <.button
+            phx-click="schedule_demo"
+            class="btn btn-lg bg-white text-indigo-600 hover:bg-slate-100 border-none"
+          >
+            <.icon name="hero-calendar" class="h-5 w-5" /> Schedule Your Max Demo
+          </.button>
+          <p class="text-sm text-slate-400 mt-4">
+            Talk to our team about your specific needs
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+<!-- Trust & Social Proof -->
+  <div class="container mx-auto px-4 py-20">
+    <div class="max-w-5xl mx-auto">
+      <div class="text-center mb-12">
+        <h2 class="text-4xl font-bold text-white mb-4">
+          Trusted By Enterprise Teams
+        </h2>
+        <p class="text-xl text-slate-300">
+          Join companies managing hundreds of domains with Max
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
+        <div class="text-center">
+          <div class="text-5xl font-bold text-white mb-2">12</div>
+          <div class="text-slate-400">Enterprise Brands</div>
+        </div>
+        <div class="text-center">
+          <div class="text-5xl font-bold text-white mb-2">{@trust.domains_managed}</div>
+          <div class="text-slate-400">Domains Managed</div>
+        </div>
+        <div class="text-center">
+          <div class="text-5xl font-bold text-white mb-2">87%</div>
+          <div class="text-slate-400">Time Saved on Reporting</div>
+        </div>
+      </div>
+      
+<!-- Case Study Snippet -->
+      <div class="bg-slate-800/50 border border-slate-700/50 rounded-2xl p-8">
+        <div class="flex items-start gap-4 mb-6">
+          <div class="w-12 h-12 rounded-full bg-indigo-500/20 flex items-center justify-center flex-shrink-0">
+            <span class="text-indigo-300 font-bold">SC</span>
+          </div>
+          <div>
+            <div class="font-semibold text-white">{@trust.customer_testimonial.author}</div>
+            <div class="text-sm text-slate-400">{@trust.customer_testimonial.role}</div>
+          </div>
+        </div>
+        <blockquote class="text-xl text-slate-200 italic leading-relaxed">
+          "{@trust.customer_testimonial.quote}"
+        </blockquote>
+      </div>
+    </div>
+  </div>
+  
+<!-- FAQ Section (Filtered to Max-relevant questions) -->
+  <div class="container mx-auto px-4 py-20">
+    <div class="max-w-4xl mx-auto">
+      <div class="text-center mb-12">
+        <h2 class="text-4xl font-bold text-white mb-4">
+          Common Questions About Max
+        </h2>
+      </div>
+
+      <div class="space-y-4">
+        <%= for {faq, index} <- Enum.with_index(@faqs) do %>
+          <%= if faq.question in ["What does the AI agent actually do?", "What counts as 'usage'?", "Can I try before I buy?"] do %>
+            <.faq_item faq={faq} index={index} />
+          <% end %>
+        <% end %>
+      </div>
+    </div>
+  </div>
+  
+<!-- Final CTA -->
+  <div class="container mx-auto px-4 py-20">
+    <div class="max-w-5xl mx-auto bg-gradient-to-br from-indigo-600 to-emerald-600 rounded-3xl p-16 text-center shadow-2xl">
+      <h2 class="text-5xl font-bold text-white mb-6">
+        Ready to Scale Your SEO Operations?
+      </h2>
+      <p class="text-2xl text-white/90 mb-10 max-w-3xl mx-auto leading-relaxed">
+        Let AI handle the grunt work while you focus on strategy. Schedule a personalized demo to see Max in action with your own data.
+      </p>
+      <.button
+        phx-click="schedule_demo"
+        class="btn btn-lg bg-white text-indigo-600 hover:bg-slate-100 border-none"
+      >
+        <.icon name="hero-calendar" class="h-6 w-6" /> Schedule Your Max Demo
+      </.button>
+    </div>
+  </div>
+  
+<!-- Footer -->
+  <footer class="border-t border-slate-800">
+    <div class="container mx-auto px-4 py-12">
+      <div class="flex flex-col md:flex-row items-center justify-between gap-6">
+        <.link navigate={~p"/"} class="flex items-center gap-2">
+          <.icon name="hero-cpu-chip" class="h-6 w-6 text-indigo-400" />
+          <span class="text-lg font-semibold text-white">Prism AI</span>
+        </.link>
+
+        <div class="flex items-center gap-6 text-slate-400 text-sm">
+          <.link navigate={~p"/"} class="hover:text-white transition-colors">
+            Home
+          </.link>
+          <.link navigate={~p"/pricing"} class="hover:text-white transition-colors">
+            All Plans
+          </.link>
+          <.link navigate={~p"/users/log-in"} class="hover:text-white transition-colors">
+            Sign In
+          </.link>
+        </div>
+
+        <div class="text-slate-400 text-sm">
+          © 2025 Prism AI. All rights reserved.
+        </div>
+      </div>
+    </div>
+  </footer>
+</div>

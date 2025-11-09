@@ -22,6 +22,7 @@ defmodule GscAnalytics.Application do
         GscAnalyticsWeb.Telemetry,
         GscAnalytics.Vault,
         GscAnalytics.Repo,
+        {Oban, Application.fetch_env!(:gsc_analytics, Oban)},
         {DNSCluster, query: Application.get_env(:gsc_analytics, :dns_cluster_query) || :ignore},
         {Phoenix.PubSub, name: GscAnalytics.PubSub},
         {Finch,

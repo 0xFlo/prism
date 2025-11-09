@@ -91,6 +91,9 @@ defmodule GscAnalytics.MixProject do
       # Token encryption for OAuth credentials
       {:cloak_ecto, "~> 1.2"},
 
+      # Background job processing
+      {:oban, "~> 2.18"},
+
       # Testing support
       {:mox, "~> 1.0", only: :test},
 

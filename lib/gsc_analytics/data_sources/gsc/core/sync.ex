@@ -175,6 +175,128 @@ defmodule GscAnalytics.DataSources.GSC.Core.Sync do
     sync_date_range(site_url, start_date, end_date, Keyword.put(opts, :account_id, account_id))
   end
 
+  @doc """
+  Sync all enabled workspaces across all users.
+
+  This function is used by the automatic sync worker to process all active
+  workspaces in the system. It iterates through enabled workspaces and syncs
+  each one, collecting successes and failures.
+
+  ## Parameters
+
+    - `days` - Number of days of historical data to sync (default: 14)
+
+  ## Returns
+
+    - `{:ok, result}` where result is a map with:
+      - `:total_workspaces` - Total number of workspaces processed
+      - `:successes` - List of `{workspace, summary}` tuples for successful syncs
+      - `:failures` - List of `{workspace, reason}` tuples for failed syncs
+
+  ## Examples
+
+      {:ok, result} = Sync.sync_all_workspaces(14)
+      # => %{
+      #      total_workspaces: 3,
+      #      successes: [{workspace1, summary1}, {workspace2, summary2}],
+      #      failures: [{workspace3, :api_timeout}]
+      #    }
+
+  ## Telemetry
+
+  Emits a `[:gsc_analytics, :sync_all, :complete]` event with:
+    - `measurements`: duration_ms, total_workspaces, successes, failures
+    - `metadata`: sync_days
+  """
+  @spec sync_all_workspaces(pos_integer()) :: {:ok, map()}
+  def sync_all_workspaces(days \\ 14) do
+    start_time = System.monotonic_time(:millisecond)
+
+    # Get the workspace sync runner (behaviour-based for testing)
+    runner = Application.get_env(:gsc_analytics, :workspace_sync_runner, __MODULE__)
+
+    # Fetch all enabled workspaces
+    workspaces = GscAnalytics.Workspaces.list_all_enabled_workspaces()
+
+    Logger.info("Starting sync for #{length(workspaces)} enabled workspace(s)")
+
+    # Sync each workspace, collecting results
+    {successes, failures} =
+      Enum.reduce(workspaces, {[], []}, fn workspace, {succ, fail} ->
+        case runner.sync_workspace(workspace, days) do
+          {:ok, summary} ->
+            Logger.info("Workspace #{workspace.id} synced successfully")
+            {[{workspace, summary} | succ], fail}
+
+          {:error, reason} ->
+            Logger.error("Workspace #{workspace.id} failed: #{inspect(reason)}")
+            {succ, [{workspace, reason} | fail]}
+        end
+      end)
+
+    duration_ms = System.monotonic_time(:millisecond) - start_time
+
+    result = %{
+      total_workspaces: length(workspaces),
+      successes: Enum.reverse(successes),
+      failures: Enum.reverse(failures)
+    }
+
+    # Emit telemetry
+    :telemetry.execute(
+      [:gsc_analytics, :sync_all, :complete],
+      %{
+        duration_ms: duration_ms,
+        total_workspaces: result.total_workspaces,
+        successes: length(result.successes),
+        failures: length(result.failures)
+      },
+      %{sync_days: days}
+    )
+
+    Logger.info(
+      "Sync completed: #{result.total_workspaces} workspaces, " <>
+        "#{length(result.successes)} succeeded, #{length(result.failures)} failed"
+    )
+
+    {:ok, result}
+  end
+
+  @doc """
+  Sync a single workspace by fetching its active property and syncing the last N days.
+
+  This is the default implementation used by `sync_all_workspaces/1`. It can be
+  overridden in tests using Mox.
+
+  ## Parameters
+
+    - `workspace` - The workspace struct to sync
+    - `days` - Number of days to sync
+
+  ## Returns
+
+    - `{:ok, summary}` on success
+    - `{:error, reason}` on failure
+  """
+  @spec sync_workspace(GscAnalytics.Schemas.Workspace.t(), pos_integer()) ::
+          {:ok, map()} | {:error, any()}
+  def sync_workspace(workspace, days) do
+    account_id = workspace.id
+
+    case Accounts.get_active_property(account_id) do
+      nil ->
+        {:error, :no_active_property}
+
+      property ->
+        sync_fun = sync_last_n_days_fun()
+
+        {:ok, result} =
+          sync_fun.(property.property_url, days, account_id: account_id)
+
+        {:ok, %{urls_synced: result.total_urls, api_calls: result.api_calls}}
+    end
+  end
+
   # ============================================================================
   # Private - Sync Execution
   # ============================================================================
@@ -241,5 +363,9 @@ defmodule GscAnalytics.DataSources.GSC.Core.Sync do
       url_count: Map.get(summary, :total_urls, 0),
       api_calls: Map.get(summary, :api_calls, 0)
     }
+  end
+
+  defp sync_last_n_days_fun do
+    Application.get_env(:gsc_analytics, :sync_last_n_days_fun, &__MODULE__.sync_last_n_days/3)
   end
 end

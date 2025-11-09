@@ -44,3 +44,6 @@ config :gsc_analytics, :start_authenticator, false
 
 # Encryption key for OAuth tokens in tests
 System.put_env("CLOAK_KEY", "ZzkKpsL01gl7QvRP1ThEmypkny/XrLaM/3FrfIjtNuA=")
+
+# Oban test configuration - use manual testing mode
+config :gsc_analytics, Oban, testing: :manual

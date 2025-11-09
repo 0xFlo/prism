@@ -1,6 +1,8 @@
 defmodule GscAnalytics.DataSources.GSC.Core.SyncTest do
   use GscAnalytics.DataCase, async: false
 
+  alias GscAnalytics.Accounts
+  alias GscAnalytics.AccountsFixtures
   alias GscAnalytics.DataSources.GSC.Core.Sync
 
   @site_url "sc-domain:test.com"
@@ -322,6 +324,42 @@ defmodule GscAnalytics.DataSources.GSC.Core.SyncTest do
     defp duplicate_rows(count) do
       row = %{"keys" => ["https://example.com/page", "query"], "clicks" => 1}
       List.duplicate(row, count)
+    end
+  end
+
+  describe "sync_workspace/2" do
+    setup do
+      on_exit(fn -> Application.delete_env(:gsc_analytics, :sync_last_n_days_fun) end)
+      :ok
+    end
+
+    test "syncs the active property for the workspace id" do
+      workspace = AccountsFixtures.workspace_fixture()
+
+      {:ok, property} =
+        Accounts.add_property(workspace.id, %{
+          property_url: "sc-domain:sync-example.com",
+          display_name: "Sync Example"
+        })
+
+      {:ok, _} = Accounts.set_active_property(workspace.id, property.id)
+
+      test_pid = self()
+
+      Application.put_env(:gsc_analytics, :sync_last_n_days_fun, fn site_url, days, opts ->
+        send(test_pid, {:sync_called, site_url, days, opts})
+        {:ok, %{total_urls: 25, api_calls: 3}}
+      end)
+
+      assert {:ok, %{urls_synced: 25, api_calls: 3}} = Sync.sync_workspace(workspace, 14)
+
+      assert_receive {:sync_called, "sc-domain:sync-example.com", 14, [account_id: account_id]}
+      assert account_id == workspace.id
+    end
+
+    test "returns error when no active property exists" do
+      workspace = AccountsFixtures.workspace_fixture()
+      assert {:error, :no_active_property} = Sync.sync_workspace(workspace, 7)
     end
   end
 end

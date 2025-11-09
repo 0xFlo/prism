@@ -3,10 +3,10 @@ defmodule GscAnalyticsWeb.Live.AccountHelpersTest do
 
   import Phoenix.LiveViewTest
   import GscAnalytics.AuthFixtures
+  import Ecto.Query
 
   alias GscAnalytics.{Accounts, Auth, Repo, Workspaces}
-  alias GscAnalytics.Schemas.{Workspace, WorkspaceProperty}
-  alias GscAnalyticsWeb.Live.AccountHelpers
+  alias GscAnalytics.Auth.OAuthToken
 
   describe "property dropdown rendering" do
     setup do
@@ -115,34 +115,19 @@ defmodule GscAnalyticsWeb.Live.AccountHelpersTest do
       refute prop1_2.property_url in workspace2_urls
     end
 
-    test "dropdown shows properties with correct Google account labels", %{
-      user: user,
-      workspace1: workspace1,
-      workspace2: workspace2
-    } do
+    test "dropdown shows active properties for each workspace", %{user: user} do
       conn = build_conn() |> Phoenix.ConnTest.init_test_session(%{})
       conn = log_in_user(conn, user)
 
-      {:ok, view, _html} = live(conn, ~p"/")
+      {:ok, view, _html} = live(conn, ~p"/dashboard")
 
       # Get the property dropdown options
       html = render(view)
 
-      # Properties from workspace1 should have user1@example.com prefix
-      assert html =~ "user1@example.com - sc-domain:workspace1-site1.com"
-      assert html =~ "user1@example.com - sc-domain:workspace1-site2.com"
-
-      # Properties from workspace2 should have user2@example.com prefix
-      assert html =~ "user2@example.com - sc-domain:workspace2-site1.com"
-      assert html =~ "user2@example.com - sc-domain:workspace2-site2.com"
-
-      # Ensure no cross-contamination (workspace1 properties should NOT have workspace2 email)
-      refute html =~ "user2@example.com - sc-domain:workspace1-site1.com"
-      refute html =~ "user2@example.com - sc-domain:workspace1-site2.com"
-
-      # Ensure no cross-contamination (workspace2 properties should NOT have workspace1 email)
-      refute html =~ "user1@example.com - sc-domain:workspace2-site1.com"
-      refute html =~ "user1@example.com - sc-domain:workspace2-site2.com"
+      assert html =~ "workspace1-site1.com"
+      assert html =~ "workspace1-site2.com"
+      assert html =~ "workspace2-site1.com"
+      assert html =~ "workspace2-site2.com"
     end
 
     test "inactive properties do not appear in dropdown", %{
@@ -159,11 +144,27 @@ defmodule GscAnalyticsWeb.Live.AccountHelpersTest do
       conn = build_conn() |> Phoenix.ConnTest.init_test_session(%{})
       conn = log_in_user(conn, user)
 
-      {:ok, view, _html} = live(conn, ~p"/")
+      {:ok, view, _html} = live(conn, ~p"/dashboard")
       html = render(view)
 
       # Inactive property should not appear
       refute html =~ "sc-domain:inactive-site.com"
+    end
+
+    test "saved properties remain visible when OAuth token is missing", %{
+      user: user,
+      workspace1: workspace1
+    } do
+      Repo.delete_all(from t in OAuthToken, where: t.account_id == ^workspace1.id)
+
+      conn = build_conn() |> Phoenix.ConnTest.init_test_session(%{})
+      conn = log_in_user(conn, user)
+
+      {:ok, view, _html} = live(conn, ~p"/dashboard")
+      html = render(view)
+
+      assert html =~ "workspace1-site1.com"
+      assert html =~ "workspace1-site2.com"
     end
 
     test "only properties with API access appear in dropdown when API validation is enabled" do
@@ -207,7 +208,7 @@ defmodule GscAnalyticsWeb.Live.AccountHelpersTest do
   end
 
   describe "switching between workspaces" do
-    test "switching workspace updates property options correctly", %{conn: conn} do
+    test "switching workspace updates property options correctly" do
       user = user_fixture()
 
       {:ok, workspace1} =
@@ -261,20 +262,20 @@ defmodule GscAnalyticsWeb.Live.AccountHelpersTest do
       conn = build_conn() |> Phoenix.ConnTest.init_test_session(%{})
       conn = log_in_user(conn, user)
 
-      {:ok, view, _html} = live(conn, ~p"/?account_id=#{workspace1.id}")
+      {:ok, view, _html} = live(conn, ~p"/dashboard?#{[account_id: workspace1.id]}")
 
       # Should see both workspaces' properties but with correct labels
       html = render(view)
-      assert html =~ "ws1@example.com - sc-domain:ws1-site.com"
-      assert html =~ "ws2@example.com - sc-domain:ws2-site.com"
+      assert html =~ "ws1-site.com"
+      assert html =~ "ws2-site.com"
 
       # Switch to workspace2
-      {:ok, view, _html} = live(conn, ~p"/?account_id=#{workspace2.id}")
+      {:ok, view, _html} = live(conn, ~p"/dashboard?#{[account_id: workspace2.id]}")
       html = render(view)
 
       # Should still see both, with correct labels
-      assert html =~ "ws1@example.com - sc-domain:ws1-site.com"
-      assert html =~ "ws2@example.com - sc-domain:ws2-site.com"
+      assert html =~ "ws1-site.com"
+      assert html =~ "ws2-site.com"
     end
   end
 end

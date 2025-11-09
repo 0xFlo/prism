@@ -48,7 +48,12 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorWoWTest do
       results =
         TimeSeriesAggregator.batch_calculate_wow_growth(
           [url],
-          %{start_date: ~D[2025-01-01], account_id: account_id, weeks_back: 1}
+          %{
+            start_date: ~D[2025-01-01],
+            account_id: account_id,
+            property_url: @property_url,
+            weeks_back: 1
+          }
         )
 
       # Should return 4 weeks of data
@@ -109,7 +114,7 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorWoWTest do
       results =
         TimeSeriesAggregator.batch_calculate_wow_growth(
           [url, url2],
-          %{start_date: ~D[2025-01-01], account_id: account_id}
+          %{start_date: ~D[2025-01-01], account_id: account_id, property_url: @property_url}
         )
 
       # Growth should be calculated independently per URL
@@ -131,7 +136,12 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorWoWTest do
       results =
         TimeSeriesAggregator.batch_calculate_wow_growth(
           [url],
-          %{start_date: ~D[2025-01-01], account_id: account_id, weeks_back: 2}
+          %{
+            start_date: ~D[2025-01-01],
+            account_id: account_id,
+            property_url: @property_url,
+            weeks_back: 2
+          }
         )
 
       # Week 3 should compare to Week 1, not Week 2
@@ -169,7 +179,7 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorWoWTest do
       results =
         TimeSeriesAggregator.batch_calculate_wow_growth(
           [url_zero],
-          %{start_date: ~D[2025-01-01], account_id: account_id}
+          %{start_date: ~D[2025-01-01], account_id: account_id, property_url: @property_url}
         )
 
       # Week 2 growth should be NULL (can't divide by 0)
@@ -186,7 +196,7 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorWoWTest do
       results =
         TimeSeriesAggregator.batch_calculate_wow_growth(
           [url],
-          %{start_date: ~D[2025-01-01], account_id: account_id}
+          %{start_date: ~D[2025-01-01], account_id: account_id, property_url: @property_url}
         )
 
       # Week 2 should have both clicks and impressions growth
@@ -219,7 +229,7 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorWoWTest do
       results =
         TimeSeriesAggregator.batch_calculate_wow_growth(
           [url, url2],
-          %{start_date: ~D[2025-01-01], account_id: account_id}
+          %{start_date: ~D[2025-01-01], account_id: account_id, property_url: @property_url}
         )
 
       # Results should be ordered: first by URL, then by week_start
@@ -245,12 +255,49 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorWoWTest do
       results =
         TimeSeriesAggregator.batch_calculate_wow_growth(
           [url],
-          %{start_date: ~D[2025-01-01], account_id: account_id}
+          %{start_date: ~D[2025-01-01], account_id: account_id, property_url: @property_url}
         )
 
       week1 = Enum.find(results, &(&1.week_start == ~D[2025-01-06]))
       # Position should be weighted average (all days have position 5.0)
       assert_in_delta week1.position, 5.0, 0.01
+    end
+
+    test "ignores metrics from other properties when property_url is provided", %{
+      url: url,
+      account_id: account_id
+    } do
+      other_property = "https://other.example.com/"
+
+      Enum.each(
+        [
+          %{date: ~D[2025-01-06], clicks: 500, impressions: 5000},
+          %{date: ~D[2025-01-07], clicks: 500, impressions: 5000}
+        ],
+        fn data ->
+          %TimeSeries{}
+          |> TimeSeries.changeset(
+            Map.merge(data, %{
+              url: url,
+              account_id: account_id,
+              property_url: other_property,
+              ctr: data.clicks / data.impressions,
+              position: 1.0
+            })
+          )
+          |> Repo.insert!()
+        end
+      )
+
+      results =
+        TimeSeriesAggregator.batch_calculate_wow_growth(
+          [url],
+          %{start_date: ~D[2025-01-01], account_id: account_id, property_url: @property_url}
+        )
+
+      week1 = Enum.find(results, &(&1.week_start == ~D[2025-01-06]))
+      # Should only include clicks from the InsightTimer property, not the extra dataset
+      assert week1.clicks == 210
     end
   end
 
@@ -295,7 +342,7 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorWoWTest do
         TimeSeriesAggregator.batch_calculate_wow_growth_legacy(
           [url],
           4,
-          %{account_id: account_id}
+          %{account_id: account_id, property_url: @property_url}
         )
 
       # Should return a map of %{url => growth_pct}
@@ -312,7 +359,7 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregatorWoWTest do
         TimeSeriesAggregator.batch_calculate_wow_growth_legacy(
           [url],
           4,
-          %{account_id: account_id}
+          %{account_id: account_id, property_url: @property_url}
         )
 
       # Legacy function aggregates 4 recent weeks vs 4 previous weeks

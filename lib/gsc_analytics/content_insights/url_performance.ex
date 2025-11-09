@@ -50,7 +50,7 @@ defmodule GscAnalytics.ContentInsights.UrlPerformance do
       |> offset(^offset)
       |> Repo.all()
 
-    enriched_urls = enrich_urls(urls, account_id, period_days)
+    enriched_urls = enrich_urls(urls, account_id, property_url, period_days)
 
     total_pages =
       total_count
@@ -69,36 +69,19 @@ defmodule GscAnalytics.ContentInsights.UrlPerformance do
   end
 
   defp build_hybrid_query(account_id, property_url, period_days, search_pattern) do
-    period_start = Date.add(Date.utc_today(), -period_days)
-
     period_query =
-      TimeSeries
-      |> where(
-        [ts],
-        ts.account_id == ^account_id and ts.property_url == ^property_url and
-          ts.date >= ^period_start
-      )
-      |> maybe_filter_time_series(search_pattern)
-      |> group_by([ts], ts.url)
-      |> select([ts], %{
-        url: ts.url,
-        period_clicks: sum(ts.clicks),
-        period_impressions: sum(ts.impressions),
-        period_position:
-          fragment(
-            "SUM(? * ?) / NULLIF(SUM(?), 0)",
-            ts.position,
-            ts.impressions,
-            ts.impressions
-          ),
-        period_ctr: fragment("SUM(?)::float / NULLIF(SUM(?), 0)", ts.clicks, ts.impressions)
-      })
+      build_period_metrics_query(account_id, property_url, period_days, search_pattern)
 
     backlink_query =
       Backlink
       |> maybe_filter_backlinks(search_pattern)
-      |> group_by([b], b.target_url)
-      |> select([b], %{
+      |> join(:inner, [b], ls in "url_lifetime_stats",
+        on:
+          ls.url == b.target_url and ls.account_id == ^account_id and
+            ls.property_url == ^property_url
+      )
+      |> group_by([b, _ls], b.target_url)
+      |> select([b, _ls], %{
         target_url: b.target_url,
         backlink_count: count(b.id),
         backlinks_last_imported: max(b.imported_at)
@@ -136,6 +119,55 @@ defmodule GscAnalytics.ContentInsights.UrlPerformance do
           ls.lifetime_clicks,
           ls.lifetime_impressions
         )
+    })
+  end
+
+  defp build_period_metrics_query(account_id, property_url, period_days, search_pattern) do
+    if lifetime_window?(period_days) do
+      empty_period_metrics_query()
+    else
+      period_start = Date.add(Date.utc_today(), -period_days)
+
+      TimeSeries
+      |> where(
+        [ts],
+        ts.account_id == ^account_id and ts.property_url == ^property_url and
+          ts.date >= ^period_start
+      )
+      |> maybe_filter_time_series(search_pattern)
+      |> group_by([ts], ts.url)
+      |> select([ts], %{
+        url: ts.url,
+        period_clicks: sum(ts.clicks),
+        period_impressions: sum(ts.impressions),
+        period_position:
+          fragment(
+            "SUM(? * ?) / NULLIF(SUM(?), 0)",
+            ts.position,
+            ts.impressions,
+            ts.impressions
+          ),
+        period_ctr: fragment("SUM(?)::float / NULLIF(SUM(?), 0)", ts.clicks, ts.impressions)
+      })
+    end
+  end
+
+  defp empty_period_metrics_query do
+    TimeSeries
+    |> where([_ts], false)
+    |> group_by([ts], ts.url)
+    |> select([ts], %{
+      url: ts.url,
+      period_clicks: sum(ts.clicks),
+      period_impressions: sum(ts.impressions),
+      period_position:
+        fragment(
+          "SUM(? * ?) / NULLIF(SUM(?), 0)",
+          ts.position,
+          ts.impressions,
+          ts.impressions
+        ),
+      period_ctr: fragment("SUM(?)::float / NULLIF(SUM(?), 0)", ts.clicks, ts.impressions)
     })
   end
 
@@ -258,7 +290,7 @@ defmodule GscAnalytics.ContentInsights.UrlPerformance do
 
   defp lifetime_window?(_), do: false
 
-  defp enrich_urls(urls, account_id, period_days) do
+  defp enrich_urls(urls, account_id, property_url, period_days) do
     url_list = Enum.map(urls, & &1.url)
 
     # Use window function implementation for 20x performance improvement
@@ -268,7 +300,12 @@ defmodule GscAnalytics.ContentInsights.UrlPerformance do
     wow_growth_results =
       TimeSeriesAggregator.batch_calculate_wow_growth(
         url_list,
-        %{start_date: start_date, account_id: account_id, weeks_back: 1}
+        %{
+          start_date: start_date,
+          account_id: account_id,
+          property_url: property_url,
+          weeks_back: 1
+        }
       )
 
     # Convert list of weekly results to map of url => latest WoW growth

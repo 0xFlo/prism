@@ -75,6 +75,13 @@ if runtime_client_id && runtime_client_secret do
     redirect_uri: runtime_redirect_uri
 end
 
+# Configure Oban plugins dynamically based on auto-sync settings
+# This allows enabling/disabling scheduled syncs via environment variables
+config :gsc_analytics, Oban, plugins: GscAnalytics.Config.AutoSync.plugins()
+
+# Log auto-sync configuration status on startup
+GscAnalytics.Config.AutoSync.log_status!()
+
 # config/runtime.exs is executed for all environments, including
 # during releases. It is executed after compilation and before the
 # system starts, so it is typically used to load production configuration

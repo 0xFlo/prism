@@ -367,8 +367,9 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
         properties =
           case Map.get(oauth_tokens, account.id) do
             nil ->
-              # No OAuth token - don't show any properties in navigation
-              []
+              # No OAuth token available - fall back to saved properties so historical
+              # data remains accessible even if access has been revoked.
+              saved_properties
 
             _token ->
               # OAuth token exists - get API-accessible properties
@@ -382,8 +383,8 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
                   end)
 
                 {:error, _} ->
-                  # If OAuth API call fails, don't show any properties in navigation
-                  []
+                  # If OAuth API call fails, fall back to saved properties
+                  saved_properties
               end
           end
 
@@ -411,7 +412,7 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
         properties =
           case Map.get(oauth_tokens, account.id) do
             nil ->
-              []
+              saved_properties
 
             _token ->
               case get_api_accessible_properties(scope, account.id, saved_properties) do
@@ -422,7 +423,7 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
                   end)
 
                 {:error, _} ->
-                  []
+                  saved_properties
               end
           end
 

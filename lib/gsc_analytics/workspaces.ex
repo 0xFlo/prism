@@ -16,6 +16,24 @@ defmodule GscAnalytics.Workspaces do
   @type workspace_id :: pos_integer()
 
   @doc """
+  Returns all enabled workspaces across all users.
+
+  This function is used by background sync jobs to process all active workspaces
+  in the system. It does not filter by user_id.
+
+  ## Examples
+
+      iex> list_all_enabled_workspaces()
+      [%Workspace{enabled: true}, ...]
+  """
+  @spec list_all_enabled_workspaces() :: [Workspace.t()]
+  def list_all_enabled_workspaces do
+    query = from w in Workspace, where: w.enabled == true
+
+    Repo.all(query)
+  end
+
+  @doc """
   Returns all workspaces for a given user.
 
   ## Options
