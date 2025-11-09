@@ -2,6 +2,21 @@ import Config
 
 project_root = Path.expand("..", __DIR__)
 
+# Auto-load environment variables from .env files
+# Loads .env and environment-specific files like .env.dev, .env.prod, .env.test
+# Uses Dotenvy to make local development seamless without manual `source .env` commands
+env_files = [
+  Path.join(project_root, ".env"),
+  Path.join(project_root, ".env.#{config_env()}")
+]
+
+# Load variables from .env files and set them in System environment
+# Dotenvy returns {:ok, map} but doesn't automatically set env vars, so we do it manually
+case Dotenvy.source(env_files) do
+  {:ok, vars} -> Enum.each(vars, fn {key, val} -> System.put_env(key, val) end)
+  {:error, _} -> :ok  # Files don't exist, skip silently
+end
+
 credentials_file =
   case System.get_env("GOOGLE_OAUTH_CREDENTIALS_FILE") do
     nil ->
@@ -201,3 +216,50 @@ if config_env() == :prod do
   #
   # See https://hexdocs.pm/swoosh/Swoosh.html#module-installation for details.
 end
+
+# ScrapFly SERP API Configuration
+# Available in all environments (dev, test, prod)
+config :gsc_analytics,
+  scrapfly_api_key: System.get_env("SCRAPFLY_API_KEY")
+
+# Hammer rate limiter backend configuration for multi-node support
+# Defaults to ETS (single-node), set HAMMER_BACKEND=postgres for distributed rate limiting
+hammer_backend =
+  case System.get_env("HAMMER_BACKEND") do
+    "postgres" ->
+      # Distributed rate limiting via Postgres for multi-node deployments
+      {Hammer.Backend.Ecto,
+       [
+         repo: GscAnalytics.Repo,
+         # Keep buckets for 2 minutes
+         expiry_ms: 60_000 * 2,
+         # Clean up every minute
+         cleanup_interval_ms: 60_000
+       ]}
+
+    "redis" ->
+      # Distributed rate limiting via Redis for multi-node deployments
+      # Requires REDIS_URL environment variable
+      redis_url = System.get_env("REDIS_URL") || "redis://localhost:6379"
+
+      {Hammer.Backend.Redis,
+       [
+         redis_url: redis_url,
+         # Keep buckets for 2 minutes
+         expiry_ms: 60_000 * 2,
+         # Clean up every minute
+         cleanup_interval_ms: 60_000
+       ]}
+
+    _ ->
+      # Default: ETS backend (single-node only, but fastest)
+      {Hammer.Backend.ETS,
+       [
+         # Keep data for 2 minutes
+         expiry_ms: 60_000 * 2,
+         # Clean up every minute
+         cleanup_interval_ms: 60_000
+       ]}
+  end
+
+config :hammer, backend: hammer_backend

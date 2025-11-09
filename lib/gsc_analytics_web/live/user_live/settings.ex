@@ -169,6 +169,36 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
                       </div>
                     <% end %>
 
+                    <%= if account.oauth_error == :oauth_token_invalid do %>
+                      <div class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                        <div class="flex items-start gap-2">
+                          <svg
+                            class="h-5 w-5 flex-shrink-0 text-amber-600"
+                            fill="currentColor"
+                            viewBox="0 0 20 20"
+                          >
+                            <path
+                              fill-rule="evenodd"
+                              d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                              clip-rule="evenodd"
+                            />
+                          </svg>
+                          <div class="flex-1">
+                            <p class="font-medium">Re-authentication required</p>
+                            <p class="mt-1 text-xs">
+                              <%= if account.oauth && account.oauth.last_error do %>
+                                <span class="font-mono text-amber-900">
+                                  {account.oauth.last_error}
+                                </span>
+                                <br />
+                              <% end %>
+                              Click "Change" to re-authenticate with Google and restore access to your Search Console properties.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    <% end %>
+
                     <.property_controls account={account} />
                   </div>
 
@@ -766,7 +796,15 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
 
     from(t in OAuthToken, where: t.account_id in ^workspace_ids)
     |> Repo.all()
-    |> Enum.map(&{&1.account_id, %{google_email: &1.google_email}})
+    |> Enum.map(
+      &{&1.account_id,
+       %{
+         google_email: &1.google_email,
+         status: &1.status,
+         last_error: &1.last_error,
+         last_validated_at: &1.last_validated_at
+       }}
+    )
     |> Map.new()
   end
 
@@ -807,7 +845,7 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
       # Get preloaded properties for this account to pass to list_property_options
       saved_properties_for_account = Map.get(all_properties, account.id, [])
 
-      {property_options, property_options_error} =
+      {property_options, property_options_error, oauth_error} =
         if oauth do
           case Accounts.list_property_options(
                  current_scope,
@@ -815,13 +853,16 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
                  saved_properties_for_account
                ) do
             {:ok, options} ->
-              {ensure_included_property(options, account.default_property), nil}
+              {ensure_included_property(options, account.default_property), nil, nil}
+
+            {:error, :oauth_token_invalid} ->
+              {[], nil, :oauth_token_invalid}
 
             {:error, reason} ->
-              {[], translate_property_error(reason)}
+              {[], translate_property_error(reason), nil}
           end
         else
-          {[], nil}
+          {[], nil, nil}
         end
 
       property_label = property_display_label(account.default_property, property_options)
@@ -858,6 +899,7 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
         id: account.id,
         display_name: account.name,
         oauth: oauth,
+        oauth_error: oauth_error,
         default_property: account.default_property,
         property_options: property_options,
         property_options_error: property_options_error,

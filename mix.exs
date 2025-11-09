@@ -85,6 +85,9 @@ defmodule GscAnalytics.MixProject do
       # Test coverage reporting
       {:excoveralls, "~> 0.18", only: :test},
 
+      # HTTP mocking for tests
+      {:mox, "~> 1.1", only: :test},
+
       # Email delivery for authentication
       {:swoosh, "~> 1.16"},
 
@@ -94,8 +97,8 @@ defmodule GscAnalytics.MixProject do
       # Background job processing
       {:oban, "~> 2.18"},
 
-      # Testing support
-      {:mox, "~> 1.0", only: :test},
+      # Environment variable loading from .env files
+      {:dotenvy, "~> 1.0"},
 
       # Tidewave AI Assistant for Phoenix
       {:tidewave, "~> 0.5", only: :dev}

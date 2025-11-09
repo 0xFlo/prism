@@ -36,6 +36,14 @@ defmodule GscAnalytics.Application do
       ]
       |> Kernel.++(authenticator_children)
       |> Kernel.++([
+        # Task Supervisor for background jobs (HTTP checks, etc.)
+        {Task.Supervisor, name: GscAnalytics.TaskSupervisor},
+        # Workflow execution infrastructure
+        {Registry, keys: :unique, name: GscAnalytics.Workflows.EngineRegistry},
+        {DynamicSupervisor,
+         strategy: :one_for_one, name: GscAnalytics.Workflows.EngineSupervisor},
+        {GscAnalytics.Workflows.ProgressTracker, []},
+        # GSC and Crawler progress tracking
         {GscAnalytics.DataSources.GSC.Support.SyncProgress, []},
         {GscAnalytics.Crawler.ProgressTracker, []},
         GscAnalyticsWeb.Endpoint
@@ -48,7 +56,35 @@ defmodule GscAnalytics.Application do
     # Attach telemetry handlers for audit logging
     GscAnalytics.DataSources.GSC.Telemetry.AuditLogger.attach()
 
-    Supervisor.start_link(children, opts)
+    case Supervisor.start_link(children, opts) do
+      {:ok, _pid} = result ->
+        # Schedule initial GSC sync on startup if auto-sync is enabled
+        schedule_initial_sync()
+        result
+
+      error ->
+        error
+    end
+  end
+
+  @doc false
+  # Schedules an initial GSC sync job to run immediately after server startup
+  # Only runs if ENABLE_AUTO_SYNC is true and not in test environment
+  defp schedule_initial_sync do
+    if GscAnalytics.Config.AutoSync.enabled?() and Mix.env() != :test do
+      require Logger
+
+      # Insert job with schedule_in: 0 to run immediately
+      case GscAnalytics.Workers.GscSyncWorker.new(%{}, schedule_in: 0) |> Oban.insert() do
+        {:ok, _job} ->
+          Logger.info("Scheduled initial GSC sync to run immediately on startup")
+
+        {:error, reason} ->
+          Logger.warning(
+            "Failed to schedule initial GSC sync on startup: #{inspect(reason)}"
+          )
+      end
+    end
   end
 
   # Tell Phoenix to update the endpoint configuration

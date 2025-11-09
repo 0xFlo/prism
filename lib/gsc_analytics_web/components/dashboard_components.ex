@@ -14,6 +14,70 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
   import GscAnalyticsWeb.Dashboard.HTMLHelpers
 
   @doc """
+  Renders a URL in breadcrumb-style hierarchical format.
+
+  Displays URLs as: `domain / path1 / ... / page-name`
+
+  ## Attributes
+  - `url` - The full URL to display (required)
+  - `link_to` - The target path for the link (default: URL detail page)
+  - `max_segments` - Maximum path segments to show (default: 3)
+
+  ## Example
+      <.url_breadcrumb
+        url="https://scrapfly.io/blog/web-scraping/tutorial"
+        link_to="/dashboard/url?url=https://scrapfly.io/blog/web-scraping/tutorial"
+      />
+  """
+  attr :url, :string, required: true
+  attr :link_to, :string, default: nil
+  attr :max_segments, :integer, default: 3
+
+  def url_breadcrumb(assigns) do
+    breadcrumb = parse_url_for_breadcrumb(assigns.url, max_segments: assigns.max_segments)
+
+    assigns =
+      assigns
+      |> assign(:breadcrumb, breadcrumb)
+      |> assign(:has_path, breadcrumb.segments != [])
+
+    ~H"""
+    <div class="flex items-center gap-1 font-mono text-xs sm:text-sm overflow-hidden">
+      <!-- Domain (always visible, muted) -->
+      <span class="text-slate-500 dark:text-slate-400 shrink-0">
+        {@breadcrumb.domain}
+      </span>
+
+      <%= if @has_path do %>
+        <!-- Path segments with separators -->
+        <%= for segment <- @breadcrumb.segments do %>
+          <span class="text-slate-400 dark:text-slate-500 shrink-0">/</span>
+
+          <%= case segment.type do %>
+            <% :ellipsis -> %>
+              <span class="text-slate-400 dark:text-slate-500 shrink-0">...</span>
+            <% :last -> %>
+              <!-- Last segment (page name) - emphasized and clickable -->
+              <a
+                href={@link_to || ~p"/dashboard/url?url=#{@url}"}
+                class="link link-primary font-semibold truncate hover:underline"
+                title={segment.text}
+              >
+                {segment.text}
+              </a>
+            <% :path -> %>
+              <!-- Middle path segment -->
+              <span class="text-slate-600 dark:text-slate-300 truncate" title={segment.text}>
+                {segment.text}
+              </span>
+          <% end %>
+        <% end %>
+      <% end %>
+    </div>
+    """
+  end
+
+  @doc """
   Renders a sortable table of URL performance data.
 
   ## Attributes
@@ -1047,29 +1111,36 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
   def interactive_metric_card(assigns) do
     # Define color scheme matching Chart.js series configuration
     # These colors match the ones in chartjs_performance_chart.js seriesConfig
-    {border_color, check_color, bg_color, pulse_color} =
+    {border_color, check_color_light, check_color_dark, bg_color_light, bg_color_dark,
+     pulse_color} =
       case assigns.metric do
         :clicks ->
-          {"border-indigo-500", "text-indigo-400", "bg-indigo-500/10", "bg-indigo-500/20"}
+          {"border-indigo-500", "text-indigo-600", "text-indigo-400", "bg-indigo-50",
+           "bg-indigo-500/10", "bg-indigo-500/20"}
 
         :impressions ->
-          {"border-emerald-500", "text-emerald-400", "bg-emerald-500/10", "bg-emerald-500/20"}
+          {"border-emerald-500", "text-emerald-600", "text-emerald-400", "bg-emerald-50",
+           "bg-emerald-500/10", "bg-emerald-500/20"}
 
         :ctr ->
-          {"border-purple-500", "text-purple-400", "bg-purple-500/10", "bg-purple-500/20"}
+          {"border-purple-500", "text-purple-600", "text-purple-400", "bg-purple-50",
+           "bg-purple-500/10", "bg-purple-500/20"}
 
         :position ->
-          {"border-red-500", "text-red-400", "bg-red-500/10", "bg-red-500/20"}
+          {"border-red-500", "text-red-600", "text-red-400", "bg-red-50", "bg-red-500/10",
+           "bg-red-500/20"}
 
         _ ->
-          {"border-slate-500", "text-slate-400", "bg-slate-500/10", "bg-slate-500/20"}
+          {"border-slate-500", "text-slate-600", "text-slate-400", "bg-slate-50",
+           "bg-slate-500/10", "bg-slate-500/20"}
       end
 
     assigns =
       assigns
       |> assign(:border_color, border_color)
-      |> assign(:check_color, check_color)
-      |> assign(:bg_color, bg_color)
+      |> assign(:check_color, "#{check_color_light} dark:#{check_color_dark}")
+      |> assign(:bg_color_light, bg_color_light)
+      |> assign(:bg_color_dark, bg_color_dark)
       |> assign(:pulse_color, pulse_color)
 
     ~H"""
@@ -1078,9 +1149,17 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
         "relative rounded-lg p-5 transition-all duration-300 ease-out",
         @interactive &&
           "cursor-pointer hover:shadow-lg hover:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-500",
-        @interactive && @active && ["border-2", @border_color, @bg_color, "bg-slate-800 shadow-md"],
-        @interactive && !@active && "border border-slate-600 bg-slate-800/70 hover:border-slate-500",
-        !@interactive && "border border-slate-600 bg-slate-800/70"
+        @interactive && @active &&
+          [
+            "border-2",
+            @border_color,
+            @bg_color_light,
+            "dark:#{@bg_color_dark}",
+            "bg-white dark:bg-slate-800 shadow-md"
+          ],
+        @interactive && !@active &&
+          "border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800/70 hover:border-slate-400 dark:hover:border-slate-500",
+        !@interactive && "border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800/70"
       ]}
       phx-click={@interactive && "toggle_series"}
       phx-value-metric={@interactive && Atom.to_string(@metric)}
@@ -1097,13 +1176,13 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
 
       <div class="flex items-start justify-between relative z-10">
         <div class="flex-1">
-          <h3 class="text-sm font-medium text-slate-400">
+          <h3 class="text-sm font-medium text-slate-600 dark:text-slate-400">
             {@label}
           </h3>
-          <p class="mt-2 text-3xl font-semibold text-white transition-transform duration-200">
+          <p class="mt-2 text-3xl font-semibold text-slate-900 dark:text-white transition-transform duration-200">
             {format_metric_value(@metric, @value)}
           </p>
-          <p id={"#{@metric}-description"} class="mt-1 text-sm text-slate-400">
+          <p id={"#{@metric}-description"} class="mt-1 text-sm text-slate-500 dark:text-slate-400">
             {@subtitle}
           </p>
         </div>

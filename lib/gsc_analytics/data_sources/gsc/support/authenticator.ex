@@ -131,10 +131,19 @@ defmodule GscAnalytics.DataSources.GSC.Support.Authenticator do
 
     case Auth.get_oauth_token(nil, workspace_id) do
       {:ok, oauth_token} ->
-        if needs_oauth_refresh?(oauth_token, force_refresh?) do
-          refresh_oauth_token(state, workspace_id)
+        # Check if token needs re-authentication (invalid or expired status)
+        if GscAnalytics.Auth.OAuthToken.needs_reauth?(oauth_token) do
+          Logger.error(
+            "OAuth token for workspace #{workspace_id} needs re-authentication (status: #{oauth_token.status})"
+          )
+
+          {state, {:error, :oauth_token_invalid}}
         else
-          handle_oauth_success(state, workspace_id, oauth_token)
+          if needs_oauth_refresh?(oauth_token, force_refresh?) do
+            refresh_oauth_token(state, workspace_id)
+          else
+            handle_oauth_success(state, workspace_id, oauth_token)
+          end
         end
 
       {:error, :not_found} ->
@@ -157,6 +166,23 @@ defmodule GscAnalytics.DataSources.GSC.Support.Authenticator do
     case Auth.refresh_oauth_access_token(nil, workspace_id) do
       {:ok, refreshed} ->
         handle_oauth_success(state, workspace_id, refreshed)
+
+      {:error, :oauth_token_invalid} = error ->
+        # Token has been revoked/expired - database already updated by Auth module
+        Logger.error(
+          "OAuth token is invalid for workspace #{workspace_id} - re-authentication required"
+        )
+
+        state =
+          state
+          |> cancel_refresh(workspace_id)
+          |> put_workspace(workspace_id, %{
+            last_error: :oauth_token_invalid,
+            token: nil,
+            expires_at: nil
+          })
+
+        {state, error}
 
       {:error, reason} ->
         Logger.error(

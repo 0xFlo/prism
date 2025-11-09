@@ -57,7 +57,7 @@ defmodule GscAnalyticsWeb.Dashboard.HTMLHelpers do
   def format_position(pos), do: pos
 
   @doc """
-  Truncate URL for display
+  Truncate URL for display (legacy - use parse_url_for_breadcrumb for better UX)
   """
   def truncate_url(url, max_length \\ 60) do
     if String.length(url) > max_length do
@@ -65,6 +65,127 @@ defmodule GscAnalyticsWeb.Dashboard.HTMLHelpers do
     else
       url
     end
+  end
+
+  @doc """
+  Parse URL into breadcrumb segments for hierarchical display.
+
+  Returns a map with:
+  - `:domain` - The domain name (e.g., "scrapfly.io")
+  - `:segments` - List of path segments with :text and :type keys
+  - `:has_ellipsis` - Boolean indicating if middle segments were collapsed
+
+  ## Options
+  - `max_segments` - Maximum path segments to show (default: 3)
+  - `preserve_query` - Include query params in last segment (default: false)
+
+  ## Examples
+
+      iex> parse_url_for_breadcrumb("https://scrapfly.io/blog/web-scraping/tutorial")
+      %{
+        domain: "scrapfly.io",
+        segments: [
+          %{text: "blog", type: :path},
+          %{text: "...", type: :ellipsis},
+          %{text: "tutorial", type: :last}
+        ],
+        has_ellipsis: true
+      }
+
+      iex> parse_url_for_breadcrumb("https://example.com/about")
+      %{
+        domain: "example.com",
+        segments: [%{text: "about", type: :last}],
+        has_ellipsis: false
+      }
+  """
+  def parse_url_for_breadcrumb(url, opts \\ []) do
+    max_segments = Keyword.get(opts, :max_segments, 3)
+    preserve_query = Keyword.get(opts, :preserve_query, false)
+
+    uri = URI.parse(url)
+    domain = format_domain(uri)
+
+    # Parse path into segments
+    path_parts =
+      (uri.path || "")
+      |> String.split("/", trim: true)
+      |> Enum.reject(&(&1 == ""))
+
+    # Build segments list with intelligent collapsing
+    {segments, has_ellipsis} =
+      build_breadcrumb_segments(path_parts, max_segments, preserve_query, uri.query)
+
+    %{
+      domain: domain,
+      segments: segments,
+      has_ellipsis: has_ellipsis
+    }
+  end
+
+  @doc """
+  Extract clean domain name from URI struct.
+  Removes "www." prefix for cleaner display.
+  """
+  def format_domain(%URI{host: nil}), do: ""
+
+  def format_domain(%URI{host: host}) do
+    host
+    |> String.replace_prefix("www.", "")
+  end
+
+  # Private: Build breadcrumb segments with intelligent middle collapsing
+  defp build_breadcrumb_segments([], _max, _preserve_query, _query), do: {[], false}
+
+  defp build_breadcrumb_segments(path_parts, max_segments, preserve_query, query) do
+    total = length(path_parts)
+
+    cond do
+      # Short path - show all segments
+      total <= max_segments ->
+        segments = build_segments_list(path_parts, query, preserve_query)
+        {segments, false}
+
+      # Long path - collapse middle segments
+      total > max_segments ->
+        # Show first segment, ellipsis, last segment
+        first = List.first(path_parts)
+        last = List.last(path_parts)
+
+        segments = [
+          %{text: first, type: :path},
+          %{text: "...", type: :ellipsis},
+          build_last_segment(last, query, preserve_query)
+        ]
+
+        {segments, true}
+    end
+  end
+
+  # Build full segments list without collapsing
+  defp build_segments_list(path_parts, query, preserve_query) do
+    path_parts
+    |> Enum.with_index()
+    |> Enum.map(fn {segment, index} ->
+      is_last = index == length(path_parts) - 1
+
+      if is_last do
+        build_last_segment(segment, query, preserve_query)
+      else
+        %{text: segment, type: :path}
+      end
+    end)
+  end
+
+  # Build the last segment, optionally including query params
+  defp build_last_segment(segment, query, true = _preserve_query) when not is_nil(query) do
+    # Truncate query if too long
+    query_display = if String.length(query) > 20, do: String.slice(query, 0, 20) <> "...", else: query
+    %{text: "#{segment}?#{query_display}", type: :last}
+  end
+
+  defp build_last_segment(segment, _query, _preserve_query) do
+    %{text: segment, type: :last}
   end
 
   @doc """

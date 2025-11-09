@@ -48,3 +48,8 @@ priv/*.json
 
 # Ignore downloaded OAuth client secrets
 client_secret_*.json
+
+# Ignore environment configuration with secrets
+.env
+.env.*
+!.env.example

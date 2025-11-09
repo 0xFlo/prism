@@ -381,10 +381,35 @@ defmodule GscAnalytics.Auth do
         refresh_token: Map.get(new_tokens, "refresh_token", existing.refresh_token),
         access_token: Map.get(new_tokens, "access_token"),
         expires_at: calculate_expires_at(Map.get(new_tokens, "expires_in")),
-        scopes: build_scope_list(new_tokens, existing.scopes)
+        scopes: build_scope_list(new_tokens, existing.scopes),
+        status: :valid,
+        last_error: nil,
+        last_validated_at: DateTime.utc_now()
       }
 
       store_oauth_token(nil, attrs)
+    else
+      {:error, {:http_error, 400, %{"error" => "invalid_grant"} = response}} ->
+        # Token has been revoked or expired - mark as invalid in database
+        with {:ok, account_id} <- normalize_account_id(account_id),
+             {:ok, existing} <- get_oauth_token(nil, account_id) do
+          error_message = Map.get(response, "error_description", "invalid_grant")
+
+          existing
+          |> OAuthToken.mark_invalid(error_message)
+          |> Repo.update()
+
+          require Logger
+
+          Logger.error(
+            "OAuth token refresh failed for account #{account_id}: invalid_grant - #{error_message}"
+          )
+        end
+
+        {:error, :oauth_token_invalid}
+
+      error ->
+        error
     end
   end
 
@@ -409,6 +434,64 @@ defmodule GscAnalytics.Auth do
          :ok <- Scope.authorize_account(current_scope, account_id) do
       Repo.exists?(from(t in OAuthToken, where: t.account_id == ^account_id))
     end
+  end
+
+  @doc """
+  Validates the OAuth token for an account and returns its status.
+  Returns {:ok, :valid | :invalid | :expired} or {:error, :not_found}
+
+  This function computes the real-time token status by checking:
+  1. The persisted status field (invalid/expired)
+  2. Whether the token has expired based on expires_at
+
+  If the token has expired but status is still :valid, it will be marked as :expired.
+  """
+  def validate_oauth_token_status(current_scope, account_id) do
+    with {:ok, account_id} <- normalize_account_id(account_id),
+         :ok <- Scope.authorize_account(current_scope, account_id),
+         {:ok, token} <- get_oauth_token(nil, account_id) do
+      # Compute real-time status based on persisted state and expiration
+      real_status = compute_token_status(token)
+
+      # If status changed (e.g., token expired), persist it
+      if real_status != token.status do
+        case Repo.get(OAuthToken, token.id) do
+          nil ->
+            {:ok, real_status}
+
+          oauth_token ->
+            oauth_token
+            |> OAuthToken.mark_expired()
+            |> Repo.update()
+
+            {:ok, real_status}
+        end
+      else
+        {:ok, token.status}
+      end
+    end
+  end
+
+  defp compute_token_status(token) do
+    cond do
+      # Already marked invalid or expired
+      token.status in [:invalid, :expired] ->
+        token.status
+
+      # Token has expired based on expires_at
+      token_expired?(token.expires_at) ->
+        :expired
+
+      # Token is valid
+      true ->
+        :valid
+    end
+  end
+
+  defp token_expired?(nil), do: false
+
+  defp token_expired?(expires_at) do
+    DateTime.compare(expires_at, DateTime.utc_now()) == :lt
   end
 
   # Private helpers ----------------------------------------------------------

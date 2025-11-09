@@ -345,6 +345,14 @@ defmodule GscAnalytics.Accounts do
 
           {:ok, all_properties}
 
+        {:error, :oauth_token_invalid} = error ->
+          # OAuth token is invalid - needs re-authentication
+          error
+
+        {:error, {:oauth_refresh_failed, :oauth_token_invalid}} ->
+          # OAuth token is invalid - needs re-authentication (from Authenticator wrapper)
+          {:error, :oauth_token_invalid}
+
         {:error, _error} ->
           # If API fails, return saved properties with no API access flag
           saved =
