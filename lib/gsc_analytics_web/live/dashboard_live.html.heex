@@ -43,144 +43,18 @@
         </div>
       </div>
     <% end %>
-    <%!-- Top control bar --%>
     <div class="flex flex-wrap items-center justify-between gap-4">
-      <div class="flex flex-wrap items-center gap-3">
-        <.property_selector
-          property_options={@property_options || []}
-          property_label={@property_label}
-          property_favicon_url={@property_favicon_url}
-          current_property_id={@current_property_id}
-        />
-
-        <button
-          type="button"
-          class="btn btn-sm btn-circle btn-ghost"
-          title="Previous period"
-        >
-          <.icon name="hero-chevron-left" class="h-4 w-4" />
-        </button>
-
-        <div class="dropdown dropdown-end">
-          <label tabindex="0" class="btn btn-ghost gap-2 normal-case text-base font-medium">
-            {@period_label}
-            <.icon name="hero-chevron-down" class="h-4 w-4" />
-          </label>
-          <ul
-            tabindex="0"
-            class="dropdown-content menu menu-compact rounded-box mt-3 w-52 bg-base-100 p-2 shadow-lg border border-base-300"
-          >
-            <li>
-              <button
-                phx-click="change_period"
-                phx-value-period="7"
-                class={[
-                  @period_days == 7 && "active"
-                ]}
-              >
-                Last 7 days
-              </button>
-            </li>
-            <li>
-              <button
-                phx-click="change_period"
-                phx-value-period="30"
-                class={[
-                  @period_days == 30 && "active"
-                ]}
-              >
-                Last 30 days
-              </button>
-            </li>
-            <li>
-              <button
-                phx-click="change_period"
-                phx-value-period="90"
-                class={[
-                  @period_days == 90 && "active"
-                ]}
-              >
-                Last 90 days
-              </button>
-            </li>
-            <li>
-              <button
-                phx-click="change_period"
-                phx-value-period="180"
-                class={[
-                  @period_days == 180 && "active"
-                ]}
-              >
-                Last 6 months
-              </button>
-            </li>
-            <li>
-              <button
-                phx-click="change_period"
-                phx-value-period="all"
-                class={[
-                  @period_days == "all" && "active"
-                ]}
-              >
-                Last 12 months
-              </button>
-            </li>
-          </ul>
-        </div>
-
-        <button
-          type="button"
-          class="btn btn-sm btn-circle btn-ghost"
-          title="Next period"
-        >
-          <.icon name="hero-chevron-right" class="h-4 w-4" />
-        </button>
-
-        <div class="dropdown dropdown-end">
-          <label tabindex="0" class="btn btn-ghost gap-2 normal-case text-base font-medium">
-            {@chart_view_label}
-            <.icon name="hero-chevron-down" class="h-4 w-4" />
-          </label>
-          <ul
-            tabindex="0"
-            class="dropdown-content menu menu-compact rounded-box mt-3 w-40 bg-base-100 p-2 shadow-lg border border-base-300"
-          >
-            <li>
-              <button
-                phx-click="change_chart_view"
-                phx-value-chart_view="daily"
-                class={[
-                  @chart_view == "daily" && "active"
-                ]}
-              >
-                Daily
-              </button>
-            </li>
-            <li>
-              <button
-                phx-click="change_chart_view"
-                phx-value-chart_view="weekly"
-                class={[
-                  @chart_view == "weekly" && "active"
-                ]}
-              >
-                Weekly
-              </button>
-            </li>
-            <li>
-              <button
-                phx-click="change_chart_view"
-                phx-value-chart_view="monthly"
-                class={[
-                  @chart_view == "monthly" && "active"
-                ]}
-              >
-                Monthly
-              </button>
-            </li>
-          </ul>
-        </div>
-      </div>
+      <.dashboard_controls
+        property_options={@property_options || []}
+        property_label={@property_label}
+        property_favicon_url={@property_favicon_url}
+        current_property_id={@current_property_id}
+        period_days={@period_days}
+        period_label={@period_label}
+        chart_view_label={@chart_view_label}
+        chart_view={@chart_view}
+        class="justify-between"
+      />
     </div>
     <%!-- Interactive Metric Cards - Click to toggle chart series --%>
     <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -230,36 +104,11 @@
         />
       </div>
     </section>
-    <%!-- Bottom tabs and filters --%>
+    <%!-- URL List Section --%>
     <section class="rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
       <div class="border-b border-slate-200 dark:border-slate-700">
-        <div class="flex items-center justify-between px-6 py-3">
-          <div class="flex gap-6">
-            <.link
-              navigate={~p"/dashboard"}
-              class="border-b-2 border-indigo-600 pb-3 text-sm font-medium text-indigo-600 dark:border-indigo-400 dark:text-indigo-400"
-            >
-              All URLs
-            </.link>
-            <.link
-              navigate={~p"/dashboard/keywords"}
-              class="border-b-2 border-transparent pb-3 text-sm font-medium text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:text-slate-100"
-            >
-              Keywords
-            </.link>
-            <.link
-              navigate={~p"/dashboard/crawler"}
-              class="border-b-2 border-transparent pb-3 text-sm font-medium text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:text-slate-100"
-            >
-              Crawler
-            </.link>
-            <.link
-              navigate={~p"/dashboard/sync"}
-              class="border-b-2 border-transparent pb-3 text-sm font-medium text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:text-slate-100"
-            >
-              Sync
-            </.link>
-          </div>
+        <div class="flex items-center justify-between px-6 py-4">
+          <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100">All URLs</h2>
           <div class="flex items-center gap-3">
             <form
               id="dashboard-search-form"

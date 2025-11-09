@@ -348,7 +348,7 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
     end
   end
 
-  defp load_properties_by_account(accounts, scope, oauth_tokens_map \\ nil) do
+  defp load_properties_by_account(accounts, scope, oauth_tokens_map) do
     # Batch load ALL properties for ALL accounts in a single query
     # This prevents N+1 queries (was calling list_properties once per account)
     account_ids = Enum.map(accounts, & &1.id)
@@ -398,7 +398,7 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
          accounts,
          scope,
          all_properties,
-         oauth_tokens_map \\ nil
+         oauth_tokens_map
        ) do
     oauth_tokens = ensure_oauth_tokens(oauth_tokens_map, scope, accounts)
 

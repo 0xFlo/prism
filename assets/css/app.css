@@ -6,6 +6,11 @@
 @source "../js";
 @source "../../lib/gsc_analytics_web";
 
+/* Configure Inter as the default sans-serif font */
+@theme {
+  --font-sans: 'Inter var', ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+}
+
 /* A Tailwind plugin that makes "hero-#{ICON}" classes available.
    The heroicons installation itself is managed by your mix.exs */
 @plugin "../vendor/heroicons";
@@ -101,5 +106,18 @@
 
 /* Make LiveView wrapper divs transparent for layout */
 [data-phx-session], [data-phx-teleported-src] { display: contents }
+
+/* Apply Inter font to all elements */
+html {
+  font-family: 'Inter var', 'InterVariable', ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: 'liga' 1, 'calt' 1; /* Enable ligatures and contextual alternates */
+}
+
+/* Support for variable font features */
+@supports (font-variation-settings: normal) {
+  html {
+    font-family: 'InterVariable', ui-sans-serif, system-ui, sans-serif;
+  }
+}
 
 /* This file is for your main application CSS */

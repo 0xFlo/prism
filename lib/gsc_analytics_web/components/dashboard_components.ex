@@ -906,6 +906,117 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
   end
 
   @doc """
+  Shared toolbar for dashboard screens (property selector, period dropdown, chart view dropdown).
+
+  Set `show_property_selector?` to false when the property picker should be hidden (e.g. single URL view).
+  """
+  attr :property_options, :list, default: []
+  attr :property_label, :string, default: nil
+  attr :property_favicon_url, :string, default: nil
+  attr :current_property_id, :string, default: nil
+  attr :show_property_selector?, :boolean, default: true
+
+  attr :period_label, :string, required: true
+  attr :period_days, :any, required: true
+  attr :period_event, :string, default: "change_period"
+
+  attr :chart_view_label, :string, required: true
+  attr :chart_view, :string, required: true
+  attr :chart_view_event, :string, default: "change_chart_view"
+  attr :chart_view_value_keys, :list, default: ["chart_view"]
+
+  attr :period_options, :list, default: nil
+  attr :chart_view_options, :list, default: nil
+  attr :class, :string, default: ""
+
+  def dashboard_controls(assigns) do
+    assigns =
+      assigns
+      |> assign(:period_options, assigns.period_options || default_period_options())
+      |> assign(:chart_view_options, assigns.chart_view_options || default_chart_view_options())
+
+    ~H"""
+    <div class={["flex flex-wrap items-center gap-3", @class]}>
+      <div :if={@show_property_selector?}>
+        <.property_selector
+          property_options={@property_options}
+          property_label={@property_label}
+          property_favicon_url={@property_favicon_url}
+          current_property_id={@current_property_id}
+        />
+      </div>
+
+      <button
+        type="button"
+        class="btn btn-sm btn-circle btn-ghost"
+        title="Previous period"
+      >
+        <.icon name="hero-chevron-left" class="h-4 w-4" />
+      </button>
+
+      <div class="dropdown dropdown-end">
+        <label tabindex="0" class="btn btn-ghost gap-2 normal-case text-base font-medium">
+          {@period_label}
+          <.icon name="hero-chevron-down" class="h-4 w-4" />
+        </label>
+        <ul
+          tabindex="0"
+          class="dropdown-content menu menu-compact rounded-box mt-3 w-52 bg-base-100 p-2 shadow-lg border border-base-300"
+        >
+          <li :for={option <- @period_options}>
+            <button
+              phx-click={@period_event}
+              phx-value-period={option.value}
+              class={[
+                period_active?(@period_days, option.value) && "active"
+              ]}
+            >
+              {option.label}
+            </button>
+          </li>
+        </ul>
+      </div>
+
+      <button
+        type="button"
+        class="btn btn-sm btn-circle btn-ghost"
+        title="Next period"
+      >
+        <.icon name="hero-chevron-right" class="h-4 w-4" />
+      </button>
+
+      <div class="dropdown dropdown-end">
+        <label tabindex="0" class="btn btn-ghost gap-2 normal-case text-base font-medium">
+          {@chart_view_label}
+          <.icon name="hero-chevron-down" class="h-4 w-4" />
+        </label>
+        <ul
+          tabindex="0"
+          class="dropdown-content menu menu-compact rounded-box mt-3 w-40 bg-base-100 p-2 shadow-lg border border-base-300"
+        >
+          <li :for={option <- @chart_view_options}>
+            <% value_attrs =
+              Enum.map(@chart_view_value_keys, fn key ->
+                {"phx-value-#{key}", option.value}
+              end) %>
+            <button
+              phx-click={@chart_view_event}
+              {value_attrs}
+              data-state={if(@chart_view == option.value, do: "active", else: "inactive")}
+              class={[
+                @chart_view == option.value && "active"
+              ]}
+            >
+              {option.label}
+            </button>
+          </li>
+        </ul>
+      </div>
+    </div>
+    """
+  end
+
+  @doc """
   Renders an interactive metric card that toggles chart series visibility.
 
   ## Attributes
@@ -936,13 +1047,22 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
   def interactive_metric_card(assigns) do
     # Define color scheme matching Chart.js series configuration
     # These colors match the ones in chartjs_performance_chart.js seriesConfig
-    {border_color, check_color, bg_color} =
+    {border_color, check_color, bg_color, pulse_color} =
       case assigns.metric do
-        :clicks -> {"border-indigo-500", "text-indigo-400", "bg-indigo-500/10"}
-        :impressions -> {"border-emerald-500", "text-emerald-400", "bg-emerald-500/10"}
-        :ctr -> {"border-purple-500", "text-purple-400", "bg-purple-500/10"}
-        :position -> {"border-red-500", "text-red-400", "bg-red-500/10"}
-        _ -> {"border-slate-500", "text-slate-400", "bg-slate-500/10"}
+        :clicks ->
+          {"border-indigo-500", "text-indigo-400", "bg-indigo-500/10", "bg-indigo-500/20"}
+
+        :impressions ->
+          {"border-emerald-500", "text-emerald-400", "bg-emerald-500/10", "bg-emerald-500/20"}
+
+        :ctr ->
+          {"border-purple-500", "text-purple-400", "bg-purple-500/10", "bg-purple-500/20"}
+
+        :position ->
+          {"border-red-500", "text-red-400", "bg-red-500/10", "bg-red-500/20"}
+
+        _ ->
+          {"border-slate-500", "text-slate-400", "bg-slate-500/10", "bg-slate-500/20"}
       end
 
     assigns =
@@ -950,14 +1070,16 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
       |> assign(:border_color, border_color)
       |> assign(:check_color, check_color)
       |> assign(:bg_color, bg_color)
+      |> assign(:pulse_color, pulse_color)
 
     ~H"""
     <div
       class={[
-        "relative rounded-lg p-5 transition-all duration-200",
-        @interactive && "cursor-pointer hover:shadow-lg hover:scale-[1.02]",
+        "relative rounded-lg p-5 transition-all duration-300 ease-out",
+        @interactive &&
+          "cursor-pointer hover:shadow-lg hover:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-500",
         @interactive && @active && ["border-2", @border_color, @bg_color, "bg-slate-800 shadow-md"],
-        @interactive && !@active && "border border-slate-600 bg-slate-800/70",
+        @interactive && !@active && "border border-slate-600 bg-slate-800/70 hover:border-slate-500",
         !@interactive && "border border-slate-600 bg-slate-800/70"
       ]}
       phx-click={@interactive && "toggle_series"}
@@ -965,22 +1087,28 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
       role={@interactive && "button"}
       aria-pressed={@interactive && @active}
       tabindex={@interactive && "0"}
-      aria-label={@interactive && "Toggle #{@label} series"}
+      aria-label={@interactive && "Toggle #{@label} series in chart"}
+      aria-describedby={"#{@metric}-description"}
     >
-      <div class="flex items-start justify-between">
+      <%= if @interactive && @active do %>
+        <div class={"absolute inset-0 rounded-lg #{@pulse_color} animate-pulse opacity-20 pointer-events-none"}>
+        </div>
+      <% end %>
+
+      <div class="flex items-start justify-between relative z-10">
         <div class="flex-1">
           <h3 class="text-sm font-medium text-slate-400">
             {@label}
           </h3>
-          <p class="mt-2 text-3xl font-semibold text-white">
+          <p class="mt-2 text-3xl font-semibold text-white transition-transform duration-200">
             {format_metric_value(@metric, @value)}
           </p>
-          <p class="mt-1 text-sm text-slate-400">
+          <p id={"#{@metric}-description"} class="mt-1 text-sm text-slate-400">
             {@subtitle}
           </p>
         </div>
         <%= if @interactive && @active do %>
-          <div class="flex-shrink-0">
+          <div class="flex-shrink-0 transition-transform duration-200 animate-in fade-in zoom-in">
             <.icon name="hero-check-circle-solid" class={"h-6 w-6 #{@check_color}"} />
           </div>
         <% end %>
@@ -1012,4 +1140,29 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
 
   defp format_metric_value(_metric, value) when is_binary(value), do: value
   defp format_metric_value(_metric, value), do: to_string(value)
+
+  defp default_period_options do
+    [
+      %{value: "7", label: "Last 7 days"},
+      %{value: "30", label: "Last 30 days"},
+      %{value: "90", label: "Last 90 days"},
+      %{value: "180", label: "Last 6 months"},
+      %{value: "all", label: "Last 12 months"}
+    ]
+  end
+
+  defp default_chart_view_options do
+    [
+      %{value: "daily", label: "Daily"},
+      %{value: "weekly", label: "Weekly"},
+      %{value: "monthly", label: "Monthly"}
+    ]
+  end
+
+  defp period_active?(current, option_value) do
+    case {current, option_value} do
+      {value, "all"} when value in ["all", 10_000] -> true
+      {value, opt} -> to_string(value) == to_string(opt)
+    end
+  end
 end
