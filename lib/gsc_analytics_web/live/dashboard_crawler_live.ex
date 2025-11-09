@@ -13,7 +13,7 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
     only: [format_number: 1, format_datetime: 1]
 
   import GscAnalyticsWeb.Components.DashboardComponents,
-    only: [property_selector: 1]
+    only: [property_selector: 1, pagination: 1]
 
   alias GscAnalytics.Crawler
   alias GscAnalyticsWeb.Live.AccountHelpers
@@ -59,7 +59,11 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
       %{label: property_label, favicon_url: property_favicon_url, url: property_url} =
         property_context(property)
 
-      problem_urls = fetch_problem_urls(account.id, property_url)
+      # Initialize with default pagination values
+      {problem_urls, total_count} =
+        fetch_problem_urls_paginated(account.id, property_url, "all", 1, 25)
+
+      total_pages = calculate_total_pages(total_count, 25)
       global_stats = fetch_global_stats(account.id, property_url)
       property_id = property && property.id
       scoped_job = scoped_job_for_selection(current_job, account.id, property_id)
@@ -78,6 +82,10 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
         |> assign(:property_label, property_label)
         |> assign(:property_favicon_url, property_favicon_url)
         |> assign(:queue_stats, queue_stats)
+        |> assign(:problem_page, 1)
+        |> assign(:problem_limit, 25)
+        |> assign(:problem_total_pages, total_pages)
+        |> assign(:problem_total_count, total_count)
         |> assign_progress(scoped_job)
 
       {:ok, socket}
@@ -107,12 +115,29 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
     %{label: property_label, favicon_url: property_favicon_url, url: property_url} =
       property_context(property)
 
+    # Parse pagination params from URL
+    page = parse_page(params["problem_page"])
+    limit = parse_limit(params["problem_limit"])
+
+    # Fetch paginated problem URLs and total count
+    {problem_urls, total_count} =
+      fetch_problem_urls_paginated(
+        account_id,
+        property_url,
+        socket.assigns.selected_status_filter,
+        page,
+        limit
+      )
+
+    total_pages = calculate_total_pages(total_count, limit)
+
     socket =
       socket
-      |> assign(
-        :problem_urls,
-        fetch_problem_urls(account_id, property_url, socket.assigns.selected_status_filter)
-      )
+      |> assign(:problem_urls, problem_urls)
+      |> assign(:problem_page, page)
+      |> assign(:problem_limit, limit)
+      |> assign(:problem_total_pages, total_pages)
+      |> assign(:problem_total_count, total_count)
       |> assign(:global_stats, fetch_global_stats(account_id, property_url))
       |> assign(:property_label, property_label)
       |> assign(:property_favicon_url, property_favicon_url)
@@ -167,15 +192,16 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
 
   @impl true
   def handle_event("filter_problems", %{"status" => status}, socket) do
-    account_id = socket.assigns.current_account_id
-    property = socket.assigns.current_property
-    property_url = property && property.property_url
-    problem_urls = fetch_problem_urls(account_id, property_url, status)
+    # Reset pagination to page 1 when changing filters
+    params = %{
+      problem_page: 1,
+      problem_limit: socket.assigns.problem_limit
+    }
 
     {:noreply,
      socket
-     |> assign(:problem_urls, problem_urls)
-     |> assign(:selected_status_filter, status)}
+     |> assign(:selected_status_filter, status)
+     |> push_crawler_patch(params)}
   end
 
   @impl true
@@ -189,6 +215,55 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
   end
 
   def handle_event("switch_property", _params, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_event("next_page", _, socket) do
+    next_page = min(socket.assigns.problem_page + 1, socket.assigns.problem_total_pages)
+
+    params = %{
+      problem_page: next_page,
+      problem_limit: socket.assigns.problem_limit
+    }
+
+    {:noreply, push_crawler_patch(socket, params)}
+  end
+
+  @impl true
+  def handle_event("prev_page", _, socket) do
+    prev_page = max(socket.assigns.problem_page - 1, 1)
+
+    params = %{
+      problem_page: prev_page,
+      problem_limit: socket.assigns.problem_limit
+    }
+
+    {:noreply, push_crawler_patch(socket, params)}
+  end
+
+  @impl true
+  def handle_event("goto_page", %{"page" => page_str}, socket) do
+    page = String.to_integer(page_str)
+    clamped_page = max(1, min(page, socket.assigns.problem_total_pages))
+
+    params = %{
+      problem_page: clamped_page,
+      problem_limit: socket.assigns.problem_limit
+    }
+
+    {:noreply, push_crawler_patch(socket, params)}
+  end
+
+  @impl true
+  def handle_event("change_limit", %{"limit" => limit_str}, socket) do
+    limit = String.to_integer(limit_str)
+
+    params = %{
+      problem_page: 1,
+      problem_limit: limit
+    }
+
+    {:noreply, push_crawler_patch(socket, params)}
+  end
 
   @impl true
   def handle_info({:crawler_progress, %{type: :started, job: job}}, socket) do
@@ -232,9 +307,17 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
         Crawler.get_history()
         |> filter_history_for_scope(account_id, property_id)
 
-      # Reload problem URLs with current filter to show updated results
-      problem_urls =
-        fetch_problem_urls(account_id, property_url, socket.assigns.selected_status_filter)
+      # Reload problem URLs with current pagination state
+      {problem_urls, total_count} =
+        fetch_problem_urls_paginated(
+          account_id,
+          property_url,
+          socket.assigns.selected_status_filter,
+          socket.assigns.problem_page,
+          socket.assigns.problem_limit
+        )
+
+      total_pages = calculate_total_pages(total_count, socket.assigns.problem_limit)
 
       # Refresh global stats to reflect latest database state
       global_stats = fetch_global_stats(account_id, property_url)
@@ -244,6 +327,8 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
         |> assign_progress(job)
         |> assign(:history, history)
         |> assign(:problem_urls, problem_urls)
+        |> assign(:problem_total_count, total_count)
+        |> assign(:problem_total_pages, total_pages)
         |> assign(:global_stats, global_stats)
         |> put_flash(:info, "HTTP status check completed")
 
@@ -416,30 +501,25 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
   defp status_code_badge_class(status) when status >= 500, do: "badge badge-error"
   defp status_code_badge_class(_), do: "badge badge-ghost"
 
-  defp fetch_problem_urls(account_id, property_url, status_filter \\ "all")
-  defp fetch_problem_urls(nil, _property_url, _status_filter), do: []
+  defp fetch_problem_urls_paginated(nil, _property_url, _status_filter, _page, _limit),
+    do: {[], 0}
 
-  defp fetch_problem_urls(account_id, property_url, status_filter) do
+  defp fetch_problem_urls_paginated(account_id, property_url, status_filter, page, limit) do
     alias GscAnalytics.Schemas.Performance
     alias GscAnalytics.Repo
     import Ecto.Query
 
+    # Build base query with common filters
     base_query =
       from(p in Performance,
         where: p.account_id == ^account_id,
         where: not is_nil(p.http_status),
-        where: not is_nil(p.http_checked_at),
-        order_by: [desc: p.http_checked_at],
-        limit: 100,
-        select: %{
-          url: p.url,
-          http_status: p.http_status,
-          http_checked_at: p.http_checked_at
-        }
+        where: not is_nil(p.http_checked_at)
       )
       |> maybe_filter_property(property_url)
 
-    query =
+    # Apply status filter
+    filtered_query =
       case status_filter do
         "all" ->
           base_query
@@ -462,7 +542,26 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
           |> where([p], p.http_status >= 300)
       end
 
-    Repo.all(query)
+    # Get total count for pagination
+    total_count = Repo.aggregate(filtered_query, :count, :id)
+
+    # Calculate offset
+    offset = (page - 1) * limit
+
+    # Fetch paginated results
+    results =
+      filtered_query
+      |> order_by([p], desc: p.http_checked_at)
+      |> limit(^limit)
+      |> offset(^offset)
+      |> select([p], %{
+        url: p.url,
+        http_status: p.http_status,
+        http_checked_at: p.http_checked_at
+      })
+      |> Repo.all()
+
+    {results, total_count}
   end
 
   defp fetch_global_stats(nil, _property_url) do
@@ -584,6 +683,41 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
       is_nil(job_property_id) -> false
       true -> job_property_id == property_id
     end
+  end
+
+  # ============================================================================
+  # Pagination Helpers
+  # ============================================================================
+
+  defp parse_page(nil), do: 1
+  defp parse_page(page) when is_binary(page), do: String.to_integer(page)
+  defp parse_page(page) when is_integer(page), do: page
+  defp parse_page(_), do: 1
+
+  defp parse_limit(nil), do: 25
+  defp parse_limit(limit) when is_binary(limit), do: normalize_limit(String.to_integer(limit))
+  defp parse_limit(limit) when is_integer(limit), do: normalize_limit(limit)
+  defp parse_limit(_), do: 25
+
+  defp normalize_limit(limit) when limit in [10, 25, 50, 100], do: limit
+  defp normalize_limit(_), do: 25
+
+  defp calculate_total_pages(0, _limit), do: 1
+
+  defp calculate_total_pages(total_count, limit) do
+    Float.ceil(total_count / limit) |> trunc()
+  end
+
+  defp push_crawler_patch(socket, params) do
+    # Merge pagination params with current account/property params
+    current_params = %{
+      account_id: socket.assigns.current_account_id,
+      property_id: socket.assigns.current_property_id
+    }
+
+    merged_params = Map.merge(current_params, params)
+
+    push_patch(socket, to: ~p"/dashboard/crawler?#{merged_params}")
   end
 
   # ============================================================================
