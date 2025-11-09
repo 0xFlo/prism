@@ -33,7 +33,7 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
       # Subscribe to telemetry for background HTTP check updates
       :ok =
         :telemetry.attach(
-          "dashboard-http-checks-#{self()}",
+          "dashboard-http-checks-#{inspect(self())}",
           [:gsc_analytics, :http_check, :batch_complete],
           &__MODULE__.handle_telemetry/4,
           socket.id
