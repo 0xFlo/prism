@@ -106,7 +106,7 @@ defmodule GscAnalyticsWeb.Components.PricingComponents do
   Renders a feature comparison row for the pricing table.
 
   ## Attributes
-  - `feature` - Feature map with name, pro, business, max values
+  - `feature` - Feature map with name, pro, business, enterprise values
   - `show_tooltip` - Whether to show the tooltip icon
 
   ## Example
@@ -114,7 +114,7 @@ defmodule GscAnalyticsWeb.Components.PricingComponents do
         name: "Sync frequency",
         pro: "Weekly",
         business: "Daily",
-        max: "Real-time",
+        enterprise: "Real-time",
         tooltip: "How often we sync data"
       }} />
   """
@@ -146,14 +146,14 @@ defmodule GscAnalyticsWeb.Components.PricingComponents do
       </td>
 
       <td class="py-4 px-6 text-center">
-        <.feature_value value={@feature.max} />
+        <.feature_value value={@feature.enterprise} />
       </td>
     </tr>
     """
   end
 
   @doc """
-  Renders a use case tab for the Max plan page.
+  Renders a use case tab for the Enterprise plan page.
 
   ## Attributes
   - `use_case` - Use case map with role, challenge, solution, etc.
@@ -183,7 +183,7 @@ defmodule GscAnalyticsWeb.Components.PricingComponents do
 
           <div>
             <h3 class="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-2">
-              How Max Solves This
+              How Enterprise Solves This
             </h3>
             <p class="text-lg text-slate-200">
               {@use_case.solution}

@@ -3,7 +3,7 @@ defmodule GscAnalytics.Workers.SerpCheckWorker do
   Oban worker for asynchronous SERP position checking via ScrapFly API.
 
   ## Features
-  - Uses ScrapFly LLM Extraction for SERP position parsing
+  - Uses HTML parsing for SERP position extraction
   - Enforces idempotency via Oban unique_periods (1 hour window)
   - Automatic retries on transient failures (max 3 attempts)
   - Rate limiting integration to prevent quota exhaustion
@@ -43,10 +43,35 @@ defmodule GscAnalytics.Workers.SerpCheckWorker do
       states: [:available, :scheduled, :executing]
     ]
 
-  alias GscAnalytics.DataSources.SERP.Core.{Client, LLMExtractor, Persistence}
+  import Ecto.Changeset
+  alias GscAnalytics.DataSources.SERP.Core.{Client, HTMLParser, Persistence}
   alias GscAnalytics.DataSources.SERP.Support.RateLimiter
 
   require Logger
+
+  @doc """
+  Validates job arguments before insertion into Oban queue.
+
+  Ensures all required fields are present and properly typed.
+  Sets default value for optional `geo` parameter.
+  """
+  def changeset(job, params) do
+    job
+    |> cast(params, [:account_id, :property_url, :url, :keyword, :geo])
+    |> validate_required([:account_id, :property_url, :url, :keyword])
+    |> validate_number(:account_id, greater_than: 0)
+    |> validate_format(:property_url, ~r/^(sc-domain:|https?:\/\/)/)
+    |> validate_format(:url, ~r/^https?:\/\//)
+    |> validate_length(:keyword, min: 1, max: 500)
+    |> put_default_geo()
+  end
+
+  defp put_default_geo(changeset) do
+    case get_change(changeset, :geo) do
+      nil -> put_change(changeset, :geo, "us")
+      _ -> changeset
+    end
+  end
 
   @impl Oban.Worker
   def perform(%Oban.Job{args: args}) do
@@ -64,24 +89,19 @@ defmodule GscAnalytics.Workers.SerpCheckWorker do
     )
 
     with :ok <- RateLimiter.check_rate(account_id),
-         extraction_prompt <- LLMExtractor.build_extraction_prompt(url),
          {:ok, scrapfly_response} <-
-           Client.scrape_google(keyword,
-             geo: geo,
-             extraction_prompt: extraction_prompt
-           ),
-         parsed <- LLMExtractor.parse_llm_response(scrapfly_response, url),
+           Client.scrape_google(keyword, geo: geo),
+         # Track API cost immediately after successful API call
+         # ScrapFly SERP API cost: 31 credits (base only, no LLM)
+         :ok <- track_api_cost(account_id, 31),
+         parsed <- HTMLParser.parse_serp_response(scrapfly_response, url),
          snapshot_attrs <- build_snapshot_attrs(args, parsed, scrapfly_response),
          {:ok, snapshot} <- Persistence.save_snapshot(snapshot_attrs) do
-      # Track API cost
-      api_cost = Decimal.to_integer(snapshot_attrs.api_cost)
-      RateLimiter.track_cost(account_id, api_cost)
-
       Logger.info("SERP check completed",
         account_id: account_id,
         url: url,
         position: snapshot.position,
-        api_cost: api_cost
+        api_cost: 31
       )
 
       :ok
@@ -99,6 +119,12 @@ defmodule GscAnalytics.Workers.SerpCheckWorker do
 
         error
     end
+  end
+
+  # Track API cost immediately after successful API call to prevent double-billing on retry
+  defp track_api_cost(account_id, cost) do
+    RateLimiter.track_cost(account_id, cost)
+    :ok
   end
 
   defp build_snapshot_attrs(args, parsed, raw_response) do

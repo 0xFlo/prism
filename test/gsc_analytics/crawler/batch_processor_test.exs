@@ -9,6 +9,7 @@ defmodule GscAnalytics.Crawler.BatchProcessorTest do
   import Ecto.Query
 
   @property_url "sc-domain:example.com"
+  @property_url_alt "sc-domain:alt-example.com"
 
   setup do
     # Ensure inets and ssl are started for HTTP requests
@@ -304,6 +305,54 @@ defmodule GscAnalytics.Crawler.BatchProcessorTest do
 
       # High traffic URL should be first
       assert List.first(urls) == "https://high-traffic.com"
+    end
+
+    test "scopes URLs to the provided property_url", %{urls: urls} do
+      alt_urls = [
+        "https://alt.example.com/docs",
+        "https://alt.example.com/blog"
+      ]
+
+      for url <- alt_urls do
+        Repo.insert!(%Performance{
+          account_id: 1,
+          property_url: @property_url_alt,
+          url: url,
+          clicks: 5,
+          impressions: 50,
+          ctr: 0.05,
+          position: 12.0,
+          date_range_start: ~D[2025-01-01],
+          date_range_end: ~D[2025-01-31],
+          data_available: true
+        })
+      end
+
+      {:ok, stats_alt} =
+        BatchProcessor.process_all(
+          account_id: 1,
+          property_url: @property_url_alt,
+          filter: :all,
+          concurrency: 5,
+          save_results: false,
+          progress_tracking: false
+        )
+
+      assert stats_alt.total == length(alt_urls)
+      assert stats_alt.checked == length(alt_urls)
+
+      {:ok, stats_primary} =
+        BatchProcessor.process_all(
+          account_id: 1,
+          property_url: @property_url,
+          filter: :all,
+          concurrency: 5,
+          save_results: false,
+          progress_tracking: false
+        )
+
+      assert stats_primary.total == length(urls)
+      assert stats_primary.checked == length(urls)
     end
   end
 

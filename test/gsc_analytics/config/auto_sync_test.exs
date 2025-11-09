@@ -104,12 +104,25 @@ defmodule GscAnalytics.Config.AutoSyncTest do
   end
 
   describe "plugins/0" do
-    test "returns only Pruner plugin when auto-sync is disabled" do
+    test "returns Pruner and SERP pruning Cron when auto-sync is disabled" do
       with_env(%{"ENABLE_AUTO_SYNC" => "false"}, fn ->
         plugins = AutoSync.plugins()
 
-        assert length(plugins) == 1
-        assert {Oban.Plugins.Pruner, _opts} = List.first(plugins)
+        # Should have Pruner + SERP pruning Cron
+        assert length(plugins) == 2
+
+        pruner = Enum.find(plugins, fn {mod, _} -> mod == Oban.Plugins.Pruner end)
+        cron = Enum.find(plugins, fn {mod, _} -> mod == Oban.Plugins.Cron end)
+
+        assert pruner, "Pruner plugin should be present"
+        assert cron, "Cron plugin should be present for SERP pruning"
+
+        # Verify SERP pruning cron schedule
+        {Oban.Plugins.Cron, opts} = cron
+        crontab = Keyword.get(opts, :crontab)
+        assert [{schedule, worker}] = crontab
+        assert schedule == "0 2 * * *"
+        assert worker == GscAnalytics.Workers.SerpPruningWorker
       end)
     end
 
@@ -139,11 +152,26 @@ defmodule GscAnalytics.Config.AutoSyncTest do
 
         crontab = Keyword.get(opts, :crontab)
         assert is_list(crontab)
-        assert length(crontab) == 1
+        # Should have 2 cron jobs: GscSyncWorker + SerpPruningWorker
+        assert length(crontab) == 2
 
-        {schedule, worker_module} = List.first(crontab)
+        # Find the GSC sync job
+        gsc_sync_job =
+          Enum.find(crontab, fn {_sched, worker} ->
+            worker == GscAnalytics.Workers.GscSyncWorker
+          end)
+
+        assert {schedule, worker_module} = gsc_sync_job
         assert schedule == "0 4 * * *"
         assert worker_module == GscAnalytics.Workers.GscSyncWorker
+
+        # Verify SERP pruning job is also present
+        serp_prune_job =
+          Enum.find(crontab, fn {_sched, worker} ->
+            worker == GscAnalytics.Workers.SerpPruningWorker
+          end)
+
+        assert {"0 2 * * *", GscAnalytics.Workers.SerpPruningWorker} = serp_prune_job
       end)
     end
   end

@@ -2,8 +2,15 @@ defmodule GscAnalytics.Crawler.Persistence do
   @moduledoc """
   Persistence layer for saving HTTP status check results.
 
-  This module handles saving check results to the gsc_performance table,
+  This module handles saving check results to the url_lifetime_stats table,
   using efficient batch updates when possible.
+
+  ## Important: Table Architecture
+  - Primary data table: `url_lifetime_stats` (materialized view with HTTP fields)
+  - Legacy table: `gsc_performance` (kept empty, may be deprecated)
+
+  The crawler updates HTTP status fields directly in url_lifetime_stats,
+  which contains aggregated GSC performance data.
 
   ## Features
   - Single URL updates
@@ -15,7 +22,7 @@ defmodule GscAnalytics.Crawler.Persistence do
   require Logger
 
   alias GscAnalytics.Repo
-  alias GscAnalytics.Schemas.Performance
+  alias GscAnalytics.Schemas.UrlLifetimeStats
 
   import Ecto.Query
 
@@ -83,14 +90,13 @@ defmodule GscAnalytics.Crawler.Persistence do
       {status, redirect_url, checked_at, redirect_chain} = result_values
 
       # Single query updating all URLs with the same result
-      from(p in Performance, where: p.url in ^urls)
+      from(u in UrlLifetimeStats, where: u.url in ^urls)
       |> Repo.update_all(
         set: [
           http_status: status,
           redirect_url: redirect_url,
           http_checked_at: checked_at,
-          http_redirect_chain: redirect_chain,
-          updated_at: checked_at
+          http_redirect_chain: redirect_chain
         ]
       )
     end)

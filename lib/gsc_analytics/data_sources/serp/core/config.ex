@@ -3,6 +3,9 @@ defmodule GscAnalytics.DataSources.SERP.Core.Config do
   Centralized configuration for SERP data source.
   """
 
+  # Compile-time environment detection to avoid runtime Mix dependency
+  @is_test Application.compile_env(:gsc_analytics, :env) == :test
+
   @doc """
   Returns the ScrapFly API key.
   Raises if not configured (except in test environment where a placeholder is acceptable).
@@ -14,11 +17,11 @@ defmodule GscAnalytics.DataSources.SERP.Core.Config do
       is_binary(api_key) && String.length(api_key) > 0 ->
         api_key
 
-      Mix.env() == :test ->
+      @is_test ->
         "test_api_key_placeholder"
 
       true ->
-        raise "SCRAPFLY_API_KEY not configured"
+        raise "SCRAPFLY_API_KEY not configured. Set SCRAPFLY_API_KEY environment variable."
     end
   end
 
@@ -46,4 +49,18 @@ defmodule GscAnalytics.DataSources.SERP.Core.Config do
   Returns the unique period in hours for Oban job deduplication.
   """
   def unique_period_hours, do: 1
+
+  @doc """
+  Returns the HTTP client module to use for API requests.
+
+  Defaults to ReqClient (production), but can be overridden via application config
+  for testing (e.g., with Mox).
+  """
+  def http_client do
+    Application.get_env(
+      :gsc_analytics,
+      :serp_http_client,
+      GscAnalytics.DataSources.SERP.Adapters.ReqClient
+    )
+  end
 end

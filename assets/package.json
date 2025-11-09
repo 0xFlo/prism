@@ -1,0 +1,15 @@
+{
+  "name": "gsc-analytics-assets",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Frontend assets for GSC Analytics",
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "@xyflow/react": "^12.3.2"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "install": "cd .. && mix assets.setup"
+  }
+}

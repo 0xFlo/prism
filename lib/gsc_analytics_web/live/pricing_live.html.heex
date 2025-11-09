@@ -3,7 +3,7 @@
   <nav class="container mx-auto px-4 py-6 flex items-center justify-between">
     <.link navigate={~p"/"} class="flex items-center gap-2">
       <.icon name="hero-cpu-chip" class="h-8 w-8 text-indigo-400" />
-      <span class="text-2xl font-bold text-white">Prism AI</span>
+      <span class="text-2xl font-bold text-white">Prism AI SEO</span>
     </.link>
     <div class="flex items-center gap-6">
       <.link
@@ -110,7 +110,7 @@
                   </div>
                 </th>
                 <th class="py-4 px-6 text-center text-sm font-semibold text-slate-300 uppercase tracking-wider">
-                  Max
+                  Enterprise
                 </th>
               </tr>
             </thead>
@@ -200,10 +200,10 @@
           <.icon name="hero-rocket-launch" class="h-5 w-5" /> Start Free Trial
         </.button>
         <.link
-          navigate={~p"/pricing/max"}
+          navigate={~p"/pricing/enterprise"}
           class="btn btn-outline btn-lg text-white border-white hover:bg-white/10"
         >
-          <.icon name="hero-sparkles" class="h-5 w-5" /> Explore Max Plan
+          <.icon name="hero-sparkles" class="h-5 w-5" /> Explore Enterprise Plan
         </.link>
       </div>
     </div>
@@ -212,26 +212,70 @@
 <!-- Footer -->
   <footer class="border-t border-slate-800">
     <div class="container mx-auto px-4 py-12">
-      <div class="flex flex-col md:flex-row items-center justify-between gap-6">
-        <.link navigate={~p"/"} class="flex items-center gap-2">
-          <.icon name="hero-cpu-chip" class="h-6 w-6 text-indigo-400" />
-          <span class="text-lg font-semibold text-white">Prism AI</span>
-        </.link>
-
-        <div class="flex items-center gap-6 text-slate-400 text-sm">
-          <.link navigate={~p"/"} class="hover:text-white transition-colors">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
+        <!-- Logo & Description -->
+        <div class="col-span-1 md:col-span-2">
+          <div class="flex items-center gap-2 mb-4">
+            <.icon name="hero-cpu-chip" class="h-6 w-6 text-indigo-400" />
+            <span class="text-lg font-semibold text-white">Prism AI SEO</span>
+          </div>
+          <p class="text-slate-400 text-sm max-w-md">
+            Enterprise SEO analytics that scales with your team. Track rankings, automate reporting, and optimize performance.
+          </p>
+        </div>
+        
+<!-- Product Links -->
+        <div class="flex flex-col gap-2">
+          <h3 class="font-semibold text-white mb-2">Product</h3>
+          <.link navigate={~p"/"} class="text-slate-400 hover:text-indigo-400 text-sm">
             Home
           </.link>
-          <.link navigate={~p"/pricing"} class="hover:text-white transition-colors">
+          <.link navigate={~p"/pricing"} class="text-slate-400 hover:text-indigo-400 text-sm">
             Pricing
           </.link>
-          <.link navigate={~p"/users/log-in"} class="hover:text-white transition-colors">
-            Sign In
+        </div>
+        
+<!-- Alternatives Links -->
+        <div class="flex flex-col gap-2">
+          <h3 class="font-semibold text-white mb-2">Alternatives</h3>
+          <.link
+            navigate={~p"/alternative/airops"}
+            class="text-slate-400 hover:text-indigo-400 text-sm"
+          >
+            AirOps Alternative
           </.link>
         </div>
-
+      </div>
+      
+<!-- Bottom Bar -->
+      <div class="flex flex-col md:flex-row items-center justify-between gap-6 pt-8 border-t border-slate-800">
+        <!-- Social Links -->
+        <div class="flex items-center gap-4">
+          <a
+            href="https://www.linkedin.com/in/floriankluge/"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-slate-400 hover:text-indigo-400 transition-colors"
+          >
+            <svg class="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z" />
+            </svg>
+          </a>
+          <a
+            href="https://twitter.com/floriankluge_"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-slate-400 hover:text-indigo-400 transition-colors"
+          >
+            <svg class="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+            </svg>
+          </a>
+        </div>
+        
+<!-- Copyright -->
         <div class="text-slate-400 text-sm">
-          © 2025 Prism AI. All rights reserved.
+          © 2025 Prism AI SEO. All rights reserved.
         </div>
       </div>
     </div>

@@ -60,7 +60,17 @@ defmodule GscAnalytics.Schemas.Workflow do
   """
   def changeset(workflow, attrs) do
     workflow
-    |> cast(attrs, [:name, :description, :status, :definition, :input_schema, :tags, :version])
+    |> cast(attrs, [
+      :name,
+      :description,
+      :status,
+      :definition,
+      :input_schema,
+      :tags,
+      :version,
+      :account_id,
+      :created_by_id
+    ])
     |> validate_required([:name, :definition, :account_id])
     |> validate_length(:name, min: 3, max: 100)
     |> validate_workflow_definition()

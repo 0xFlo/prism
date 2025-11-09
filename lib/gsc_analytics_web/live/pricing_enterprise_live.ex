@@ -1,8 +1,8 @@
-defmodule GscAnalyticsWeb.PricingMaxLive do
+defmodule GscAnalyticsWeb.PricingEnterpriseLive do
   @moduledoc """
-  Dedicated landing page for the Max plan (premium tier).
+  Dedicated landing page for the Enterprise plan (premium tier).
 
-  Inspired by Claude's Max plan approach: sells through demonstrated capability
+  Inspired by Claude's Enterprise plan approach: sells through demonstrated capability
   rather than feature lists. Shows role-based use cases with real outputs.
   """
   use GscAnalyticsWeb, :live_view
@@ -14,16 +14,16 @@ defmodule GscAnalyticsWeb.PricingMaxLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    use_cases = PricingData.max_use_cases()
-    max_tier = PricingData.pricing_tiers() |> Enum.find(&(&1.id == :max))
+    use_cases = PricingData.enterprise_use_cases()
+    enterprise_tier = PricingData.pricing_tiers() |> Enum.find(&(&1.id == :enterprise))
     faqs = PricingData.pricing_faqs()
     trust = PricingData.trust_signals()
 
     {:ok,
      socket
-     |> assign(:page_title, "Max Plan - Autonomous AI SEO Agent")
+     |> assign(:page_title, "Enterprise Plan - Autonomous AI SEO Agent")
      |> assign(:use_cases, use_cases)
-     |> assign(:max_tier, max_tier)
+     |> assign(:enterprise_tier, enterprise_tier)
      |> assign(:faqs, faqs)
      |> assign(:trust, trust)
      |> assign(:active_use_case, "agency")}
@@ -41,6 +41,6 @@ defmodule GscAnalyticsWeb.PricingMaxLive do
     {:noreply,
      socket
      |> put_flash(:info, "Demo scheduling coming soon! Contact sales@prism-ai.com")
-     |> push_navigate(to: ~p"/users/register?plan=max")}
+     |> push_navigate(to: ~p"/users/register?plan=enterprise")}
   end
 end

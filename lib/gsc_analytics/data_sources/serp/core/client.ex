@@ -121,9 +121,10 @@ defmodule GscAnalytics.DataSources.SERP.Core.Client do
 
   defp execute_request(url, params, retry_count \\ 0) do
     start_time = System.monotonic_time(:millisecond)
+    http_client = Config.http_client()
 
     result =
-      case Req.get(url, params: params) do
+      case http_client.get(url, params: params) do
         {:ok, %{status: 200, body: body}} ->
           {:ok, body}
 

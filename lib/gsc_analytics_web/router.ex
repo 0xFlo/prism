@@ -54,6 +54,8 @@ defmodule GscAnalyticsWeb.Router do
       live "/dashboard/keywords", DashboardKeywordsLive, :index
       live "/dashboard/sync", DashboardSyncLive, :index
       live "/dashboard/crawler", DashboardCrawlerLive, :index
+      live "/dashboard/workflows", DashboardWorkflowsLive, :index
+      live "/dashboard/workflows/:id/edit", DashboardWorkflowBuilderLive, :edit
       live "/dashboard/url", DashboardUrlLive, :show
       live "/users/settings", UserLive.Settings, :edit
       live "/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email
@@ -79,7 +81,8 @@ defmodule GscAnalyticsWeb.Router do
       on_mount: [{GscAnalyticsWeb.UserAuth, :mount_current_scope}] do
       live "/", HomepageLive, :index
       live "/pricing", PricingLive, :index
-      live "/pricing/max", PricingMaxLive, :index
+      live "/pricing/enterprise", PricingEnterpriseLive, :index
+      live "/alternative/airops", AiropsAlternativeLive, :index
       live "/users/register", UserLive.Registration, :new
       live "/users/log-in", UserLive.Login, :new
       live "/users/log-in/:token", UserLive.Confirmation, :new

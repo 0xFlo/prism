@@ -2,7 +2,7 @@ defmodule GscAnalyticsWeb.PricingLive do
   @moduledoc """
   Pricing comparison page showing all three tiers.
 
-  Public page accessible without authentication. Shows Pro, Business, and Max plans
+  Public page accessible without authentication. Shows Pro, Business, and Enterprise plans
   with feature comparison table.
   """
   use GscAnalyticsWeb, :live_view
@@ -38,9 +38,9 @@ defmodule GscAnalyticsWeb.PricingLive do
       "business" ->
         {:noreply, push_navigate(socket, to: ~p"/users/register?plan=business")}
 
-      "max" ->
-        # For Max plan, redirect to dedicated landing page
-        {:noreply, push_navigate(socket, to: ~p"/pricing/max")}
+      "enterprise" ->
+        # For Enterprise plan, redirect to dedicated landing page
+        {:noreply, push_navigate(socket, to: ~p"/pricing/enterprise")}
 
       _ ->
         {:noreply, socket}

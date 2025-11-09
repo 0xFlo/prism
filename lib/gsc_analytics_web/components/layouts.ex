@@ -130,6 +130,14 @@ defmodule GscAnalyticsWeb.Layouts do
                   <.icon name="hero-shield-check" class="h-5 w-5" /> URL Health
                 </.link>
               </li>
+              <li>
+                <.link
+                  navigate={account_nav(assigns, :workflows)}
+                  class={nav_link_class(assigns, "/dashboard/workflows")}
+                >
+                  <.icon name="hero-cog-6-tooth" class="h-5 w-5" /> Workflows
+                </.link>
+              </li>
             </ul>
           </nav>
         </aside>
@@ -174,6 +182,13 @@ defmodule GscAnalyticsWeb.Layouts do
     case account_query(assigns) do
       [] -> ~p"/dashboard/crawler"
       params -> ~p"/dashboard/crawler?#{params}"
+    end
+  end
+
+  defp account_nav(assigns, :workflows) do
+    case account_query(assigns) do
+      [] -> ~p"/dashboard/workflows"
+      params -> ~p"/dashboard/workflows?#{params}"
     end
   end
 

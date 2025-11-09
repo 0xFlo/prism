@@ -162,7 +162,9 @@ defmodule GscAnalytics.Workflows.Runtime do
   @spec get_step_output(:ets.tid(), String.t()) :: map() | nil
   def get_step_output(table, step_id) do
     state = get_state(table)
-    get_in(state.variables, [step_id, :output])
+    # Try atom key first (in-memory), then string key (restored from DB)
+    get_in(state.variables, [step_id, :output]) ||
+      get_in(state.variables, [step_id, "output"])
   end
 
   @doc """

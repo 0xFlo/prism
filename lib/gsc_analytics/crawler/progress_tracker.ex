@@ -44,9 +44,12 @@ defmodule GscAnalytics.Crawler.ProgressTracker do
 
   @doc """
   Start a new check operation.
+
+  Optional metadata is stored on the job (e.g., `:account_id`, `:property_id`, `:property_url`,
+  `:property_label`) so LiveViews can scope progress updates.
   """
-  def start_check(total_urls) do
-    GenServer.call(__MODULE__, {:start_check, total_urls})
+  def start_check(total_urls, metadata \\ %{}) do
+    GenServer.call(__MODULE__, {:start_check, total_urls, metadata || %{}})
   end
 
   @doc """
@@ -92,12 +95,13 @@ defmodule GscAnalytics.Crawler.ProgressTracker do
   end
 
   @impl true
-  def handle_call({:start_check, total_urls}, _from, state) do
+  def handle_call({:start_check, total_urls, metadata}, _from, state) do
     job = %{
       id: generate_job_id(),
       started_at: DateTime.utc_now(),
       total_urls: total_urls,
       checked: 0,
+      metadata: metadata || %{},
       status_counts: %{
         "2xx" => 0,
         "3xx" => 0,

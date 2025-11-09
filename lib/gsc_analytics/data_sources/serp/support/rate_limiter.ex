@@ -27,10 +27,20 @@ defmodule GscAnalytics.DataSources.SERP.Support.RateLimiter do
   @doc """
   Initialize the ETS table for cost tracking.
   Called automatically on first use.
+
+  Uses rescue pattern to handle concurrent initialization attempts
+  across multiple processes or nodes.
   """
   def init_ets do
     unless :ets.whereis(@ets_table) != :undefined do
-      :ets.new(@ets_table, [:named_table, :public, :set])
+      try do
+        :ets.new(@ets_table, [:named_table, :public, :set])
+      rescue
+        ArgumentError ->
+          # Table was created by another process between check and creation
+          # This is safe to ignore as the table now exists
+          :ok
+      end
     end
 
     :ok

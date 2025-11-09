@@ -20,7 +20,7 @@
           Pricing
         </.link>
         <.button phx-click="schedule_demo" class="btn btn-primary btn-sm">
-          Schedule Max Demo
+          Schedule Enterprise Demo
         </.button>
       </div>
     </div>
@@ -30,11 +30,11 @@
   <div class="relative overflow-hidden">
     <div class="container mx-auto px-4 py-20 text-center">
       <div class="max-w-5xl mx-auto space-y-8">
-        <!-- Max Badge -->
+        <!-- Enterprise Badge -->
         <div class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-500/20 border border-emerald-500/30 rounded-full">
           <.icon name="hero-sparkles" class="h-5 w-5 text-emerald-400" />
           <span class="text-emerald-300 font-semibold text-sm uppercase tracking-wide">
-            Max Plan
+            Enterprise Plan
           </span>
         </div>
 
@@ -46,7 +46,7 @@
         </h1>
 
         <p class="text-xl md:text-2xl text-slate-300 max-w-4xl mx-auto leading-relaxed">
-          The Max plan combines unlimited monitoring, autonomous AI agents, and 20x capacity—built for enterprises doing ambitious SEO at scale.
+          The Enterprise plan combines unlimited monitoring, autonomous AI agents, and 20x capacity—built for enterprises doing ambitious SEO at scale.
         </p>
         
 <!-- Key Stats -->
@@ -73,7 +73,7 @@
             phx-click="schedule_demo"
             class="btn btn-lg bg-gradient-to-r from-indigo-600 to-emerald-600 hover:from-indigo-500 hover:to-emerald-500 text-white border-none"
           >
-            <.icon name="hero-calendar" class="h-5 w-5" /> Schedule Max Demo
+            <.icon name="hero-calendar" class="h-5 w-5" /> Schedule Enterprise Demo
           </.button>
           <.link
             navigate={~p"/pricing"}
@@ -98,7 +98,7 @@
           Built For Ambitious Teams
         </h2>
         <p class="text-xl text-slate-300 max-w-3xl mx-auto">
-          See how Max solves real challenges across different roles and industries
+          See how Enterprise solves real challenges across different roles and industries
         </p>
       </div>
       
@@ -201,18 +201,18 @@
       <div class="bg-gradient-to-br from-indigo-500/10 to-emerald-500/10 backdrop-blur-sm rounded-3xl p-12 border border-indigo-400/30">
         <div class="text-center mb-12">
           <h2 class="text-4xl font-bold text-white mb-4">
-            Everything Included in Max
+            Everything Included in Enterprise
           </h2>
           <div class="text-6xl font-extrabold text-white mb-2">
-            {@max_tier.price}
+            {@enterprise_tier.price}
           </div>
           <div class="text-xl text-slate-300">
-            per {@max_tier.period}
+            per {@enterprise_tier.period}
           </div>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
-          <%= for feature <- @max_tier.features do %>
+          <%= for feature <- @enterprise_tier.features do %>
             <div class="flex items-start gap-3">
               <.icon
                 name="hero-check-circle-solid"
@@ -228,7 +228,7 @@
             phx-click="schedule_demo"
             class="btn btn-lg bg-white text-indigo-600 hover:bg-slate-100 border-none"
           >
-            <.icon name="hero-calendar" class="h-5 w-5" /> Schedule Your Max Demo
+            <.icon name="hero-calendar" class="h-5 w-5" /> Schedule Your Enterprise Demo
           </.button>
           <p class="text-sm text-slate-400 mt-4">
             Talk to our team about your specific needs
@@ -246,7 +246,7 @@
           Trusted By Enterprise Teams
         </h2>
         <p class="text-xl text-slate-300">
-          Join companies managing hundreds of domains with Max
+          Join companies managing hundreds of domains with Enterprise
         </p>
       </div>
 
@@ -283,12 +283,12 @@
     </div>
   </div>
   
-<!-- FAQ Section (Filtered to Max-relevant questions) -->
+<!-- FAQ Section (Filtered to Enterprise-relevant questions) -->
   <div class="container mx-auto px-4 py-20">
     <div class="max-w-4xl mx-auto">
       <div class="text-center mb-12">
         <h2 class="text-4xl font-bold text-white mb-4">
-          Common Questions About Max
+          Common Questions About Enterprise
         </h2>
       </div>
 
@@ -309,13 +309,13 @@
         Ready to Scale Your SEO Operations?
       </h2>
       <p class="text-2xl text-white/90 mb-10 max-w-3xl mx-auto leading-relaxed">
-        Let AI handle the grunt work while you focus on strategy. Schedule a personalized demo to see Max in action with your own data.
+        Let AI handle the grunt work while you focus on strategy. Schedule a personalized demo to see Enterprise in action with your own data.
       </p>
       <.button
         phx-click="schedule_demo"
         class="btn btn-lg bg-white text-indigo-600 hover:bg-slate-100 border-none"
       >
-        <.icon name="hero-calendar" class="h-6 w-6" /> Schedule Your Max Demo
+        <.icon name="hero-calendar" class="h-6 w-6" /> Schedule Your Enterprise Demo
       </.button>
     </div>
   </div>

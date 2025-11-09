@@ -84,6 +84,12 @@ GscAnalytics.DataSources.GSC.Core.Client.list_sites(1)
 
 The application includes a **sophisticated, fully automated HTTP status checking system** that runs in the background. Manual intervention is rarely needed.
 
+**🔧 Architecture Update (November 2025):**
+The HTTP status crawler now uses the `url_lifetime_stats` table (materialized view) instead of the legacy `gsc_performance` table. This change was necessary because:
+- GSC sync stores data in `gsc_time_series` (raw daily data)
+- `url_lifetime_stats` aggregates this into lifetime metrics with HTTP status fields
+- `gsc_performance` table remains empty (may be deprecated in future)
+
 #### Automatic Triggers (No Manual Action Required)
 
 **1. During GSC Sync** - New URLs automatically queued
@@ -228,6 +234,23 @@ Telemetry:
 - `DashboardLive`: Main LiveView dashboard with real-time filtering and sorting
 - `DashboardController`: CSV export and sync triggers
 - `Dashboard.HTMLHelpers`: Reusable UI helpers for metrics display
+- `DashboardWorkflowsLive`: Workflow runner with real-time execution monitoring
+- `DashboardWorkflowBuilderLive`: Visual workflow editor (React Flow + LiveView hooks)
+
+**Workflow Automation** (`lib/gsc_analytics/workflows/`)
+
+- `Engine`: GenServer-based workflow execution engine with step orchestration
+- `Execution`: Ecto schema for workflow runs with status tracking
+- `ExecutionEvent`: Event sourcing for execution history
+- `ProgressTracker`: GenServer broadcasting real-time execution progress via PubSub
+- `Runtime`: ETS-based runtime state management with crash recovery
+
+**📚 For detailed workflow builder architecture, see:** `docs/workflow-builder-architecture.md`
+- React Flow + Phoenix LiveView integration patterns
+- Performance optimization guide (critical for 50+ node workflows)
+- Memory management and lifecycle hooks
+- Data flow patterns (LiveView ↔ React)
+- Troubleshooting and extension guide
 
 ### Supervision Tree
 
@@ -669,6 +692,71 @@ For detailed Elixir/Phoenix guidelines, see `AGENTS.md` which contains comprehen
 
 Jason is only a transitive dependency (Phoenix brings it in). Since we have native JSON support, we should
 use it exclusively.
+
+---
+
+## Workflow Automation Quick Reference
+
+### Creating and Running Workflows
+
+```elixir
+# In IEx console (iex -S mix phx.server):
+
+# Create a workflow programmatically
+alias GscAnalytics.Workflows
+
+{:ok, workflow} = Workflows.create_workflow(%{
+  name: "My Workflow",
+  description: "Workflow description",
+  status: :published,
+  account_id: 1,
+  created_by_id: 1,
+  definition: %{
+    "version" => "1.0",
+    "steps" => [
+      %{
+        "id" => "step_1",
+        "type" => "test",
+        "name" => "Test Step",
+        "config" => %{"delay_ms" => 1000}
+      }
+    ],
+    "connections" => []
+  }
+})
+
+# Seed test workflows
+mix run priv/repo/seed_workflows.exs
+```
+
+### Visual Workflow Builder
+
+**Access:** Navigate to `/dashboard/workflows` and click any workflow name or edit icon
+
+**Features:**
+- Drag-and-drop node positioning
+- Click nodes to configure in right sidebar
+- Connect nodes by dragging handles
+- Auto-save (2s debounce) + manual save (Ctrl+S)
+- Delete nodes with Delete key
+- MiniMap for navigation
+
+**Performance:** Optimized for 50+ nodes with React.memo, useCallback, useMemo, and onlyRenderVisibleElements
+
+**Troubleshooting:** See `docs/workflow-builder-architecture.md` for:
+- Common issues (JSX loader, memory leaks, slow dragging)
+- Performance profiling
+- Extension guide (adding step types, features)
+
+### Asset Building
+
+```bash
+# Build frontend assets (includes React Flow workflow builder)
+mix assets.build
+
+# Bundle size: ~2.0MB dev, ~500KB production minified
+# If JSX errors occur, verify esbuild config has --loader:.js=jsx --loader:.jsx=jsx
+```
 
 ---
 

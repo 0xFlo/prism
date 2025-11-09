@@ -37,8 +37,8 @@ defmodule GscAnalyticsWeb.Live.PricingData do
         features: tier_features(:business)
       },
       %{
-        id: :enterprise,
-        name: "Enterprise",
+        id: :max,
+        name: "Max",
         price: "$50,000",
         price_annual: 50_000,
         period: "year",
@@ -48,7 +48,7 @@ defmodule GscAnalyticsWeb.Live.PricingData do
         popular: false,
         badge: "AI Powered",
         usage_note: "20x more usage than Business*",
-        features: tier_features(:enterprise)
+        features: tier_features(:max)
       }
     ]
   end
@@ -65,28 +65,28 @@ defmodule GscAnalyticsWeb.Live.PricingData do
             name: "Domains monitored",
             pro: "1 domain",
             business: "1 domain",
-            enterprise: "1 domain",
+            max: "1 domain",
             tooltip: "Enterprise-focused: deep analysis of your primary domain"
           },
           %{
             name: "Sync frequency",
             pro: "Weekly",
             business: "Daily",
-            enterprise: "Real-time (every 6hrs)",
+            max: "Real-time (every 6hrs)",
             tooltip: "How often we fetch fresh data from Google Search Console"
           },
           %{
             name: "Data retention",
             pro: "3 months",
             business: "12 months",
-            enterprise: "Unlimited",
+            max: "Unlimited",
             tooltip: "Historical data available for trend analysis"
           },
           %{
             name: "Historical backfill",
             pro: false,
             business: "Up to 1 year",
-            enterprise: "Unlimited",
+            max: "Unlimited",
             tooltip: "Import historical data when you first sign up"
           }
         ]
@@ -98,35 +98,35 @@ defmodule GscAnalyticsWeb.Live.PricingData do
             name: "Reddit top 3 tracking",
             pro: false,
             business: true,
-            enterprise: true,
+            max: true,
             tooltip: "Monitor when Reddit outranks you in top 3 positions"
           },
           %{
             name: "AI Overviews monitoring",
             pro: false,
             business: true,
-            enterprise: true,
+            max: true,
             tooltip: "Track your presence in Google's AI-generated answers"
           },
           %{
             name: "Competitor intelligence",
             pro: false,
             business: "Basic",
-            enterprise: "AI-powered",
+            max: "AI-powered",
             tooltip: "Automatic tracking and analysis of competitor rankings"
           },
           %{
             name: "Custom automation workflows",
             pro: false,
             business: false,
-            enterprise: true,
+            max: true,
             tooltip: "Build if-then rules: e.g., if CTR drops 20% → send Slack alert"
           },
           %{
             name: "Autonomous AI agent",
             pro: false,
             business: false,
-            enterprise: true,
+            max: true,
             tooltip: "AI runs 24/7 analysis and sends proactive insights"
           }
         ]
@@ -138,21 +138,21 @@ defmodule GscAnalyticsWeb.Live.PricingData do
             name: "User seats",
             pro: "3 users",
             business: "10 users",
-            enterprise: "Unlimited",
+            max: "Unlimited",
             tooltip: "Team members with full dashboard access"
           },
           %{
             name: "White-label reports",
             pro: false,
             business: false,
-            enterprise: true,
+            max: true,
             tooltip: "Custom branded PDF/email reports for clients"
           },
           %{
             name: "Export & API access",
             pro: false,
             business: true,
-            enterprise: true,
+            max: true,
             tooltip: "Download data as CSV or connect via REST API"
           }
         ]
@@ -164,28 +164,28 @@ defmodule GscAnalyticsWeb.Live.PricingData do
             name: "Support level",
             pro: "Email",
             business: "Priority (chat + email)",
-            enterprise: "Dedicated account manager",
+            max: "Dedicated account manager",
             tooltip: "Response time SLAs vary by tier"
           },
           %{
             name: "Onboarding",
             pro: "Self-service",
             business: "Assisted setup",
-            enterprise: "White-glove onboarding",
+            max: "White-glove onboarding",
             tooltip: "Help getting your account configured and data flowing"
           },
           %{
             name: "SLA guarantee",
             pro: false,
             business: false,
-            enterprise: "99.9% uptime",
+            max: "99.9% uptime",
             tooltip: "Service level agreement with uptime guarantees"
           },
           %{
             name: "Feature requests",
             pro: false,
             business: false,
-            enterprise: "Priority queue",
+            max: "Priority queue",
             tooltip: "Your feature requests get built first"
           }
         ]
@@ -194,9 +194,9 @@ defmodule GscAnalyticsWeb.Live.PricingData do
   end
 
   @doc """
-  Returns Enterprise plan use cases for role-based tabs.
+  Returns Max plan use cases for role-based tabs.
   """
-  def enterprise_use_cases do
+  def max_use_cases do
     [
       %{
         id: "agency",
@@ -283,7 +283,7 @@ defmodule GscAnalyticsWeb.Live.PricingData do
       %{
         question: "What does the AI agent actually do?",
         answer:
-          "The Enterprise plan AI agent runs autonomous analysis 24/7: monitors your rankings, detects anomalies, tracks competitors, identifies content decay, and sends proactive alerts. It works while you sleep so you never miss critical changes."
+          "The Max plan AI agent runs autonomous analysis 24/7: monitors your rankings, detects anomalies, tracks competitors, identifies content decay, and sends proactive alerts. It works while you sleep so you never miss critical changes."
       },
       %{
         question: "Do you support multi-domain tracking?",
@@ -298,7 +298,7 @@ defmodule GscAnalyticsWeb.Live.PricingData do
       %{
         question: "Can I try before I buy?",
         answer:
-          "Pro and Business plans include a 14-day free trial. For Enterprise plan, we offer personalized demos where you can see the AI agent in action with your own data."
+          "Pro and Business plans include a 14-day free trial. For Max plan, we offer personalized demos where you can see the AI agent in action with your own data."
       }
     ]
   end
@@ -348,7 +348,7 @@ defmodule GscAnalyticsWeb.Live.PricingData do
     ]
   end
 
-  defp tier_features(:enterprise) do
+  defp tier_features(:max) do
     [
       "1 domain monitoring",
       "Unlimited user seats",

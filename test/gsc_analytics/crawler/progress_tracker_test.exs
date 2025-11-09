@@ -53,6 +53,20 @@ defmodule GscAnalytics.Crawler.ProgressTrackerTest do
       assert %DateTime{} = job.started_at
       assert DateTime.compare(job.started_at, before) in [:gt, :eq]
     end
+
+    test "stores metadata on job" do
+      metadata = %{
+        account_id: 123,
+        property_id: "prop-123",
+        property_url: "https://example.com",
+        property_label: "Example"
+      }
+
+      {:ok, _job_id} = ProgressTracker.start_check(5, metadata)
+
+      assert_receive {:crawler_progress, %{type: :started, job: job}}, 100
+      assert job.metadata == metadata
+    end
   end
 
   describe "update_progress/1" do
@@ -383,6 +397,31 @@ defmodule GscAnalytics.Crawler.ProgressTrackerTest do
       [first, second | _] = history
       assert first.id == job_id_2
       assert second.id == job_id_1
+    end
+
+    test "history entries retain metadata" do
+      metadata = %{account_id: 456, property_id: "prop-history"}
+
+      {:ok, job_id} = ProgressTracker.start_check(1, metadata)
+      assert_receive {:crawler_progress, %{type: :started}}, 100
+
+      stats = %{
+        total: 1,
+        checked: 1,
+        status_2xx: 1,
+        status_3xx: 0,
+        status_4xx: 0,
+        status_5xx: 0,
+        errors: 0
+      }
+
+      {:ok, _} = ProgressTracker.finish_check(stats)
+      assert_receive {:crawler_progress, %{type: :finished}}, 100
+
+      history = ProgressTracker.get_history()
+      completed_job = Enum.find(history, fn job -> job.id == job_id end)
+      refute completed_job == nil
+      assert completed_job.metadata == metadata
     end
   end
 

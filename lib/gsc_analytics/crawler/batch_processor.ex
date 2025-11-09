@@ -17,7 +17,7 @@ defmodule GscAnalytics.Crawler.BatchProcessor do
   require Logger
 
   alias GscAnalytics.Crawler.{HttpStatus, ProgressTracker, Persistence}
-  alias GscAnalytics.Schemas.Performance
+  alias GscAnalytics.Schemas.UrlLifetimeStats
   alias GscAnalytics.Repo
 
   import Ecto.Query
@@ -187,11 +187,11 @@ defmodule GscAnalytics.Crawler.BatchProcessor do
   defp fetch_urls_to_check(account_id, filter, property_url) do
     # Debug: Log counts with a single optimized query
     counts =
-      from(p in Performance,
-        where: p.account_id == ^account_id,
+      from(u in UrlLifetimeStats,
+        where: u.account_id == ^account_id,
         select: %{
-          total: count(p.id),
-          available: fragment("COUNT(*) FILTER (WHERE ? = true)", p.data_available)
+          total: count(u.url),
+          with_traffic: fragment("COUNT(*) FILTER (WHERE lifetime_clicks > 0 OR lifetime_impressions > 0)")
         }
       )
       |> filter_by_property(property_url)
@@ -199,15 +199,16 @@ defmodule GscAnalytics.Crawler.BatchProcessor do
 
     Logger.debug(
       "URL check filter - account: #{account_id}, property: #{inspect(property_url)}, " <>
-        "total_rows: #{counts.total}, data_available: #{counts.available}, filter: #{filter}"
+        "total_rows: #{counts.total}, with_traffic: #{counts.with_traffic}, filter: #{filter}"
     )
 
     base_query =
-      from(p in Performance,
-        where: p.account_id == ^account_id,
-        where: p.data_available == true,
-        order_by: [desc: p.clicks],
-        select: p.url
+      from(u in UrlLifetimeStats,
+        where: u.account_id == ^account_id,
+        # Only check URLs that have traffic (equivalent to data_available)
+        where: u.lifetime_clicks > 0 or u.lifetime_impressions > 0,
+        order_by: [desc: u.lifetime_clicks],
+        select: u.url
       )
       |> filter_by_property(property_url)
 
@@ -217,16 +218,16 @@ defmodule GscAnalytics.Crawler.BatchProcessor do
           base_query
 
         :stale ->
-          base_query |> Performance.needs_http_check(7)
+          base_query |> UrlLifetimeStats.needs_http_check(7)
 
         :broken ->
-          base_query |> Performance.broken_links()
+          base_query |> UrlLifetimeStats.broken_links()
 
         :redirected ->
-          base_query |> Performance.redirected_urls()
+          base_query |> UrlLifetimeStats.redirected_urls()
 
         _ ->
-          base_query |> Performance.needs_http_check(7)
+          base_query |> UrlLifetimeStats.needs_http_check(7)
       end
 
     urls = Repo.all(query)
@@ -290,6 +291,6 @@ defmodule GscAnalytics.Crawler.BatchProcessor do
   defp filter_by_property(query, nil), do: query
 
   defp filter_by_property(query, property_url) when is_binary(property_url) do
-    where(query, [p], p.property_url == ^property_url)
+    where(query, [u], u.property_url == ^property_url)
   end
 end

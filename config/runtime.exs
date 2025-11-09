@@ -14,7 +14,8 @@ env_files = [
 # Dotenvy returns {:ok, map} but doesn't automatically set env vars, so we do it manually
 case Dotenvy.source(env_files) do
   {:ok, vars} -> Enum.each(vars, fn {key, val} -> System.put_env(key, val) end)
-  {:error, _} -> :ok  # Files don't exist, skip silently
+  # Files don't exist, skip silently
+  {:error, _} -> :ok
 end
 
 credentials_file =

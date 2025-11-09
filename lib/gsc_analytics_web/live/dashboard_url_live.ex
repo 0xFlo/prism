@@ -238,18 +238,31 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
         query -> query.query
       end
 
-    # Queue Oban job
-    %{
+    # Queue Oban job with error handling
+    job_params = %{
       "account_id" => account_id,
       "property_url" => property_url,
       "url" => url,
       "keyword" => keyword,
       "geo" => "us"
     }
-    |> SerpCheckWorker.new()
-    |> Oban.insert()
 
-    {:noreply, put_flash(socket, :info, "SERP check queued for '#{keyword}'")}
+    case SerpCheckWorker.new(job_params) |> Oban.insert() do
+      {:ok, _job} ->
+        {:noreply, put_flash(socket, :info, "SERP check queued for '#{keyword}'")}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        errors =
+          changeset
+          |> Ecto.Changeset.traverse_errors(fn {msg, _opts} -> msg end)
+          |> Enum.map(fn {field, msgs} -> "#{field}: #{Enum.join(msgs, ", ")}" end)
+          |> Enum.join("; ")
+
+        {:noreply, put_flash(socket, :error, "Failed to queue SERP check: #{errors}")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Failed to queue SERP check: #{inspect(reason)}")}
+    end
   end
 
   defp build_url_params(socket, overrides, assign_overrides) do

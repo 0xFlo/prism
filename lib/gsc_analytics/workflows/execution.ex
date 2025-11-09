@@ -87,7 +87,7 @@ defmodule GscAnalytics.Workflows.Execution do
     execution
     |> change(%{
       status: :running,
-      started_at: DateTime.utc_now()
+      started_at: DateTime.utc_now() |> DateTime.truncate(:second)
     })
   end
 
@@ -111,7 +111,7 @@ defmodule GscAnalytics.Workflows.Execution do
     execution
     |> change(%{
       status: :paused,
-      paused_at: DateTime.utc_now()
+      paused_at: DateTime.utc_now() |> DateTime.truncate(:second)
     })
   end
 
@@ -134,7 +134,7 @@ defmodule GscAnalytics.Workflows.Execution do
     |> change(%{
       status: :completed,
       output_data: output_data,
-      completed_at: DateTime.utc_now()
+      completed_at: DateTime.utc_now() |> DateTime.truncate(:second)
     })
   end
 
@@ -147,7 +147,7 @@ defmodule GscAnalytics.Workflows.Execution do
       status: :failed,
       error_message: error_message,
       error_step_id: error_step_id,
-      completed_at: DateTime.utc_now()
+      completed_at: DateTime.utc_now() |> DateTime.truncate(:second)
     })
   end
 
@@ -158,7 +158,7 @@ defmodule GscAnalytics.Workflows.Execution do
     execution
     |> change(%{
       status: :cancelled,
-      completed_at: DateTime.utc_now()
+      completed_at: DateTime.utc_now() |> DateTime.truncate(:second)
     })
   end
 

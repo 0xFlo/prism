@@ -54,7 +54,7 @@ config :esbuild,
   version: "0.25.4",
   gsc_analytics: [
     args:
-      ~w(js/app.js --bundle --target=es2022 --outdir=../priv/static/assets/js --external:/fonts/* --external:/images/* --alias:@=. --alias:phoenix-colocated=../_build/dev/phoenix-colocated),
+      ~w(js/app.jsx --bundle --target=es2022 --outdir=../priv/static/assets/js --external:/fonts/* --external:/images/* --loader:.js=jsx --loader:.jsx=jsx --alias:@=. --alias:phoenix-colocated=../_build/dev/phoenix-colocated),
     cd: Path.expand("../assets", __DIR__),
     env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
   ]
@@ -86,16 +86,8 @@ config :gsc_analytics, GscAnalytics.GSC.Sync,
   query_batch_pages: 32,
   query_scheduler_chunk_size: 32
 
-# Configure Hammer rate limiter
-config :hammer,
-  backend:
-    {Hammer.Backend.ETS,
-     [
-       # Keep data for 2 minutes
-       expiry_ms: 60_000 * 2,
-       # Clean up every minute
-       cleanup_interval_ms: 60_000
-     ]}
+# Note: Hammer rate limiter backend is configured at runtime in config/runtime.exs
+# This allows switching between ETS (single-node) and Postgres/Redis (multi-node) via HAMMER_BACKEND env var
 
 # Configure Oban for background job processing
 # Note: Plugins and cron configuration are managed at runtime via GscAnalytics.Config.AutoSync
@@ -118,6 +110,8 @@ config :gsc_analytics, Oban,
     gsc_sync: 1,
     # SERP position checks (3 concurrent)
     serp_check: 3,
+    # HTTP status checks (10 concurrent for high throughput)
+    http_checks: 10,
     # Maintenance tasks (1 at a time)
     maintenance: 1
   ]

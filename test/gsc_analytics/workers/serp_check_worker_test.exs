@@ -2,10 +2,15 @@ defmodule GscAnalytics.Workers.SerpCheckWorkerTest do
   use GscAnalytics.DataCase, async: false
   use Oban.Testing, repo: GscAnalytics.Repo
 
+  import Mox
+
   alias GscAnalytics.Workers.SerpCheckWorker
   alias GscAnalytics.Schemas.SerpSnapshot
+  alias GscAnalytics.Test.Fixtures.ScrapflyResponses
 
   @moduletag :tdd
+
+  setup :verify_on_exit!
 
   describe "perform/1" do
     test "enqueues job with required fields" do
@@ -45,28 +50,32 @@ defmodule GscAnalytics.Workers.SerpCheckWorkerTest do
       assert changeset.changes.max_attempts == 3
     end
 
-    @tag :skip
     test "checks SERP position and saves snapshot" do
-      # This test requires mocking ScrapFly API or real API key
-      # Skipping for now - will be covered in integration tests
       job_args = %{
         "account_id" => 1,
         "property_url" => "sc-domain:example.com",
-        "url" => "https://example.com",
-        "keyword" => "test query",
+        "url" => "https://elixir-lang.org",
+        "keyword" => "elixir programming",
         "geo" => "us"
       }
 
+      # Mock successful ScrapFly response with URL at position 3
+      expect(GscAnalytics.DataSources.SERP.HTTPClientMock, :get, fn _url, _opts ->
+        ScrapflyResponses.success_with_position()
+      end)
+
       assert :ok = perform_job(SerpCheckWorker, job_args)
 
-      # Verify snapshot was saved
+      # Verify snapshot was saved with correct position
       snapshot =
         Repo.get_by(SerpSnapshot,
-          url: "https://example.com",
-          keyword: "test query"
+          url: "https://elixir-lang.org",
+          keyword: "elixir programming"
         )
 
       assert snapshot
+      assert snapshot.position == 3
+      assert snapshot.account_id == 1
     end
 
     test "includes default geo when not specified" do
@@ -155,18 +164,45 @@ defmodule GscAnalytics.Workers.SerpCheckWorkerTest do
       assert changeset.valid? == false or is_map(changeset.changes.args)
     end
 
-    @tag :skip
     test "retries on rate limit error" do
-      # This would require mocking rate limiter
-      # Skipping for now
-      :ok
+      job_args = %{
+        "account_id" => 1,
+        "property_url" => "sc-domain:example.com",
+        "url" => "https://example.com",
+        "keyword" => "test query",
+        "geo" => "us"
+      }
+
+      # Mock rate limit response (429)
+      expect(GscAnalytics.DataSources.SERP.HTTPClientMock, :get, fn _url, _opts ->
+        ScrapflyResponses.rate_limit_error()
+      end)
+
+      # Mock second attempt succeeds
+      expect(GscAnalytics.DataSources.SERP.HTTPClientMock, :get, fn _url, _opts ->
+        ScrapflyResponses.success_with_position()
+      end)
+
+      # Worker should retry and eventually succeed
+      assert :ok = perform_job(SerpCheckWorker, job_args)
     end
 
-    @tag :skip
     test "stores error message on API failure" do
-      # This would require mocking Client to return error
-      # Skipping for now
-      :ok
+      job_args = %{
+        "account_id" => 1,
+        "property_url" => "sc-domain:example.com",
+        "url" => "https://example.com",
+        "keyword" => "test query",
+        "geo" => "us"
+      }
+
+      # Mock API error (500)
+      expect(GscAnalytics.DataSources.SERP.HTTPClientMock, :get, fn _url, _opts ->
+        ScrapflyResponses.internal_server_error()
+      end)
+
+      # Worker should handle error gracefully
+      assert {:error, _reason} = perform_job(SerpCheckWorker, job_args)
     end
   end
 end

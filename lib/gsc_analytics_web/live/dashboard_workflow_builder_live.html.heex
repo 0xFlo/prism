@@ -1,0 +1,15 @@
+<div
+  id="workflow-builder"
+  phx-hook="WorkflowBuilder"
+  phx-update="ignore"
+  data-workflow={Jason.encode!(@workflow)}
+  class="h-screen w-full"
+>
+  <!-- Loading state (shown briefly while React mounts) -->
+  <div class="flex items-center justify-center h-screen bg-base-100">
+    <div class="text-center">
+      <span class="loading loading-spinner loading-lg text-primary"></span>
+      <p class="mt-4 text-slate-600 dark:text-slate-400">Loading workflow builder...</p>
+    </div>
+  </div>
+</div>

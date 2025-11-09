@@ -115,6 +115,9 @@ defmodule GscAnalytics.Crawler do
 
   ## Options
     - `:account_id` - Account ID (default: 1)
+    - `:property_id` - Workspace property identifier (UUID)
+    - `:property_url` - Property URL to scope URLs
+    - `:property_label` - Human-friendly label for UI metadata
     - `:filter` - Which URLs to check:
       - `:all` - Check all URLs
       - `:stale` - Only unchecked or >7 days old (default)

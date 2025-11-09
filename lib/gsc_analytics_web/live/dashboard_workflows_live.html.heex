@@ -1,0 +1,280 @@
+<Layouts.app
+  flash={@flash}
+  current_scope={@current_scope}
+  current_account={@current_account}
+  current_account_id={@current_account_id}
+  account_options={@account_options}
+  current_property={@current_property}
+  current_property_id={@current_property_id}
+  property_options={@property_options}
+>
+  <div class="mx-auto w-full max-w-7xl px-6 py-10">
+    <div class="space-y-2">
+      <p class="text-sm font-medium uppercase tracking-widest text-slate-500 dark:text-slate-400">
+        Automation
+      </p>
+      <h1 class="text-4xl font-semibold text-slate-900 dark:text-slate-100">Workflow Runner</h1>
+      <p class="text-base text-slate-500 dark:text-slate-400">
+        Execute workflows and monitor real-time progress with live updates.
+      </p>
+    </div>
+
+    <div class="mt-10 grid gap-6 lg:grid-cols-2">
+      <!-- Left Column: Workflow List -->
+      <section class="space-y-6">
+        <div class="rounded-3xl border border-slate-200 bg-white/80 p-6 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-800/80">
+          <h2 class="text-xl font-semibold text-slate-900 dark:text-slate-100">
+            Available Workflows
+          </h2>
+          <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
+            Click workflow name to edit, or "Run" to execute
+          </p>
+
+          <div class="mt-6 space-y-4">
+            <%= if Enum.empty?(@workflows) do %>
+              <div class="rounded-xl border-2 border-dashed border-slate-300 p-8 text-center dark:border-slate-600">
+                <.icon name="hero-cog-6-tooth" class="mx-auto h-12 w-12 text-slate-400" />
+                <p class="mt-3 text-sm font-medium text-slate-600 dark:text-slate-400">
+                  No workflows available
+                </p>
+                <p class="mt-1 text-xs text-slate-500">
+                  Create workflows to automate your tasks
+                </p>
+              </div>
+            <% else %>
+              <%= for workflow <- @workflows do %>
+                <div class="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-800/50">
+                  <div class="flex items-start justify-between gap-4">
+                    <div class="flex-1">
+                      <.link
+                        navigate={~p"/dashboard/workflows/#{workflow.id}/edit"}
+                        class="group inline-block"
+                      >
+                        <h3 class="font-semibold text-slate-900 dark:text-slate-100 group-hover:text-primary transition-colors cursor-pointer">
+                          {workflow.name}
+                          <.icon
+                            name="hero-pencil-square"
+                            class="inline h-4 w-4 ml-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                          />
+                        </h3>
+                      </.link>
+                      <%= if workflow.description do %>
+                        <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                          {workflow.description}
+                        </p>
+                      <% end %>
+                      <div class="mt-3 flex items-center gap-3 text-xs">
+                        <span class={"#{status_badge_class(workflow.status)} badge-sm"}>
+                          {workflow.status}
+                        </span>
+                        <span class="text-slate-500">
+                          {length(workflow.definition["steps"] || [])} steps
+                        </span>
+                      </div>
+                    </div>
+                    <div class="flex gap-2">
+                      <.link
+                        navigate={~p"/dashboard/workflows/#{workflow.id}/edit"}
+                        class="btn btn-ghost btn-sm gap-2"
+                        title="Edit workflow"
+                      >
+                        <.icon name="hero-pencil-square" class="h-4 w-4" />
+                      </.link>
+                      <button
+                        phx-click="run_workflow"
+                        phx-value-id={workflow.id}
+                        class="btn btn-primary btn-sm gap-2"
+                        title="Run workflow"
+                      >
+                        <.icon name="hero-play" class="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              <% end %>
+            <% end %>
+          </div>
+        </div>
+        
+<!-- Recent Executions -->
+        <div class="rounded-3xl border border-slate-200 bg-white/80 p-6 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-800/80">
+          <h2 class="text-xl font-semibold text-slate-900 dark:text-slate-100">
+            Recent Executions
+          </h2>
+          <div class="mt-4 space-y-2">
+            <%= if Enum.empty?(@recent_executions) do %>
+              <p class="text-sm text-slate-500">No recent executions</p>
+            <% else %>
+              <%= for execution <- @recent_executions do %>
+                <button
+                  phx-click="view_execution"
+                  phx-value-id={execution.id}
+                  class="w-full rounded-lg border border-slate-200 p-3 text-left hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                >
+                  <div class="flex items-center justify-between">
+                    <div class="flex-1">
+                      <div class="flex items-center gap-2">
+                        <span class="text-sm font-medium text-slate-900 dark:text-slate-100">
+                          {execution.workflow.name}
+                        </span>
+                        <span class={"#{status_badge_class(execution.status)} badge-xs"}>
+                          {execution.status}
+                        </span>
+                      </div>
+                      <p class="mt-1 text-xs text-slate-500">
+                        {Calendar.strftime(execution.inserted_at, "%b %d, %Y %I:%M %p")}
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              <% end %>
+            <% end %>
+          </div>
+        </div>
+      </section>
+      
+<!-- Right Column: Active Executions & Events -->
+      <section class="space-y-6">
+        <!-- Active Executions -->
+        <div class="rounded-3xl border border-slate-200 bg-white/80 p-6 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-800/80">
+          <h2 class="text-xl font-semibold text-slate-900 dark:text-slate-100">
+            Active Executions
+          </h2>
+          <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
+            Live progress updates via WebSocket
+          </p>
+
+          <div class="mt-6 space-y-4">
+            <%= if Enum.empty?(@active_executions) do %>
+              <div class="rounded-xl border-2 border-dashed border-slate-300 p-6 text-center dark:border-slate-600">
+                <.icon name="hero-bolt-slash" class="mx-auto h-10 w-10 text-slate-400" />
+                <p class="mt-2 text-sm text-slate-600 dark:text-slate-400">
+                  No active executions
+                </p>
+              </div>
+            <% else %>
+              <%= for execution <- @active_executions do %>
+                <div class="rounded-2xl border-2 border-blue-200 bg-blue-50/50 p-5 dark:border-blue-800 dark:bg-blue-900/20">
+                  <div class="flex items-start justify-between">
+                    <div class="flex-1">
+                      <div class="flex items-center gap-2">
+                        <h3 class="font-semibold text-slate-900 dark:text-slate-100">
+                          {execution.workflow.name}
+                        </h3>
+                        <span class={"#{status_badge_class(execution.status)} badge-sm"}>
+                          {execution.status}
+                        </span>
+                      </div>
+
+                      <%= if execution.current_step_id do %>
+                        <p class="mt-2 text-sm text-blue-700 dark:text-blue-300">
+                          <.icon name="hero-arrow-right" class="inline h-4 w-4" />
+                          Step: {execution.current_step_id}
+                        </p>
+                      <% end %>
+
+                      <%= if execution.completed_step_ids && length(execution.completed_step_ids) > 0 do %>
+                        <div class="mt-3">
+                          <% steps = execution.workflow.definition["steps"] || []
+
+                          progress_pct =
+                            if length(steps) > 0 do
+                              length(execution.completed_step_ids) / length(steps) * 100
+                            else
+                              0
+                            end %>
+                          <div class="text-xs text-slate-600 dark:text-slate-400">
+                            Progress: {length(execution.completed_step_ids)} / {length(steps)} steps
+                          </div>
+                          <div class="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+                            <div
+                              class="h-full bg-blue-500"
+                              style={"width: #{progress_pct}%"}
+                            >
+                            </div>
+                          </div>
+                        </div>
+                      <% end %>
+
+                      <p class="mt-2 text-xs text-slate-500">
+                        Started: {Calendar.strftime(execution.inserted_at, "%I:%M:%S %p")}
+                      </p>
+                    </div>
+
+                    <div class="flex flex-col gap-2">
+                      <%= if execution.status == :running do %>
+                        <button
+                          phx-click="pause_execution"
+                          phx-value-id={execution.id}
+                          class="btn btn-warning btn-xs gap-1"
+                          title="Pause"
+                        >
+                          <.icon name="hero-pause" class="h-3 w-3" />
+                        </button>
+                      <% end %>
+                      <%= if execution.status == :paused do %>
+                        <button
+                          phx-click="resume_execution"
+                          phx-value-id={execution.id}
+                          class="btn btn-info btn-xs gap-1"
+                          title="Resume"
+                        >
+                          <.icon name="hero-play" class="h-3 w-3" />
+                        </button>
+                      <% end %>
+                      <button
+                        phx-click="cancel_execution"
+                        phx-value-id={execution.id}
+                        class="btn btn-error btn-xs gap-1"
+                        title="Cancel"
+                      >
+                        <.icon name="hero-x-mark" class="h-3 w-3" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              <% end %>
+            <% end %>
+          </div>
+        </div>
+        
+<!-- Execution Events Timeline -->
+        <%= if @selected_execution_id && !Enum.empty?(@execution_events) do %>
+          <div class="rounded-3xl border border-slate-200 bg-white/80 p-6 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-800/80">
+            <h2 class="text-xl font-semibold text-slate-900 dark:text-slate-100">
+              Execution Events
+            </h2>
+            <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
+              Real-time event stream
+            </p>
+
+            <div class="mt-6 space-y-3">
+              <%= for event <- @execution_events do %>
+                <div class="flex gap-3">
+                  <div class={"flex-shrink-0 #{event_type_class(event.event_type)}"}>
+                    <.icon name={event_type_icon(event.event_type)} class="h-5 w-5" />
+                  </div>
+                  <div class="flex-1">
+                    <div class="flex items-baseline justify-between gap-2">
+                      <span class="text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {format_event_type(event.event_type)}
+                      </span>
+                      <span class="text-xs text-slate-500">
+                        {Calendar.strftime(event.inserted_at, "%I:%M:%S %p")}
+                      </span>
+                    </div>
+                    <%= if event.step_id do %>
+                      <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">
+                        Step: {event.step_id}
+                      </p>
+                    <% end %>
+                  </div>
+                </div>
+              <% end %>
+            </div>
+          </div>
+        <% end %>
+      </section>
+    </div>
+  </div>
+</Layouts.app>
