@@ -90,6 +90,7 @@ defmodule GscAnalyticsWeb.DashboardLive do
     filter_backlinks = DashboardParams.parse_backlink_count(params["backlinks"])
     filter_redirect = DashboardParams.parse_has_redirect(params["redirect"])
     filter_first_seen = DashboardParams.parse_first_seen_after(params["first_seen"])
+    filter_page_type = DashboardParams.parse_page_type(params["page_type"])
 
     # Extract path from URI for active nav detection
     current_path = URI.parse(uri).path || "/"
@@ -125,7 +126,8 @@ defmodule GscAnalyticsWeb.DashboardLive do
         filter_ctr: filter_ctr,
         filter_backlinks: filter_backlinks,
         filter_redirect: filter_redirect,
-        filter_first_seen: filter_first_seen
+        filter_first_seen: filter_first_seen,
+        filter_page_type: filter_page_type
       })
 
     {:noreply,
@@ -167,6 +169,7 @@ defmodule GscAnalyticsWeb.DashboardLive do
      |> assign(:filter_backlinks, filter_backlinks)
      |> assign(:filter_redirect, filter_redirect)
      |> assign(:filter_first_seen, filter_first_seen)
+     |> assign(:filter_page_type, filter_page_type)
      |> assign_display_labels()
      |> assign_mom_indicators()
      |> assign_date_labels()}
@@ -300,6 +303,11 @@ defmodule GscAnalyticsWeb.DashboardLive do
   end
 
   @impl true
+  def handle_event("filter_page_type", %{"page_type" => value}, socket) do
+    {:noreply, push_dashboard_patch(socket, %{page_type: value, page: 1})}
+  end
+
+  @impl true
   def handle_event("clear_filters", _params, socket) do
     {:noreply,
      push_dashboard_patch(socket, %{
@@ -310,6 +318,7 @@ defmodule GscAnalyticsWeb.DashboardLive do
        backlinks: nil,
        redirect: nil,
        first_seen: nil,
+       page_type: nil,
        page: 1
      })}
   end
@@ -409,7 +418,8 @@ defmodule GscAnalyticsWeb.DashboardLive do
         filter_ctr: opts[:filter_ctr],
         filter_backlinks: opts[:filter_backlinks],
         filter_redirect: opts[:filter_redirect],
-        filter_first_seen: opts[:filter_first_seen]
+        filter_first_seen: opts[:filter_first_seen],
+        filter_page_type: opts[:filter_page_type]
       })
 
     stats = SummaryStats.fetch(%{account_id: account_id, property_url: property_url})

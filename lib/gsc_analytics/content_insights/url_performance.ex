@@ -43,7 +43,8 @@ defmodule GscAnalytics.ContentInsights.UrlPerformance do
       ctr: Map.get(opts, :filter_ctr),
       backlinks: Map.get(opts, :filter_backlinks),
       redirect: Map.get(opts, :filter_redirect),
-      first_seen: Map.get(opts, :filter_first_seen)
+      first_seen: Map.get(opts, :filter_first_seen),
+      page_type: Map.get(opts, :filter_page_type)
     }
 
     offset = (page - 1) * limit
@@ -532,5 +533,6 @@ defmodule GscAnalytics.ContentInsights.UrlPerformance do
     |> Filters.apply_backlink_count(filters.backlinks)
     |> Filters.apply_has_redirect(filters.redirect)
     |> Filters.apply_first_seen_after(filters.first_seen)
+    |> Filters.apply_page_type(filters.page_type)
   end
 end

@@ -823,7 +823,8 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
   end
 
   @spec load_accounts(Auth.Scope.t(), map()) :: [map()]
-  defp load_accounts(%Auth.Scope{} = current_scope, preloaded_properties) when is_map(preloaded_properties) do
+  defp load_accounts(%Auth.Scope{} = current_scope, preloaded_properties)
+       when is_map(preloaded_properties) do
     # Load workspaces from database instead of config
     user_id = current_scope.user.id
     workspaces = Workspaces.list_workspaces(user_id)

@@ -1286,6 +1286,7 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
   attr :filter_backlinks, :string, default: nil
   attr :filter_redirect, :string, default: nil
   attr :filter_first_seen, :any, default: nil
+  attr :filter_page_type, :string, default: nil
 
   def filter_bar(assigns) do
     # Count active filters for badge
@@ -1297,7 +1298,8 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
         assigns.filter_ctr,
         assigns.filter_backlinks,
         assigns.filter_redirect,
-        assigns.filter_first_seen
+        assigns.filter_first_seen,
+        assigns.filter_page_type
       ]
       |> Enum.reject(&is_nil/1)
       |> length()
@@ -1448,9 +1450,115 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
               <option value="90d" selected={@filter_first_seen == "90d"}>Last 90 days</option>
             </select>
           </div>
+          <%!-- Page Type Filter --%>
+          <div>
+            <label class="label label-text text-xs">Page Type</label>
+            <.page_type_multiselect filter_page_type={@filter_page_type} />
+          </div>
         </div>
       </div>
     </div>
     """
+  end
+
+  @doc """
+  Renders a multi-select dropdown for page type filtering.
+
+  Allows users to select multiple page types via checkboxes.
+  Selected types are stored as comma-separated values in the URL.
+
+  ## Attributes
+  - `filter_page_type` - Current page type filter (comma-separated string or nil)
+
+  ## Example
+      <.page_type_multiselect filter_page_type="blog,documentation" />
+  """
+  attr :filter_page_type, :string, default: nil
+
+  def page_type_multiselect(assigns) do
+    # Parse current selection
+    selected_types =
+      case assigns.filter_page_type do
+        nil -> []
+        "" -> []
+        value -> String.split(value, ",") |> Enum.map(&String.trim/1)
+      end
+
+    # All available page types
+    all_types = [
+      {"homepage", "Homepage"},
+      {"blog", "Blog"},
+      {"documentation", "Documentation"},
+      {"product", "Product"},
+      {"category", "Category"},
+      {"landing", "Landing Page"},
+      {"legal", "Legal"},
+      {"other", "Other"}
+    ]
+
+    assigns =
+      assigns
+      |> assign(:selected_types, selected_types)
+      |> assign(:all_types, all_types)
+
+    ~H"""
+    <div class="dropdown dropdown-end w-full">
+      <label tabindex="0" class="btn btn-sm btn-bordered w-full justify-between normal-case">
+        <%= if Enum.empty?(@selected_types) do %>
+          All page types
+        <% else %>
+          {length(@selected_types)} selected
+        <% end %>
+        <.icon name="hero-chevron-down" class="h-4 w-4 ml-2" />
+      </label>
+      <div
+        tabindex="0"
+        class="dropdown-content menu menu-compact rounded-box mt-2 w-64 bg-base-100 p-2 shadow-lg border border-base-300 z-50"
+      >
+        <div class="px-2 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+          Select Page Types
+        </div>
+        <li :for={{type_value, type_label} <- @all_types}>
+          <label class="label cursor-pointer justify-start gap-2 py-2 px-3 hover:bg-base-200">
+            <input
+              type="checkbox"
+              class="checkbox checkbox-sm"
+              checked={type_value in @selected_types}
+              phx-click="filter_page_type"
+              phx-value-page_type={toggle_page_type(@selected_types, type_value)}
+            />
+            <span class="label-text">{type_label}</span>
+          </label>
+        </li>
+        <%= if not Enum.empty?(@selected_types) do %>
+          <div class="divider my-1"></div>
+          <li>
+            <button
+              type="button"
+              phx-click="filter_page_type"
+              phx-value-page_type=""
+              class="text-sm text-error hover:bg-error/10"
+            >
+              Clear selection
+            </button>
+          </li>
+        <% end %>
+      </div>
+    </div>
+    """
+  end
+
+  # Helper to toggle a page type in the selected list
+  defp toggle_page_type(selected_types, type_value) do
+    if type_value in selected_types do
+      # Remove the type
+      selected_types
+      |> List.delete(type_value)
+      |> Enum.join(",")
+    else
+      # Add the type
+      [type_value | selected_types]
+      |> Enum.join(",")
+    end
   end
 end

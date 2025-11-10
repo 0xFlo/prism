@@ -90,9 +90,10 @@ defmodule GscAnalytics.Schemas.SerpSnapshotSanitizationTest do
       }
 
       # This should NOT raise a PostgreSQL error
-      assert {:ok, snapshot} = %SerpSnapshot{}
-                               |> SerpSnapshot.changeset(attrs)
-                               |> Repo.insert()
+      assert {:ok, snapshot} =
+               %SerpSnapshot{}
+               |> SerpSnapshot.changeset(attrs)
+               |> Repo.insert()
 
       # Verify data was saved correctly (null bytes removed)
       assert snapshot.raw_response["result"]["content"] == "<html>Contentwithnulls</html>"

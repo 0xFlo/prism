@@ -186,7 +186,13 @@ defmodule GscAnalytics.Workflows.ProgressTrackerTest do
       assert_receive {:workflow_progress, event3}, 1000
       assert_receive {:workflow_progress, event4}, 1000
 
-      execution_ids = [event1.execution_id, event2.execution_id, event3.execution_id, event4.execution_id]
+      execution_ids = [
+        event1.execution_id,
+        event2.execution_id,
+        event3.execution_id,
+        event4.execution_id
+      ]
+
       assert exec1_id in execution_ids
       assert exec2_id in execution_ids
     end

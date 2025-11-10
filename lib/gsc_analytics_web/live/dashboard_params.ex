@@ -27,6 +27,16 @@ defmodule GscAnalyticsWeb.Live.DashboardParams do
   @valid_backlink_filters ["any", "none", "10+", "100+"]
   @valid_redirect_filters ["yes", "no"]
   @valid_date_shortcuts ["7d", "30d", "90d"]
+  @valid_page_types [
+    "homepage",
+    "blog",
+    "documentation",
+    "product",
+    "category",
+    "landing",
+    "legal",
+    "other"
+  ]
 
   @doc """
   Parse user supplied period values (days) from query parameters.
@@ -199,6 +209,50 @@ defmodule GscAnalyticsWeb.Live.DashboardParams do
   def parse_first_seen_after(_), do: nil
 
   @doc """
+  Parse page type filter from query parameters.
+
+  Accepts comma-separated values for multi-select: "blog,documentation,product"
+
+  Valid values: "homepage", "blog", "documentation", "product", "category",
+                "landing", "legal", "other"
+
+  Returns comma-separated string of valid page types, or nil if none are valid.
+
+  ## Examples
+
+      iex> parse_page_type("blog")
+      "blog"
+
+      iex> parse_page_type("blog,documentation,product")
+      "blog,documentation,product"
+
+      iex> parse_page_type("blog,invalid,product")
+      "blog,product"
+
+      iex> parse_page_type("invalid")
+      nil
+  """
+  @spec parse_page_type(term()) :: String.t() | nil
+  def parse_page_type(nil), do: nil
+  def parse_page_type(""), do: nil
+
+  def parse_page_type(value) when is_binary(value) do
+    valid_types =
+      value
+      |> String.split(",")
+      |> Enum.map(&String.trim/1)
+      |> Enum.filter(&(&1 in @valid_page_types))
+      |> Enum.uniq()
+
+    case valid_types do
+      [] -> nil
+      types -> Enum.join(types, ",")
+    end
+  end
+
+  def parse_page_type(_), do: nil
+
+  @doc """
   Build a sanitized params map for the main dashboard view.
 
   Accepts a struct or assigns map (anything implementing the Access behaviour).
@@ -230,7 +284,8 @@ defmodule GscAnalyticsWeb.Live.DashboardParams do
       {:ctr, Map.get(overrides, :ctr, Map.get(assigns, :filter_ctr))},
       {:backlinks, Map.get(overrides, :backlinks, Map.get(assigns, :filter_backlinks))},
       {:redirect, Map.get(overrides, :redirect, Map.get(assigns, :filter_redirect))},
-      {:first_seen, Map.get(overrides, :first_seen, Map.get(assigns, :filter_first_seen))}
+      {:first_seen, Map.get(overrides, :first_seen, Map.get(assigns, :filter_first_seen))},
+      {:page_type, Map.get(overrides, :page_type, Map.get(assigns, :filter_page_type))}
     ]
     |> reject_blank_values()
   end

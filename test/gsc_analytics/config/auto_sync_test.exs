@@ -121,18 +121,21 @@ defmodule GscAnalytics.Config.AutoSyncTest do
 
         # Assert: SERP pruning job exists
         assert Enum.any?(crontab, fn {_sched, worker} ->
-          worker == GscAnalytics.Workers.SerpPruningWorker
-        end), "SERP pruning should be scheduled"
+                 worker == GscAnalytics.Workers.SerpPruningWorker
+               end),
+               "SERP pruning should be scheduled"
 
         # Assert: HTTP status rechecking job exists
         assert Enum.any?(crontab, fn {_sched, worker} ->
-          worker == GscAnalytics.Workers.HttpStatusRecheckWorker
-        end), "HTTP status rechecking should be scheduled"
+                 worker == GscAnalytics.Workers.HttpStatusRecheckWorker
+               end),
+               "HTTP status rechecking should be scheduled"
 
         # Assert: GSC sync job NOT scheduled when auto-sync disabled
         refute Enum.any?(crontab, fn {_sched, worker} ->
-          worker == GscAnalytics.Workers.GscSyncWorker
-        end), "GSC sync should NOT run when auto-sync disabled"
+                 worker == GscAnalytics.Workers.GscSyncWorker
+               end),
+               "GSC sync should NOT run when auto-sync disabled"
       end)
     end
 

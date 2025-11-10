@@ -142,7 +142,7 @@ defmodule GscAnalytics.DataSources.SERP.Core.HTMLParser do
     |> Enum.reject(fn url ->
       # Filter out Google internal links that might slip through
       String.contains?(url, "google.com/") or
-      String.starts_with?(url, "/")
+        String.starts_with?(url, "/")
     end)
     |> Enum.uniq()
   end
@@ -153,9 +153,10 @@ defmodule GscAnalytics.DataSources.SERP.Core.HTMLParser do
 
     # Only use markdown if we found actual HTTP(S) URLs
     # This filters out JavaScript patterns like [init](id) or [d](b)
-    has_real_urls = Enum.any?(markdown_urls, fn url ->
-      String.starts_with?(url, "http://") or String.starts_with?(url, "https://")
-    end)
+    has_real_urls =
+      Enum.any?(markdown_urls, fn url ->
+        String.starts_with?(url, "http://") or String.starts_with?(url, "https://")
+      end)
 
     if has_real_urls do
       markdown_urls

@@ -97,32 +97,34 @@ defmodule GscAnalytics.DataSources.SERP.Core.AIOverviewExtractor do
 
   defp is_citation?({url, _text}) do
     # Include if it's an external HTTP link or Google redirect
-    (String.starts_with?(url, "http://") or String.starts_with?(url, "https://") or
-     String.starts_with?(url, "/url?q=http")) and
     # Exclude Google's own domains
-    not String.contains?(url, "google.com") and
-    not String.contains?(url, "googleusercontent.com") and
-    not String.contains?(url, "googleadservices.com") and
-    not String.contains?(url, "gstatic.com")
+    (String.starts_with?(url, "http://") or String.starts_with?(url, "https://") or
+       String.starts_with?(url, "/url?q=http")) and
+      not String.contains?(url, "google.com") and
+      not String.contains?(url, "googleusercontent.com") and
+      not String.contains?(url, "googleadservices.com") and
+      not String.contains?(url, "gstatic.com")
   end
 
   defp decode_citation({url, _text}) do
     # Decode Google redirect URLs: /url?q=https://example.com&...
-    clean_url = if String.starts_with?(url, "/url?q=") do
-      url
-      |> URI.decode()
-      |> String.replace(~r{^/url\?q=}, "")
-      |> String.split("&")
-      |> List.first()
-    else
-      url
-    end
+    clean_url =
+      if String.starts_with?(url, "/url?q=") do
+        url
+        |> URI.decode()
+        |> String.replace(~r{^/url\?q=}, "")
+        |> String.split("&")
+        |> List.first()
+      else
+        url
+      end
 
     # Extract domain
-    domain = case URI.parse(clean_url) do
-      %URI{host: host} when is_binary(host) -> host
-      _ -> "unknown"
-    end
+    domain =
+      case URI.parse(clean_url) do
+        %URI{host: host} when is_binary(host) -> host
+        _ -> "unknown"
+      end
 
     {clean_url, domain}
   end

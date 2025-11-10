@@ -39,6 +39,7 @@ defmodule GscAnalytics.Workflows.Engine do
 
   alias GscAnalytics.Repo
   alias GscAnalytics.Workflows.{Execution, Runtime, ProgressTracker}
+  alias GscAnalytics.Workflows.Steps.{QueryStep, UpdateMetadataStep}
 
   @type engine_state :: %{
           execution_id: binary(),
@@ -257,7 +258,8 @@ defmodule GscAnalytics.Workflows.Engine do
     )
 
     # Execute step based on type
-    step_output = execute_step(step)
+    context = Runtime.get_variables(state.runtime_table)
+    step_output = execute_step(step, context, state.execution.account_id)
 
     # Store output in runtime state
     Runtime.store_step_output(state.runtime_table, step_id, step_output)
@@ -316,7 +318,7 @@ defmodule GscAnalytics.Workflows.Engine do
     Enum.find(steps, &(&1["id"] == step_id))
   end
 
-  defp execute_step(step) do
+  defp execute_step(step, context, account_id) do
     step_type = step["type"]
     config = step["config"] || %{}
 
@@ -334,6 +336,18 @@ defmodule GscAnalytics.Workflows.Engine do
           delay_ms: delay_ms,
           completed_at: DateTime.utc_now()
         }
+
+      "query" ->
+        # Query step - executes database queries
+        case QueryStep.execute(step, context, account_id) do
+          {:ok, output} -> output
+          {:error, reason} -> %{"error" => reason, "type" => "query"}
+        end
+
+      "update_metadata" ->
+        # Update metadata step - updates URL metadata
+        {:ok, output} = UpdateMetadataStep.execute(step, context, account_id)
+        output
 
       _ ->
         # Unknown step type - just return success

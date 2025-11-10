@@ -399,4 +399,154 @@ defmodule GscAnalytics.ContentInsights.Filters do
         ls.lifetime_clicks > 0
     )
   end
+
+  # ============================================================================
+  # PAGE TYPE FILTERS
+  # ============================================================================
+
+  @doc """
+  Filter URLs by inferred page type.
+
+  Page types are computed on-the-fly from URL structure using hybrid classification
+  (path patterns, depth analysis, regex matching).
+
+  ## Options
+  - `nil` - No filter
+  - `"blog"` - Blog posts and articles
+  - `"documentation"` - Help, docs, guides
+  - `"product"` - Product pages
+  - `"category"` - Category/section pages
+  - `"landing"` - Landing pages
+  - `"legal"` - Legal/policy pages
+  - `"homepage"` - Homepage only
+  - `"other"` - Unclassified pages
+  - Comma-separated values - Multiple types: `"blog,documentation,product"`
+
+  ## Examples
+
+      query
+      |> apply_page_type("blog")
+      # WHERE url LIKE '%/blog/%' OR url ~ '/\\d{4}/\\d{1,2}/'
+
+      query
+      |> apply_page_type("blog,documentation")
+      # WHERE (blog patterns) OR (documentation patterns)
+
+  **Note**: This filter operates on the `url` field in the query.
+  The query must include the URL in the first binding position (ls.url).
+  """
+  def apply_page_type(query, nil), do: query
+  def apply_page_type(query, ""), do: query
+
+  def apply_page_type(query, page_types) when is_binary(page_types) do
+    # Parse comma-separated list of page types
+    types =
+      page_types
+      |> String.split(",")
+      |> Enum.map(&String.trim/1)
+      |> Enum.map(&String.to_atom/1)
+      |> Enum.uniq()
+
+    # Build OR conditions for each page type
+    Enum.reduce(types, query, fn type, acc_query ->
+      or_where(acc_query, [ls], ^build_page_type_condition(type))
+    end)
+  end
+
+  def apply_page_type(query, _invalid), do: query
+
+  # Build SQL conditions for each page type
+  # These mirror the logic in PageTypeClassifier but in SQL
+
+  defp build_page_type_condition(:homepage) do
+    # Homepage: root path or domain-only URLs
+    dynamic([ls], ilike(ls.url, "%://%.%/") or ilike(ls.url, "%://%.%"))
+  end
+
+  defp build_page_type_condition(:blog) do
+    # Blog: path-based detection + date patterns
+    dynamic(
+      [ls],
+      # Date pattern: /YYYY/MM/ or /YYYY/MM/DD/
+      ilike(ls.url, "%/blog/%") or
+        ilike(ls.url, "%/articles/%") or
+        ilike(ls.url, "%/posts/%") or
+        ilike(ls.url, "%/news/%") or
+        ilike(ls.url, "%/stories/%") or
+        like(ls.url, "%/____/__/%") or
+        like(ls.url, "%/____/__/__/%")
+    )
+  end
+
+  defp build_page_type_condition(:documentation) do
+    dynamic(
+      [ls],
+      ilike(ls.url, "%/docs/%") or
+        ilike(ls.url, "%/documentation/%") or
+        ilike(ls.url, "%/help/%") or
+        ilike(ls.url, "%/guides/%") or
+        ilike(ls.url, "%/manual/%") or
+        ilike(ls.url, "%/wiki/%") or
+        ilike(ls.url, "%/kb/%")
+    )
+  end
+
+  defp build_page_type_condition(:product) do
+    dynamic(
+      [ls],
+      ilike(ls.url, "%/products/%") or
+        ilike(ls.url, "%/product/%") or
+        ilike(ls.url, "%/shop/%") or
+        ilike(ls.url, "%/store/%") or
+        ilike(ls.url, "%/catalog/%") or
+        ilike(ls.url, "%/item/%")
+    )
+  end
+
+  defp build_page_type_condition(:landing) do
+    dynamic(
+      [ls],
+      ilike(ls.url, "%/landing/%") or
+        ilike(ls.url, "%/lp/%") or
+        ilike(ls.url, "%/promo/%") or
+        ilike(ls.url, "%/campaign/%") or
+        ilike(ls.url, "%/special/%")
+    )
+  end
+
+  defp build_page_type_condition(:legal) do
+    dynamic(
+      [ls],
+      ilike(ls.url, "%/privacy%") or
+        ilike(ls.url, "%/terms%") or
+        ilike(ls.url, "%/tos%") or
+        ilike(ls.url, "%/legal/%") or
+        ilike(ls.url, "%/cookie-policy%") or
+        ilike(ls.url, "%/gdpr%") or
+        ilike(ls.url, "%/disclaimer%") or
+        ilike(ls.url, "%/refund%") or
+        ilike(ls.url, "%/shipping%")
+    )
+  end
+
+  defp build_page_type_condition(:category) do
+    # Category: simple heuristic - URLs with exactly 1 path segment
+    # This is tricky to detect in SQL, so we use a broader filter
+    # URLs that don't match other specific patterns
+    dynamic(
+      [ls],
+      not (ilike(ls.url, "%/blog/%") or
+             ilike(ls.url, "%/docs/%") or
+             ilike(ls.url, "%/products/%") or
+             ilike(ls.url, "%/landing/%"))
+    )
+  end
+
+  defp build_page_type_condition(:other) do
+    # Other: fallback for anything that doesn't match specific patterns
+    # In practice, this will match URLs not caught by other filters
+    dynamic([ls], true)
+  end
+
+  defp build_page_type_condition(_unknown), do: dynamic([_ls], true)
 end
