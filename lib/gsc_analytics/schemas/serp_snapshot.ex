@@ -44,6 +44,11 @@ defmodule GscAnalytics.Schemas.SerpSnapshot do
     field :competitors, {:array, :map}, default: []
     field :raw_response, :map
 
+    # AI Overview data
+    field :ai_overview_present, :boolean, default: false
+    field :ai_overview_text, :string
+    field :ai_overview_citations, {:array, :map}, default: []
+
     # Metadata
     field :geo, :string, default: "us"
     field :checked_at, :utc_datetime
@@ -61,7 +66,10 @@ defmodule GscAnalytics.Schemas.SerpSnapshot do
     :raw_response,
     :geo,
     :api_cost,
-    :error_message
+    :error_message,
+    :ai_overview_present,
+    :ai_overview_text,
+    :ai_overview_citations
   ]
 
   @doc """
@@ -87,6 +95,7 @@ defmodule GscAnalytics.Schemas.SerpSnapshot do
     |> validate_number(:position, greater_than: 0, less_than_or_equal_to: 100)
     |> validate_length(:keyword, min: 1, max: 500)
     |> validate_geo()
+    |> sanitize_raw_response()
   end
 
   # Query Helpers
@@ -167,6 +176,38 @@ defmodule GscAnalytics.Schemas.SerpSnapshot do
   end
 
   # Private Helpers
+
+  defp sanitize_raw_response(changeset) do
+    case get_change(changeset, :raw_response) do
+      nil ->
+        changeset
+
+      raw_response when is_map(raw_response) ->
+        sanitized = sanitize_map_strings(raw_response)
+        put_change(changeset, :raw_response, sanitized)
+    end
+  end
+
+  defp sanitize_map_strings(map) when is_map(map) do
+    Map.new(map, fn {key, value} ->
+      {sanitize_value(key), sanitize_value(value)}
+    end)
+  end
+
+  defp sanitize_value(value) when is_binary(value) do
+    # Remove null bytes (\u0000) which PostgreSQL cannot store in text/jsonb
+    String.replace(value, <<0>>, "")
+  end
+
+  defp sanitize_value(value) when is_map(value) do
+    sanitize_map_strings(value)
+  end
+
+  defp sanitize_value(value) when is_list(value) do
+    Enum.map(value, &sanitize_value/1)
+  end
+
+  defp sanitize_value(value), do: value
 
   defp validate_url(changeset, field) do
     validate_change(changeset, field, fn _, url ->

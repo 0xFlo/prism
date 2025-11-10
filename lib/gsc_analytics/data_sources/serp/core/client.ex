@@ -86,7 +86,8 @@ defmodule GscAnalytics.DataSources.SERP.Core.Client do
       "key" => Config.api_key(),
       "url" => search_url,
       "country" => geo,
-      "format" => "json",
+      # Don't specify format - get raw HTML by default
+      # Markdown format with only_content strips too much
       "render_js" => "true",
       "asp" => "true"
     }
