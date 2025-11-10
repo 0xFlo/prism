@@ -43,11 +43,23 @@ defmodule GscAnalyticsWeb.ConnCase do
 
       setup :register_and_log_in_user
 
-  It stores an updated connection and a registered user in the
-  test context.
+  It stores an updated connection, a registered user, a workspace, and an active property
+  in the test context.
   """
   def register_and_log_in_user(%{conn: conn} = context) do
     user = GscAnalytics.AuthFixtures.user_fixture()
+    workspace = GscAnalytics.AccountsFixtures.workspace_fixture(user: user)
+
+    # Create an active property for the workspace
+    {:ok, property} =
+      GscAnalytics.Repo.insert(%GscAnalytics.Schemas.WorkspaceProperty{
+        id: Ecto.UUID.generate(),
+        workspace_id: workspace.id,
+        property_url: "sc-domain:test-#{System.unique_integer([:positive])}.com",
+        display_name: "Test Property",
+        is_active: true
+      })
+
     scope = GscAnalytics.Auth.Scope.for_user(user)
 
     opts =
@@ -55,7 +67,13 @@ defmodule GscAnalyticsWeb.ConnCase do
       |> Map.take([:token_authenticated_at])
       |> Enum.into([])
 
-    %{conn: log_in_user(conn, user, opts), user: user, scope: scope}
+    %{
+      conn: log_in_user(conn, user, opts),
+      user: user,
+      scope: scope,
+      workspace: workspace,
+      property: property
+    }
   end
 
   @doc """
@@ -77,5 +95,34 @@ defmodule GscAnalyticsWeb.ConnCase do
 
   defp maybe_set_token_authenticated_at(token, authenticated_at) do
     GscAnalytics.AuthFixtures.override_token_authenticated_at(token, authenticated_at)
+  end
+
+  @doc """
+  Follows a LiveView redirect or live_redirect to the final destination.
+
+  This helper allows tests to handle redirects transparently, testing the
+  observable behavior (user sees properties) rather than implementation details
+  (routing logic).
+
+  ## Examples
+
+      {:ok, view, html} = follow_live_redirect(conn, ~p"/dashboard")
+      assert html =~ "expected content"
+  """
+  defmacro follow_live_redirect(conn, path) do
+    quote do
+      import Phoenix.LiveViewTest
+
+      case live(unquote(conn), unquote(path)) do
+        {:ok, view, html} ->
+          {:ok, view, html}
+
+        {:error, {:redirect, %{to: redirect_path}}} ->
+          live(unquote(conn), redirect_path)
+
+        {:error, {:live_redirect, %{to: redirect_path}}} ->
+          live(unquote(conn), redirect_path)
+      end
+    end
   end
 end

@@ -13,9 +13,9 @@ defmodule GscAnalytics.UrlGroups do
   import Ecto.Query
 
   alias GscAnalytics.Accounts
-  alias GscAnalytics.Repo
   alias GscAnalytics.Analytics.MigrationDetector
-  alias GscAnalytics.Schemas.{Performance, TimeSeries}
+  alias GscAnalytics.Repo
+  alias GscAnalytics.Schemas.{Performance, TimeSeries, UrlLifetimeStats}
 
   @type redirect_event ::
           %{
@@ -136,12 +136,10 @@ defmodule GscAnalytics.UrlGroups do
   defp sanitize_redirect_rows(rows), do: rows
 
   defp fetch_redirect_chain(url, account_id, property_url) do
-    url
-    |> do_fetch_redirect_chain(account_id, property_url, %{}, MapSet.new(), MapSet.new())
-    |> case do
-      {:ok, rows} -> rows
-      :error -> %{}
-    end
+    {:ok, rows} =
+      do_fetch_redirect_chain(url, account_id, property_url, %{}, MapSet.new(), MapSet.new())
+
+    rows
   end
 
   defp do_fetch_redirect_chain(nil, _account_id, _property_url, rows, _processed, _queued),
@@ -167,7 +165,7 @@ defmodule GscAnalytics.UrlGroups do
         if batch == [] do
           {:ok, rows}
         else
-          query =
+          performance_query =
             Performance
             |> where([p], p.account_id == ^account_id)
             |> where([p], p.url in ^batch or p.redirect_url in ^batch)
@@ -179,7 +177,20 @@ defmodule GscAnalytics.UrlGroups do
               http_checked_at: p.http_checked_at
             })
 
-          results = Repo.all(query)
+          lifetime_query =
+            UrlLifetimeStats
+            |> where([ls], ls.account_id == ^account_id)
+            |> where([ls], ls.url in ^batch or ls.redirect_url in ^batch)
+            |> maybe_filter_property(property_url)
+            |> select([ls], %{
+              url: ls.url,
+              redirect_url: ls.redirect_url,
+              http_status: ls.http_status,
+              http_checked_at: ls.http_checked_at
+            })
+
+          results =
+            Repo.all(lifetime_query) ++ Repo.all(performance_query)
 
           updated_rows =
             Enum.reduce(results, rows, fn row, acc ->
@@ -225,9 +236,7 @@ defmodule GscAnalytics.UrlGroups do
     end)
   end
 
-  defp walk_chain(nil, _redirects), do: nil
-
-  defp walk_chain(url, redirects) do
+  defp walk_chain(url, redirects) when is_binary(url) do
     do_walk_chain(url, redirects, MapSet.new(), 0)
   end
 

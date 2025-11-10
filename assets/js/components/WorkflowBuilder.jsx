@@ -11,6 +11,8 @@ import {
   BackgroundVariant,
   useNodesState,
   useEdgesState,
+  getIncomers,
+  getOutgoers,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
@@ -18,6 +20,8 @@ import ErrorBoundary from "./ErrorBoundary.jsx";
 import CustomNode from "./CustomNode.jsx";
 import StepConfigPanel from "./StepConfigPanel.jsx";
 import STEP_TYPES, { buildDefaultNodeData } from "./stepTypes.js";
+import FloatingEdge from "./FloatingEdge.jsx";
+import FloatingConnectionLine from "./FloatingConnectionLine.jsx";
 
 const WORKFLOW_VERSION = "1.0";
 const GRID_COLUMNS = 3;
@@ -30,6 +34,30 @@ const gridPositionForIndex = (index) => ({
   x: (index % GRID_COLUMNS) * GRID_X_SPACING,
   y: Math.floor(index / GRID_COLUMNS) * GRID_Y_SPACING,
 });
+
+// Helper function to find the closest node within a threshold distance
+const getClosestNode = (position, nodes, threshold = 150) => {
+  let closestNode = null;
+  let minDistance = threshold;
+
+  for (const node of nodes) {
+    const nodeCenter = {
+      x: node.position.x + (node.width || 200) / 2,
+      y: node.position.y + (node.height || 100) / 2,
+    };
+
+    const distance = Math.sqrt(
+      Math.pow(position.x - nodeCenter.x, 2) + Math.pow(position.y - nodeCenter.y, 2)
+    );
+
+    if (distance < minDistance) {
+      minDistance = distance;
+      closestNode = node;
+    }
+  }
+
+  return closestNode;
+};
 
 const toNumber = (value) => {
   const parsed = Number(value);
@@ -117,7 +145,7 @@ const buildInitialEdges = (connections) =>
  *
  * With 100 nodes, ONE non-optimized line can cause re-render on every drag!
  */
-const WorkflowBuilder = React.memo(({ workflow, onSave, onAutoSave }) => {
+const WorkflowBuilder = React.memo(({ workflow, onSave, onAutoSave, onBack }) => {
   const workflowId = workflow?.id ?? "new";
   const workflowUpdatedAt = workflow?.updated_at ?? "";
   const { steps: definitionSteps, connections: definitionConnections, version: workflowVersion } =
@@ -132,6 +160,7 @@ const WorkflowBuilder = React.memo(({ workflow, onSave, onAutoSave }) => {
   const [selectedNode, setSelectedNode] = useState(null);
   const [isDirty, setIsDirty] = useState(false);
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
+  const [proximityEdge, setProximityEdge] = useState(null);
   const reactFlowWrapperRef = useRef(null);
   const workflowMetaRef = useRef({
     id: workflowId,
@@ -147,11 +176,12 @@ const WorkflowBuilder = React.memo(({ workflow, onSave, onAutoSave }) => {
     }
   }, [reactFlowInstance]);
 
-  // MEMOIZE node types to prevent re-creation on every render
+  // MEMOIZE node types and edge types to prevent re-creation on every render
   const nodeTypes = useMemo(() => ({ custom: CustomNode }), []);
+  const edgeTypes = useMemo(() => ({ floating: FloatingEdge }), []);
   const defaultEdgeOptions = useMemo(
     () => ({
-      type: "smoothstep",
+      type: "floating",
       markerEnd: { type: MarkerType.ArrowClosed, color: "#94a3b8" },
       style: { stroke: "#94a3b8" },
     }),
@@ -161,11 +191,47 @@ const WorkflowBuilder = React.memo(({ workflow, onSave, onAutoSave }) => {
   const handleNodesChange = useCallback(
     (changes) => {
       applyNodesChange(changes);
+
+      // Check for proximity connections on node position changes
+      for (const change of changes) {
+        if (change.type === "position" && change.dragging && change.position) {
+          const draggedNode = nodes.find((n) => n.id === change.id);
+          if (!draggedNode) continue;
+
+          const draggedCenter = {
+            x: change.position.x + (draggedNode.width || 200) / 2,
+            y: change.position.y + (draggedNode.height || 100) / 2,
+          };
+
+          const closestNode = getClosestNode(
+            draggedCenter,
+            nodes.filter((n) => n.id !== change.id),
+            150
+          );
+
+          if (closestNode) {
+            setProximityEdge({
+              id: "proximity-edge",
+              source: change.id,
+              target: closestNode.id,
+              type: "floating",
+              style: { stroke: "#a78bfa", strokeDasharray: "5,5" },
+              animated: true,
+            });
+          } else {
+            setProximityEdge(null);
+          }
+        } else if (change.type === "position" && !change.dragging) {
+          // Node drag ended - clear proximity edge
+          setProximityEdge(null);
+        }
+      }
+
       if (changes.some((change) => change.type !== "dimensions")) {
         setIsDirty(true);
       }
     },
-    [applyNodesChange]
+    [applyNodesChange, nodes]
   );
 
   const handleEdgesChange = useCallback(
@@ -190,6 +256,22 @@ const WorkflowBuilder = React.memo(({ workflow, onSave, onAutoSave }) => {
   const onPaneClick = useCallback(() => {
     setSelectedNode(null);
   }, []);
+
+  const onNodeDragStop = useCallback(
+    (_event, _node) => {
+      // If there's a proximity edge, create a real connection
+      if (proximityEdge) {
+        const connection = {
+          source: proximityEdge.source,
+          target: proximityEdge.target,
+        };
+        setEdges((eds) => addEdge(connection, eds));
+        setProximityEdge(null);
+        setIsDirty(true);
+      }
+    },
+    [proximityEdge, setEdges]
+  );
 
   const onUpdateNode = useCallback((nodeId, newData) => {
     setNodes((nds) =>
@@ -293,21 +375,52 @@ const WorkflowBuilder = React.memo(({ workflow, onSave, onAutoSave }) => {
     event.dataTransfer.dropEffect = "move";
   }, []);
 
-  const handleNodesDelete = useCallback(
-    (deleted) => {
-      if (!deleted?.length) {
-        return;
+  const handleBeforeDelete = useCallback(
+    async ({ nodes: nodesToDelete }) => {
+      if (!nodesToDelete?.length) {
+        return true; // Allow deletion
       }
-      const deletedIds = new Set(deleted.map((node) => node.id));
-      setEdges((eds) =>
-        eds.filter((edge) => !deletedIds.has(edge.source) && !deletedIds.has(edge.target))
-      );
-      if (selectedNode && deletedIds.has(selectedNode.id)) {
+
+      // Build reconnection edges BEFORE React Flow deletes anything
+      const deletedIds = new Set(nodesToDelete.map((node) => node.id));
+      const reconnectedEdges = nodesToDelete.flatMap((deletedNode) => {
+        const incomers = getIncomers(deletedNode, nodes, edges).filter(
+          (node) => !deletedIds.has(node.id)
+        );
+        const outgoers = getOutgoers(deletedNode, nodes, edges).filter(
+          (node) => !deletedIds.has(node.id)
+        );
+
+        // Create new edges from each incomer to each outgoer
+        return incomers.flatMap(({ id: source }) =>
+          outgoers.map(({ id: target }) => ({
+            id: `${source}->${target}`,
+            source,
+            target,
+            type: "floating",
+            markerEnd: { type: MarkerType.ArrowClosed },
+          }))
+        );
+      });
+
+      // Add reconnected edges after React Flow processes the deletion
+      if (reconnectedEdges.length > 0) {
+        // Use setTimeout to add edges after React Flow's deletion is complete
+        setTimeout(() => {
+          setEdges((currentEdges) => [...currentEdges, ...reconnectedEdges]);
+        }, 0);
+      }
+
+      // Clear selection if deleted node was selected
+      if (selectedNode && nodesToDelete.some((node) => node.id === selectedNode.id)) {
         setSelectedNode(null);
       }
+
       setIsDirty(true);
+
+      return true; // Allow the deletion to proceed
     },
-    [selectedNode]
+    [nodes, edges, selectedNode, setEdges]
   );
 
   const serializeWorkflow = useCallback(() => {
@@ -477,17 +590,24 @@ const WorkflowBuilder = React.memo(({ workflow, onSave, onAutoSave }) => {
             <NodePalette onAddNode={handlePaletteAdd} />
             <ReactFlow
               nodes={nodes}
-              edges={edges}
+              edges={proximityEdge ? [...edges, proximityEdge] : edges}
               onNodesChange={handleNodesChange}
               onEdgesChange={handleEdgesChange}
-              onNodesDelete={handleNodesDelete}
+              onBeforeDelete={handleBeforeDelete}
               onConnect={onConnect}
               onNodeClick={onNodeClick}
               onPaneClick={onPaneClick}
+              onNodeDragStop={onNodeDragStop}
               nodeTypes={nodeTypes}
+              edgeTypes={edgeTypes}
               defaultEdgeOptions={defaultEdgeOptions}
+              connectionLineComponent={FloatingConnectionLine}
               fitView
-              panOnScroll
+              panOnScroll={false}
+              zoomOnScroll={true}
+              zoomOnPinch={true}
+              zoomOnDoubleClick={true}
+              panOnDrag={true}
               snapToGrid
               snapGrid={[15, 15]}
               attributionPosition="bottom-left"
@@ -531,8 +651,29 @@ const WorkflowBuilder = React.memo(({ workflow, onSave, onAutoSave }) => {
               <CanvasEmptyState onAddStep={quickAddDefaultStep} />
             )}
 
-            {/* Floating save button */}
+            {/* Floating action buttons */}
             <div className="absolute top-4 right-4 z-20 flex gap-2">
+              <button
+                onClick={onBack}
+                className="btn btn-ghost gap-2"
+                title="Back to workflows"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-5 w-5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M10 19l-7-7m0 0l7-7m-7 7h18"
+                  />
+                </svg>
+                Back
+              </button>
               {isDirty && (
                 <div className="badge badge-warning gap-2">
                   <svg

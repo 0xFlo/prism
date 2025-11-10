@@ -47,8 +47,8 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
         {"https://example.com/low-traffic", 100, 1000}
       ])
 
-      # Action: User visits dashboard
-      {:ok, _view, html} = live(conn, ~p"/")
+      # Action: User visits dashboard (follows redirect to property-specific dashboard)
+      {:ok, _view, html} = follow_live_redirect(conn, ~p"/")
 
       # Assert: Dashboard loads and shows URLs
       assert html =~ "GSC Dashboard" || html =~ "GSC Analytics Dashboard"
@@ -61,11 +61,11 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
       assert html =~ ~r/high-traffic.*medium-traffic.*low-traffic/s
     end
 
-    test "user sees empty state when no data exists", %{conn: conn, account_id: account_id} do
+    test "user sees empty state when no data exists", %{conn: conn, account_id: _account_id} do
       # No data setup - fresh database
 
-      # Action: Visit dashboard
-      {:ok, _view, html} = live(conn, ~p"/")
+      # Action: Visit dashboard (follows redirect to property-specific dashboard)
+      {:ok, _view, html} = follow_live_redirect(conn, ~p"/")
 
       # Assert: Shows empty state message (not an error)
       assert html =~ "No URLs found"
@@ -87,8 +87,8 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
         ])
       end
 
-      # Action: Visit dashboard
-      {:ok, _view, html} = live(conn, ~p"/")
+      # Action: Visit dashboard (follows redirect to property-specific dashboard)
+      {:ok, _view, html} = follow_live_redirect(conn, ~p"/")
 
       # Assert: Shows the tracked URL
       assert html =~ "tracked-url"
@@ -113,7 +113,7 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
         {"https://example.com/docs/guide", 200, 2000}
       ])
 
-      {:ok, view, _html} = live(conn, ~p"/")
+      {:ok, view, _html} = follow_live_redirect(conn, ~p"/")
 
       # Action: Search for "blog"
       html =
@@ -137,7 +137,7 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
         {"https://example.com/page", 100, 1000}
       ])
 
-      {:ok, view, _html} = live(conn, ~p"/")
+      {:ok, view, _html} = follow_live_redirect(conn, ~p"/")
 
       # Action: Search for non-existent term
       html =
@@ -155,7 +155,7 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
         {"https://example.com/test", 100, 1000}
       ])
 
-      {:ok, view, _html} = live(conn, ~p"/")
+      {:ok, view, _html} = follow_live_redirect(conn, ~p"/")
 
       # Action: Perform search
       view
@@ -175,8 +175,8 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
       urls = for i <- 1..150, do: {"https://example.com/page-#{i}", 100, 1000}
       populate_time_series_data(account_id, date, urls)
 
-      # Action: Visit dashboard with page limit
-      {:ok, view, html} = live(conn, ~p"/?limit=50")
+      # Action: Visit dashboard with page limit (follows redirect)
+      {:ok, view, html} = follow_live_redirect(conn, ~p"/?limit=50")
 
       # Assert: Shows pagination controls
       assert html =~ "Next" or html =~ "Page"
@@ -203,8 +203,8 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
       urls = for i <- 1..200, do: {"https://example.com/page-#{i}", 100, 1000}
       populate_time_series_data(account_id, date, urls)
 
-      # Action: Set custom page size
-      {:ok, view, _html} = live(conn, ~p"/?limit=25")
+      # Action: Set custom page size (follows redirect)
+      {:ok, view, _html} = follow_live_redirect(conn, ~p"/?limit=25")
 
       assert has_element?(view, "table tbody tr:nth-child(25)")
       refute has_element?(view, "table tbody tr:nth-child(26)")
@@ -228,7 +228,7 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
       urls = for i <- 1..100, do: {"https://example.com/page-#{i}", i * 10, i * 100}
       populate_time_series_data(account_id, date, urls)
 
-      {:ok, view, _html} = live(conn, ~p"/?limit=20&page=2")
+      {:ok, view, _html} = follow_live_redirect(conn, ~p"/?limit=20&page=2")
 
       # Action: Sort while on page 2
       view |> element("th[phx-value-column=clicks]") |> render_click()
@@ -257,7 +257,7 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
 
       populate_time_series_data(account_id, date, urls)
 
-      {:ok, view, _html} = live(conn, ~p"/")
+      {:ok, view, _html} = follow_live_redirect(conn, ~p"/")
 
       # Action 1: Search for "blog"
       view
@@ -293,8 +293,8 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
       urls = for i <- 1..500, do: {"https://example.com/page-#{i}", i, i * 10}
       populate_time_series_data(account_id, date, urls)
 
-      # Action: Perform multiple operations
-      {:ok, view, _html} = live(conn, ~p"/?limit=100")
+      # Action: Perform multiple operations (follows redirect)
+      {:ok, view, _html} = follow_live_redirect(conn, ~p"/?limit=100")
 
       view |> element("th[phx-value-column=clicks]") |> render_click()
 

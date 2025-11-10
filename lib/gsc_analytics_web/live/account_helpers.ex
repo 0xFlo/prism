@@ -9,6 +9,7 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
   use Phoenix.Component
 
   alias GscAnalytics.Accounts
+  alias GscAnalytics.DataSources.GSC.Support.Authenticator
 
   @type socket :: Phoenix.LiveView.Socket.t()
 
@@ -45,6 +46,9 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
       # Enrich accounts with OAuth information via batch loading
       account_ids = Enum.map(accounts, & &1.id)
       oauth_tokens = GscAnalytics.Auth.batch_get_oauth_tokens(current_scope, account_ids)
+
+      # Pre-populate Authenticator cache to avoid individual DB lookups later
+      Authenticator.cache_tokens(oauth_tokens)
 
       accounts =
         Enum.map(accounts, fn account ->
@@ -435,7 +439,10 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
 
   defp ensure_oauth_tokens(nil, scope, accounts) do
     account_ids = Enum.map(accounts, & &1.id)
-    fetch_oauth_tokens(scope, account_ids)
+    oauth_tokens = fetch_oauth_tokens(scope, account_ids)
+    # Cache tokens in Authenticator to avoid individual DB lookups
+    Authenticator.cache_tokens(oauth_tokens)
+    oauth_tokens
   end
 
   defp ensure_oauth_tokens(tokens, _scope, _accounts) when is_map(tokens), do: tokens
@@ -443,7 +450,10 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
   defp fetch_oauth_tokens(_scope, []), do: %{}
 
   defp fetch_oauth_tokens(scope, account_ids) do
-    GscAnalytics.Auth.batch_get_oauth_tokens(scope, account_ids)
+    oauth_tokens = GscAnalytics.Auth.batch_get_oauth_tokens(scope, account_ids)
+    # Cache tokens in Authenticator to avoid individual DB lookups
+    Authenticator.cache_tokens(oauth_tokens)
+    oauth_tokens
   end
 
   # Helper to get API-accessible property URLs without re-querying the database

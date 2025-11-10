@@ -23,9 +23,12 @@ defmodule GscAnalytics.DataSources.GSC.Support.RetryHelper do
       4000
   """
   @spec calculate_backoff(non_neg_integer(), pos_integer()) :: pos_integer()
-  def calculate_backoff(attempt, base_delay \\ nil) do
-    base = base_delay || Config.retry_delay()
-    (base * :math.pow(2, attempt)) |> round()
+  def calculate_backoff(attempt, base_delay) when is_integer(base_delay) and base_delay > 0 do
+    (base_delay * :math.pow(2, attempt)) |> round()
+  end
+
+  def calculate_backoff(attempt) do
+    calculate_backoff(attempt, Config.retry_delay())
   end
 
   @doc """

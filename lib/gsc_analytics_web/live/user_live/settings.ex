@@ -173,7 +173,7 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
                       <div class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
                         <div class="flex items-start gap-2">
                           <svg
-                            class="h-5 w-5 flex-shrink-0 text-amber-600"
+                            class="h-5 w-5 shrink-0 text-amber-600"
                             fill="currentColor"
                             viewBox="0 0 20 20"
                           >
@@ -301,7 +301,7 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
                       phx-value-property_url={property.property_url}
                       phx-value-active={if property.is_active, do: "false", else: "true"}
                       class={[
-                        "relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2",
+                        "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2",
                         property.is_active && "bg-blue-600",
                         !property.is_active && "bg-gray-200"
                       ]}
@@ -822,8 +822,8 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
     |> Enum.group_by(& &1.workspace_id)
   end
 
-  @spec load_accounts(Auth.Scope.t(), map() | nil) :: [map()]
-  defp load_accounts(%Auth.Scope{} = current_scope, preloaded_properties) do
+  @spec load_accounts(Auth.Scope.t(), map()) :: [map()]
+  defp load_accounts(%Auth.Scope{} = current_scope, preloaded_properties) when is_map(preloaded_properties) do
     # Load workspaces from database instead of config
     user_id = current_scope.user.id
     workspaces = Workspaces.list_workspaces(user_id)
@@ -832,12 +832,8 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
     workspace_ids = Enum.map(workspaces, & &1.id)
     oauth_tokens = batch_load_oauth_tokens(workspace_ids)
 
-    # Use preloaded properties if provided, otherwise batch load
-    all_properties =
-      case preloaded_properties do
-        %{} = properties -> properties
-        _ -> batch_load_properties(workspace_ids)
-      end
+    # Use preloaded properties (always a map from batch_load_properties)
+    all_properties = preloaded_properties
 
     Enum.map(workspaces, fn account ->
       oauth = Map.get(oauth_tokens, account.id)
@@ -1013,9 +1009,6 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
 
   defp translate_property_error(:unauthorized_account),
     do: "You are not allowed to manage that workspace."
-
-  defp translate_property_error(reason),
-    do: "Could not load properties: #{inspect(reason)}"
 
   defp format_property_label("sc-domain:" <> rest), do: "Domain: #{rest}"
 

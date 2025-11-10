@@ -127,3 +127,8 @@ html {
 
 /* Import Mission Impossible 1996 Retro Theme */
 @import "./mission-impossible-retro.css";
+
+/* Hide handles for floating edges - connections can attach anywhere */
+.react-flow__handle {
+  opacity: 0;
+}

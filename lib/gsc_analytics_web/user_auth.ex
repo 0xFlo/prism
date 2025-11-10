@@ -251,13 +251,15 @@ defmodule GscAnalyticsWeb.UserAuth do
     end)
   end
 
-  @doc "Returns the path to redirect to after log in."
-  # the user was already logged in, redirect to settings
-  def signed_in_path(%Plug.Conn{assigns: %{current_scope: %Scope{user: %Auth.User{}}}}) do
-    ~p"/users/settings"
-  end
+  @doc """
+  Returns the path to redirect to after log in.
 
-  def signed_in_path(_), do: ~p"/"
+  Always returns the homepage `/` to allow HomepageLive to handle smart routing:
+  - Authenticated users with properties are redirected to their dashboard
+  - Authenticated users without properties are redirected to settings
+  - Unauthenticated users see the marketing homepage
+  """
+  def signed_in_path(_conn), do: ~p"/"
 
   @doc """
   Plug for routes that require the user to be authenticated.

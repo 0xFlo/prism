@@ -41,6 +41,7 @@ const WorkflowBuilderHook = {
         workflow={workflow}
         onSave={(data) => this.handleSave(data)}
         onAutoSave={(data) => this.handleAutoSave(data)}
+        onBack={() => this.handleBack()}
       />
     );
   },
@@ -57,6 +58,13 @@ const WorkflowBuilderHook = {
    */
   handleAutoSave(data) {
     this.pushEventTo("#workflow-builder", "auto_save_workflow", data);
+  },
+
+  /**
+   * Handle back button navigation
+   */
+  handleBack() {
+    this.pushEventTo("#workflow-builder", "navigate_back", {});
   },
 
   /**

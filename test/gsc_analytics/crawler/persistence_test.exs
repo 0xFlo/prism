@@ -2,7 +2,7 @@ defmodule GscAnalytics.Crawler.PersistenceTest do
   use GscAnalytics.DataCase, async: true
 
   alias GscAnalytics.Crawler.Persistence
-  alias GscAnalytics.Schemas.Performance
+  alias GscAnalytics.Schemas.{Performance, UrlLifetimeStats}
   alias GscAnalytics.Repo
 
   import Ecto.Query
@@ -10,12 +10,16 @@ defmodule GscAnalytics.Crawler.PersistenceTest do
   @test_property_url "sc-domain:example.com"
 
   setup do
+    Repo.delete_all(UrlLifetimeStats)
+
     # Create test performance records
     urls = [
       "https://example.com/page-1",
       "https://example.com/page-2",
       "https://example.com/page-3"
     ]
+
+    refreshed_at = DateTime.utc_now() |> DateTime.truncate(:second)
 
     for url <- urls do
       Repo.insert!(%Performance{
@@ -29,6 +33,20 @@ defmodule GscAnalytics.Crawler.PersistenceTest do
         date_range_start: ~D[2025-01-01],
         date_range_end: ~D[2025-01-31],
         data_available: true
+      })
+
+      Repo.insert!(%UrlLifetimeStats{
+        account_id: 1,
+        property_url: @test_property_url,
+        url: url,
+        lifetime_clicks: 100,
+        lifetime_impressions: 1000,
+        avg_position: 5.0,
+        avg_ctr: 0.1,
+        first_seen_date: ~D[2025-01-01],
+        last_seen_date: ~D[2025-01-31],
+        days_with_data: 31,
+        refreshed_at: refreshed_at
       })
     end
 
@@ -232,6 +250,20 @@ defmodule GscAnalytics.Crawler.PersistenceTest do
           date_range_end: ~D[2025-01-31],
           data_available: true
         })
+
+        Repo.insert!(%UrlLifetimeStats{
+          account_id: 1,
+          property_url: @test_property_url,
+          url: url,
+          lifetime_clicks: 10,
+          lifetime_impressions: 100,
+          avg_position: 10.0,
+          avg_ctr: 0.1,
+          first_seen_date: ~D[2025-01-01],
+          last_seen_date: ~D[2025-01-31],
+          days_with_data: 31,
+          refreshed_at: DateTime.utc_now() |> DateTime.truncate(:second)
+        })
       end
 
       checked_at = DateTime.utc_now() |> DateTime.truncate(:second)
@@ -292,6 +324,35 @@ defmodule GscAnalytics.Crawler.PersistenceTest do
       # Verify only existing URL was updated
       performance = Repo.get_by(Performance, url: "https://example.com/page-1")
       assert performance.http_status == 200
+    end
+
+    test "updates url_lifetime_stats so aggregate queries stay in sync", %{urls: urls} do
+      url = List.first(urls)
+      checked_at = DateTime.utc_now() |> DateTime.truncate(:second)
+
+      results = [
+        {url,
+         %{
+           status: 500,
+           redirect_url: nil,
+           redirect_chain: %{},
+           checked_at: checked_at,
+           error: nil
+         }}
+      ]
+
+      {:ok, _} = Persistence.save_batch(results)
+
+      lifetime =
+        UrlLifetimeStats
+        |> where(
+          [ls],
+          ls.account_id == 1 and ls.property_url == ^@test_property_url and ls.url == ^url
+        )
+        |> Repo.one!()
+
+      assert lifetime.http_status == 500
+      assert lifetime.http_checked_at == checked_at
     end
 
     test "preserves other Performance fields when updating" do

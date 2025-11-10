@@ -112,8 +112,6 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
       when is_list(rows) do
     url_count = length(rows)
 
-    Logger.debug("Processing #{url_count} URLs for #{site_url} on #{date}")
-
     # Prepare all time series records for bulk insert
     now = AppDateTime.utc_now()
 
@@ -151,13 +149,10 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
             conflict_target: [:account_id, :property_url, :url, :date]
           )
 
-        Logger.debug("Inserted #{inserted} time_series records (chunk of #{length(chunk)})")
         acc + inserted
       end)
 
-    Logger.debug(
-      "Total inserted: #{total_inserted} time_series records across #{ceil(url_count / batch_size)} chunks"
-    )
+    Logger.info("Stored #{total_inserted} URLs for #{site_url} on #{date}")
 
     # Refresh materialized view for these URLs only
     urls_to_refresh = Enum.map(rows, fn row -> get_in(row, ["keys", Access.at(0)]) end)
@@ -263,18 +258,13 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
   def refresh_lifetime_stats_incrementally(account_id, property_url, urls) when is_list(urls) do
     batch_size = Config.lifetime_stats_batch_size()
     total_urls = length(urls)
-    total_batches = ceil(total_urls / batch_size)
-
-    Logger.debug(
-      "Refreshing lifetime stats for #{total_urls} URLs across #{total_batches} batches (batch_size=#{batch_size})"
-    )
 
     # Process URLs in batches to avoid PostgreSQL parameter/array limits
     urls
     |> Enum.chunk_every(batch_size)
     |> Enum.with_index(1)
     |> Enum.each(fn {url_batch, batch_num} ->
-      refresh_url_batch(account_id, property_url, url_batch, batch_num, total_batches)
+      refresh_url_batch(account_id, property_url, url_batch, batch_num, total_urls)
     end)
 
     :ok
@@ -284,65 +274,56 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
       {:error, e}
   end
 
-  defp refresh_url_batch(account_id, property_url, urls, batch_num, total_batches) do
-    batch_start = System.monotonic_time(:millisecond)
-
+  defp refresh_url_batch(account_id, property_url, urls, _batch_num, _total_batches) do
     Repo.transaction(fn ->
       # Step 1: Delete existing stats for this batch of URLs
-      delete_result =
-        Repo.query!(
-          """
-          DELETE FROM url_lifetime_stats
-          WHERE account_id = $1 AND property_url = $2 AND url = ANY($3::text[])
-          """,
-          [account_id, property_url, urls]
-        )
+      Repo.query!(
+        """
+        DELETE FROM url_lifetime_stats
+        WHERE account_id = $1 AND property_url = $2 AND url = ANY($3::text[])
+        """,
+        [account_id, property_url, urls]
+      )
 
       # Step 2: Recalculate and insert fresh stats for this batch
-      insert_result =
-        Repo.query!(
-          """
-          INSERT INTO url_lifetime_stats (
-            account_id, property_url, url,
-            lifetime_clicks, lifetime_impressions,
-            avg_position, avg_ctr,
-            first_seen_date, last_seen_date,
-            days_with_data, refreshed_at
-          )
-          SELECT
-            account_id, property_url, url,
-            SUM(clicks) as lifetime_clicks,
-            SUM(impressions) as lifetime_impressions,
-            CASE
-              WHEN SUM(impressions) > 0
-              THEN SUM(position * impressions) / SUM(impressions)
-              ELSE 0.0
-            END as avg_position,
-            CASE
-              WHEN SUM(impressions) > 0
-              THEN SUM(clicks)::DOUBLE PRECISION / SUM(impressions)
-              ELSE 0.0
-            END as avg_ctr,
-            MIN(date) as first_seen_date,
-            MAX(date) as last_seen_date,
-            COUNT(DISTINCT date) as days_with_data,
-            NOW() as refreshed_at
-          FROM gsc_time_series
-          WHERE account_id = $1
-            AND property_url = $2
-            AND url = ANY($3::text[])
-            AND data_available = true
-          GROUP BY account_id, property_url, url
-          """,
-          [account_id, property_url, urls]
+      Repo.query!(
+        """
+        INSERT INTO url_lifetime_stats (
+          account_id, property_url, url,
+          lifetime_clicks, lifetime_impressions,
+          avg_position, avg_ctr,
+          first_seen_date, last_seen_date,
+          days_with_data, refreshed_at
         )
-
-      batch_duration = System.monotonic_time(:millisecond) - batch_start
-
-      Logger.debug(
-        "Batch #{batch_num}/#{total_batches}: Deleted #{delete_result.num_rows}, " <>
-          "Inserted #{insert_result.num_rows} lifetime stats in #{batch_duration}ms"
+        SELECT
+          account_id, property_url, url,
+          SUM(clicks) as lifetime_clicks,
+          SUM(impressions) as lifetime_impressions,
+          CASE
+            WHEN SUM(impressions) > 0
+            THEN SUM(position * impressions) / SUM(impressions)
+            ELSE 0.0
+          END as avg_position,
+          CASE
+            WHEN SUM(impressions) > 0
+            THEN SUM(clicks)::DOUBLE PRECISION / SUM(impressions)
+            ELSE 0.0
+          END as avg_ctr,
+          MIN(date) as first_seen_date,
+          MAX(date) as last_seen_date,
+          COUNT(DISTINCT date) as days_with_data,
+          NOW() as refreshed_at
+        FROM gsc_time_series
+        WHERE account_id = $1
+          AND property_url = $2
+          AND url = ANY($3::text[])
+          AND data_available = true
+        GROUP BY account_id, property_url, url
+        """,
+        [account_id, property_url, urls]
       )
+
+      # Batch complete (removed verbose logging)
     end)
   end
 

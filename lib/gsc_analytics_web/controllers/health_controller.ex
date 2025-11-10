@@ -138,18 +138,16 @@ defmodule GscAnalyticsWeb.HealthController do
   defp get_queue_status do
     # Check gsc_sync queue
     case Oban.check_queue(queue: :gsc_sync) do
-      {:ok, status} ->
+      %{} = status ->
         %{
-          available: status[:available] || 0,
-          scheduled: status[:scheduled] || 0,
-          executing: status[:executing] || 0,
-          retryable: status[:retryable] || 0,
-          completed: status[:completed] || 0,
-          discarded: status[:discarded] || 0
+          limit: status[:limit],
+          paused: status[:paused],
+          running: status[:running] || [],
+          node: status[:node]
         }
 
-      {:error, _reason} ->
-        %{error: "Unable to check queue status"}
+      nil ->
+        %{error: "Queue not running on this node"}
     end
   end
 end

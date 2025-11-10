@@ -65,7 +65,7 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregator do
 
     result =
       TimeSeries
-      |> where([ts], ts.date >= ^start_date)
+      |> where([ts], ts.date >= ^start_date and ts.data_available == true)
       |> maybe_filter_account_and_property(account_id, property_url)
       |> apply_period_aggregation(period_type)
       |> Repo.all()
@@ -626,7 +626,7 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregator do
     property_url = Map.get(opts, :property_url)
 
     TimeSeries
-    |> where([ts], ts.date >= ^start_date)
+    |> where([ts], ts.date >= ^start_date and ts.data_available == true)
     |> maybe_filter_account_and_property(account_id, property_url)
     |> group_by([ts], ts.date)
     |> order_by([ts], asc: ts.date)

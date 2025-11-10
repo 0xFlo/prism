@@ -283,9 +283,6 @@ defmodule GscAnalytics.Workflows.Engine do
         :completed ->
           Execution.complete_changeset(state.execution, output_or_error)
 
-        :failed ->
-          Execution.fail_changeset(state.execution, output_or_error)
-
         :cancelled ->
           Execution.cancel_changeset(state.execution)
       end

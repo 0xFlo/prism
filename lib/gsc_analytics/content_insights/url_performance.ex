@@ -190,7 +190,7 @@ defmodule GscAnalytics.ContentInsights.UrlPerformance do
       |> where(
         [ts],
         ts.account_id == ^account_id and ts.property_url == ^property_url and
-          ts.date >= ^period_start
+          ts.date >= ^period_start and ts.data_available == true
       )
       |> maybe_filter_time_series(search_pattern)
       |> group_by([ts], ts.url)

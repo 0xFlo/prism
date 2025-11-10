@@ -122,35 +122,60 @@ defmodule GscAnalytics.Integration.AutoSyncIntegrationTest do
   end
 
   describe "Oban cron configuration" do
-    test "cron plugin is not active when auto-sync is disabled" do
+    test "background jobs run but GSC sync does not when auto-sync is disabled" do
       System.delete_env("ENABLE_AUTO_SYNC")
 
       plugins = GscAnalytics.Config.AutoSync.plugins()
 
-      # Should only have Pruner plugin
-      assert length(plugins) == 1
-      assert {Oban.Plugins.Pruner, _} = List.first(plugins)
+      # Assert on observable behavior: required plugins present
+      assert Enum.any?(plugins, &match?({Oban.Plugins.Pruner, _}, &1)),
+             "Pruner required for job cleanup"
+
+      assert Enum.any?(plugins, &match?({Oban.Plugins.Cron, _}, &1)),
+             "Cron required for background jobs"
+
+      # Assert: GSC sync job NOT scheduled when disabled
+      cron_plugin = Enum.find(plugins, fn {mod, _} -> mod == Oban.Plugins.Cron end)
+      {Oban.Plugins.Cron, opts} = cron_plugin
+      crontab = Keyword.get(opts, :crontab)
+
+      refute Enum.any?(crontab, fn {_sched, worker} -> worker == GscSyncWorker end),
+             "GSC sync should NOT run when auto-sync disabled"
+
+      # Assert: Background jobs still scheduled
+      assert Enum.any?(crontab, fn {_sched, worker} ->
+               worker == GscAnalytics.Workers.SerpPruningWorker
+             end),
+             "SERP pruning should run regardless of auto-sync setting"
     end
 
-    test "cron plugin is active when auto-sync is enabled" do
+    test "GSC sync job is scheduled when auto-sync is enabled" do
       System.put_env("ENABLE_AUTO_SYNC", "true")
 
       plugins = GscAnalytics.Config.AutoSync.plugins()
 
-      # Should have Pruner, Lifeline, and Cron
-      assert length(plugins) == 3
+      # Assert on observable behavior: all required plugins present
+      assert Enum.any?(plugins, &match?({Oban.Plugins.Pruner, _}, &1)),
+             "Pruner required for job cleanup"
 
+      assert Enum.any?(plugins, &match?({Oban.Plugins.Lifeline, _}, &1)),
+             "Lifeline required for orphaned job recovery"
+
+      assert Enum.any?(plugins, &match?({Oban.Plugins.Cron, _}, &1)),
+             "Cron required for scheduled jobs"
+
+      # Assert: GSC sync job IS scheduled when enabled
       cron_plugin = Enum.find(plugins, fn {mod, _} -> mod == Oban.Plugins.Cron end)
-      assert cron_plugin, "Cron plugin should be present"
-
       {Oban.Plugins.Cron, opts} = cron_plugin
       crontab = Keyword.get(opts, :crontab)
 
-      assert is_list(crontab)
-      assert length(crontab) == 1
+      gsc_sync_job =
+        Enum.find(crontab, fn {_sched, worker} -> worker == GscSyncWorker end)
 
-      {schedule, worker} = List.first(crontab)
-      assert schedule == "0 */6 * * *"
+      assert gsc_sync_job, "GSC sync should be scheduled when auto-sync enabled"
+
+      {schedule, worker} = gsc_sync_job
+      assert schedule == "0 */6 * * *", "Default schedule should be every 6 hours"
       assert worker == GscSyncWorker
 
       System.delete_env("ENABLE_AUTO_SYNC")

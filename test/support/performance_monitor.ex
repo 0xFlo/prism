@@ -488,11 +488,21 @@ defmodule GscAnalytics.Test.PerformanceMonitor do
   defp get_process_metrics do
     process_count = :erlang.system_info(:process_count)
 
-    # Get scheduler utilization
+    # Get scheduler utilization - returns a list of tuples
     scheduler_util =
       case :scheduler.utilization(1) do
-        {:total, util, _} -> util
-        _ -> 0.0
+        [_ | _] = results ->
+          # Find the :total tuple in the results list
+          case Enum.find(results, fn
+                 {:total, _, _} -> true
+                 _ -> false
+               end) do
+            {:total, util, _} -> util
+            _ -> 0.0
+          end
+
+        _ ->
+          0.0
       end
 
     # Get max message queue length

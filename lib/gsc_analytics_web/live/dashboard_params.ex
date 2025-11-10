@@ -272,4 +272,88 @@ defmodule GscAnalyticsWeb.Live.DashboardParams do
     end)
     |> Enum.reverse()
   end
+
+  # ============================================================================
+  # SORT HELPERS
+  # ============================================================================
+
+  @doc """
+  Calculate new sort direction based on current state.
+
+  Position sorts ascending by default (lower is better), all others descending.
+  When clicking the same column, toggles between asc/desc.
+
+  ## Examples
+
+      iex> toggle_sort_direction("clicks", "clicks", "desc")
+      "asc"
+
+      iex> toggle_sort_direction("clicks", "position", "desc")
+      "asc"
+
+      iex> toggle_sort_direction("clicks", "impressions", "asc")
+      "desc"
+  """
+  @spec toggle_sort_direction(String.t(), String.t(), String.t()) :: String.t()
+  def toggle_sort_direction(current_column, new_column, current_direction)
+      when is_binary(current_column) and is_binary(new_column) and is_binary(current_direction) do
+    if current_column == new_column do
+      # Toggle direction for same column
+      if current_direction == "asc", do: "desc", else: "asc"
+    else
+      # New column - use default direction
+      default_sort_direction(new_column)
+    end
+  end
+
+  @doc """
+  Get the default sort direction for a given column.
+
+  Position sorts ascending (lower is better), all others descending.
+
+  ## Examples
+
+      iex> default_sort_direction("position")
+      "asc"
+
+      iex> default_sort_direction("clicks")
+      "desc"
+  """
+  @spec default_sort_direction(String.t()) :: String.t()
+  def default_sort_direction("position"), do: "asc"
+  def default_sort_direction(_), do: "desc"
+
+  @doc """
+  Normalize legacy column names to current schema.
+
+  Maps old column names (like "lifetime_clicks", "period_clicks") to
+  their current equivalents ("clicks", etc.). This maintains backward
+  compatibility with old URLs and bookmarks.
+
+  ## Examples
+
+      iex> normalize_sort_column("lifetime_clicks")
+      "clicks"
+
+      iex> normalize_sort_column("position")
+      "position"
+
+      iex> normalize_sort_column(nil)
+      "clicks"
+  """
+  @spec normalize_sort_column(term()) :: String.t()
+  def normalize_sort_column(nil), do: "clicks"
+  def normalize_sort_column(""), do: "clicks"
+  def normalize_sort_column("lifetime_clicks"), do: "clicks"
+  def normalize_sort_column("period_clicks"), do: "clicks"
+  def normalize_sort_column("period_impressions"), do: "impressions"
+  def normalize_sort_column("lifetime_impressions"), do: "impressions"
+  def normalize_sort_column("lifetime_avg_ctr"), do: "ctr"
+  def normalize_sort_column("lifetime_avg_position"), do: "position"
+
+  def normalize_sort_column(col)
+      when col in ["clicks", "impressions", "ctr", "position", "wow_growth"],
+      do: col
+
+  def normalize_sort_column(_), do: "clicks"
 end

@@ -381,15 +381,23 @@
                   <tr>
                     <th>URL</th>
                     <th>STATUS</th>
+                    <th>DESTINATION</th>
                     <th>LAST CHECK</th>
-                    <th>ACTION</th>
                   </tr>
                 </thead>
                 <tbody>
                   <%= for url <- @problem_urls do %>
+                    <% redirect_target = redirect_destination(url) %>
                     <tr>
-                      <td class="max-w-md truncate">
-                        <span class="text-xs opacity-70 font-mono">{url.url}</span>
+                      <td class="max-w-md">
+                        <div class="flex flex-col gap-1">
+                          <span class="text-xs opacity-70 font-mono break-all">{url.url}</span>
+                          <%= if redirecting?(url) do %>
+                            <span class="mi-status-warning text-[10px] uppercase tracking-wider">
+                              Redirect detected
+                            </span>
+                          <% end %>
+                        </div>
                       </td>
                       <td>
                         <span class={[
@@ -399,21 +407,31 @@
                           {url.http_status || "ERROR"}
                         </span>
                       </td>
+                      <td class="text-xs align-top">
+                        <%= if redirect_target do %>
+                          <div class="flex flex-col gap-1">
+                            <span class="mi-status-warning text-[10px] uppercase tracking-wider">
+                              Redirects to
+                            </span>
+                            <a
+                              href={redirect_target}
+                              class="mi-terminal-text underline break-all hover:text-green-300"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              {truncate_url(redirect_target)}
+                            </a>
+                          </div>
+                        <% else %>
+                          <span class="opacity-40">—</span>
+                        <% end %>
+                      </td>
                       <td class="text-xs">
-                        <%= if url.last_checked_at do %>
-                          {Calendar.strftime(url.last_checked_at, "%m/%d %H:%M")}
+                        <%= if url.http_checked_at do %>
+                          {format_datetime(url.http_checked_at)}
                         <% else %>
                           <span class="opacity-50">NEVER</span>
                         <% end %>
-                      </td>
-                      <td>
-                        <button
-                          phx-click="recheck_url"
-                          phx-value-url-id={url.id}
-                          class="mi-btn text-xs py-1 px-2"
-                        >
-                          [RECHECK]
-                        </button>
                       </td>
                     </tr>
                   <% end %>
@@ -422,31 +440,33 @@
             </div>
 
             <%!-- Pagination --%>
-            <%= if @total_problem_urls > @page_size do %>
+            <% offset = max((@problem_page - 1) * @problem_limit, 0) %>
+            <% ending = min(offset + @problem_limit, @problem_total_count) %>
+            <%= if @problem_total_count > @problem_limit do %>
               <div class="mt-4 flex items-center justify-between border-t border-green-900 pt-4">
                 <div class="mi-terminal-text text-xs">
-                  SHOWING {@offset + 1}-{min(@offset + @page_size, @total_problem_urls)} OF {@total_problem_urls}
+                  SHOWING {offset + 1}-{ending} OF {@problem_total_count}
                 </div>
                 <div class="flex gap-2">
                   <button
                     phx-click="prev_page"
-                    disabled={@page == 1}
+                    disabled={@problem_page == 1}
                     class={[
                       "mi-btn text-xs py-1 px-3",
-                      @page == 1 && "opacity-50 cursor-not-allowed"
+                      @problem_page == 1 && "opacity-50 cursor-not-allowed"
                     ]}
                   >
                     [← PREV]
                   </button>
                   <span class="mi-terminal-text px-3">
-                    PAGE {@page}/{@total_pages}
+                    PAGE {@problem_page}/{@problem_total_pages}
                   </span>
                   <button
                     phx-click="next_page"
-                    disabled={@page >= @total_pages}
+                    disabled={@problem_page >= @problem_total_pages}
                     class={[
                       "mi-btn text-xs py-1 px-3",
-                      @page >= @total_pages && "opacity-50 cursor-not-allowed"
+                      @problem_page >= @problem_total_pages && "opacity-50 cursor-not-allowed"
                     ]}
                   >
                     [NEXT →]

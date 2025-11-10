@@ -139,10 +139,6 @@ defmodule GscAnalytics.Analytics.SiteTrends do
     end
   end
 
-  defp resolve_first_data_date(account_id, property_url, _opts) do
-    get_first_data_date(account_id, property_url)
-  end
-
   defp get_first_data_date(account_id, property_url) do
     from(ls in "url_lifetime_stats",
       where: ls.account_id == ^account_id and ls.property_url == ^property_url,
@@ -237,7 +233,8 @@ defmodule GscAnalytics.Analytics.SiteTrends do
       [ts],
       ts.date >= ^start_date and
         ts.account_id == ^account_id and
-        ts.property_url == ^property_url
+        ts.property_url == ^property_url and
+        ts.data_available == true
     )
     |> select([ts], %{
       total_clicks: sum(ts.clicks),

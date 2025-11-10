@@ -151,8 +151,6 @@ defmodule GscAnalytics.Analytics.SummaryStats do
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
-  defp calculate_percentage_change(nil, _), do: 0.0
-  defp calculate_percentage_change(_, nil), do: 0.0
   defp calculate_percentage_change(0, _), do: 0.0
   defp calculate_percentage_change(old_value, _) when old_value == 0.0, do: 0.0
 

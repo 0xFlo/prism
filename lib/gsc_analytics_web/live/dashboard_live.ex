@@ -8,6 +8,7 @@ defmodule GscAnalyticsWeb.DashboardLive do
   alias GscAnalytics.DataSources.GSC.Support.SyncProgress
   alias GscAnalyticsWeb.Live.AccountHelpers
   alias GscAnalyticsWeb.Live.DashboardParams
+  alias GscAnalyticsWeb.Live.PaginationHelpers
   alias GscAnalyticsWeb.Dashboard.Columns
   alias GscAnalyticsWeb.Presenters.ChartDataPresenter
   alias GscAnalyticsWeb.PropertyRoutes
@@ -69,9 +70,9 @@ defmodule GscAnalyticsWeb.DashboardLive do
 
     property_favicon_url = property && property.favicon_url
 
-    limit = DashboardUtils.normalize_limit(params["limit"])
-    page = DashboardUtils.normalize_page(params["page"])
-    sort_by = normalize_sort_by(params["sort_by"])
+    limit = PaginationHelpers.parse_limit(params["limit"])
+    page = PaginationHelpers.parse_page(params["page"])
+    sort_by = DashboardParams.normalize_sort_column(params["sort_by"])
     sort_direction = DashboardUtils.normalize_sort_direction(params["sort_direction"])
     view_mode = Columns.validate_view_mode(params["view_mode"] || "basic")
     chart_view = chart_view(params["chart_view"])
@@ -239,16 +240,14 @@ defmodule GscAnalyticsWeb.DashboardLive do
   def handle_event("sort_column", %{"column" => column}, socket) do
     # Determine new sort direction - toggle if same column, default for new column
     # Reset to page 1 since sort order changes results
-    normalized_column = normalize_sort_by(column)
+    normalized_column = DashboardParams.normalize_sort_column(column)
 
     new_direction =
-      if socket.assigns.sort_by == normalized_column do
-        # Toggle direction for same column
-        if socket.assigns.sort_direction == "asc", do: "desc", else: "asc"
-      else
-        # Default direction for new column - position ascending (lower is better), others descending
-        if normalized_column == "position", do: "asc", else: "desc"
-      end
+      DashboardParams.toggle_sort_direction(
+        socket.assigns.sort_by,
+        normalized_column,
+        socket.assigns.sort_direction
+      )
 
     {:noreply,
      push_dashboard_patch(socket, %{
@@ -260,7 +259,7 @@ defmodule GscAnalyticsWeb.DashboardLive do
 
   @impl true
   def handle_event("change_limit", %{"limit" => limit}, socket) do
-    normalized_limit = DashboardUtils.normalize_limit(limit)
+    normalized_limit = PaginationHelpers.parse_limit(limit)
 
     {:noreply, push_dashboard_patch(socket, %{limit: normalized_limit, page: 1})}
   end
@@ -318,7 +317,7 @@ defmodule GscAnalyticsWeb.DashboardLive do
   @impl true
   def handle_event("goto_page", %{"page" => page}, socket) do
     # Navigate to specific page
-    page_num = DashboardUtils.normalize_page(page)
+    page_num = PaginationHelpers.parse_page(page)
 
     # Ensure page is within valid range
     page_num = max(1, min(page_num, socket.assigns.total_pages))
@@ -447,20 +446,6 @@ defmodule GscAnalyticsWeb.DashboardLive do
   defp chart_view("weekly"), do: "weekly"
   defp chart_view("monthly"), do: "monthly"
   defp chart_view(_), do: "daily"
-
-  defp normalize_sort_by(nil), do: "clicks"
-  defp normalize_sort_by(""), do: "clicks"
-
-  defp normalize_sort_by(sort_by) when sort_by in ["clicks", "impressions", "ctr", "position"],
-    do: sort_by
-
-  defp normalize_sort_by("lifetime_clicks"), do: "clicks"
-  defp normalize_sort_by("period_clicks"), do: "clicks"
-  defp normalize_sort_by("period_impressions"), do: "impressions"
-  defp normalize_sort_by("lifetime_avg_ctr"), do: "ctr"
-  defp normalize_sort_by("lifetime_avg_position"), do: "position"
-  defp normalize_sort_by(other) when is_binary(other), do: other
-  defp normalize_sort_by(_), do: "clicks"
 
   defp push_dashboard_patch(socket, overrides) do
     property_override = Map.get(overrides, :property_id)

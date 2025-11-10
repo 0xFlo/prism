@@ -2,8 +2,10 @@ defmodule GscAnalytics.Crawler.Persistence do
   @moduledoc """
   Persistence layer for saving HTTP status check results.
 
-  This module handles saving check results to the url_lifetime_stats table,
-  using efficient batch updates when possible.
+  This module handles saving check results to the url_lifetime_stats table
+  and mirrors those HTTP fields back to the legacy gsc_performance table so
+  existing dashboards stay in sync. Results are persisted in bulk batches to
+  avoid hammering the database with one UPDATE per URL.
 
   ## Important: Table Architecture
   - Primary data table: `url_lifetime_stats` (materialized view with HTTP fields)
@@ -22,11 +24,60 @@ defmodule GscAnalytics.Crawler.Persistence do
   require Logger
 
   alias GscAnalytics.Repo
-  alias GscAnalytics.Schemas.UrlLifetimeStats
-
-  import Ecto.Query
 
   @batch_size 100
+  @bulk_update_sql """
+  WITH data AS (
+    SELECT
+      rows.url,
+      rows.http_status,
+      rows.redirect_url,
+      rows.http_checked_at,
+      (rows.http_redirect_chain)::jsonb AS http_redirect_chain
+    FROM unnest(
+      $1::text[],
+      $2::integer[],
+      $3::text[],
+      $4::timestamptz[],
+      $5::text[]
+    ) AS rows(url, http_status, redirect_url, http_checked_at, http_redirect_chain)
+  ),
+  updated_lifetime AS (
+    UPDATE url_lifetime_stats AS u
+    SET
+      http_status = data.http_status,
+      redirect_url = data.redirect_url,
+      http_checked_at = data.http_checked_at,
+      http_redirect_chain = data.http_redirect_chain
+    FROM data
+    WHERE u.url = data.url
+    RETURNING
+      u.account_id,
+      u.property_url,
+      u.url,
+      data.http_status,
+      data.redirect_url,
+      data.http_checked_at,
+      data.http_redirect_chain
+  ),
+  updated_performance AS (
+    UPDATE gsc_performance AS p
+    SET
+      http_status = updated_lifetime.http_status,
+      redirect_url = updated_lifetime.redirect_url,
+      http_checked_at = updated_lifetime.http_checked_at,
+      http_redirect_chain = updated_lifetime.http_redirect_chain,
+      updated_at = NOW()
+    FROM updated_lifetime
+    WHERE p.account_id = updated_lifetime.account_id
+      AND p.property_url = updated_lifetime.property_url
+      AND p.url = updated_lifetime.url
+    RETURNING 1
+  )
+  SELECT
+    COALESCE((SELECT count(*) FROM updated_lifetime), 0) AS lifetime_count,
+    COALESCE((SELECT count(*) FROM updated_performance), 0) AS performance_count
+  """
 
   # ============================================================================
   # Public API
@@ -77,30 +128,60 @@ defmodule GscAnalytics.Crawler.Persistence do
   # Private - Batch Updates
   # ============================================================================
 
+  defp update_chunk([]), do: {:ok, 0}
+
   defp update_chunk(results) do
-    # Group URLs by their result values to minimize number of queries
-    # Instead of N queries, we do one query per unique result combination
-    results
-    |> Enum.group_by(fn {_url, result} ->
-      # Group by all fields that will be updated
-      {result.status, result.redirect_url, result.checked_at, result.redirect_chain}
-    end)
-    |> Enum.each(fn {result_values, url_results} ->
-      urls = Enum.map(url_results, fn {url, _result} -> url end)
-      {status, redirect_url, checked_at, redirect_chain} = result_values
+    urls = Enum.map(results, fn {url, _} -> url end)
+    statuses = Enum.map(results, fn {_, result} -> result.status end)
+    redirect_urls = Enum.map(results, fn {_, result} -> result.redirect_url end)
+    checked_at = Enum.map(results, fn {_, result} -> result.checked_at end)
 
-      # Single query updating all URLs with the same result
-      from(u in UrlLifetimeStats, where: u.url in ^urls)
-      |> Repo.update_all(
-        set: [
-          http_status: status,
-          redirect_url: redirect_url,
-          http_checked_at: checked_at,
-          http_redirect_chain: redirect_chain
-        ]
-      )
-    end)
+    redirect_chains =
+      Enum.map(results, fn {_, result} ->
+        case result.redirect_chain do
+          nil -> nil
+          chain when chain == %{} -> "{}"
+          chain -> JSON.encode!(chain)
+        end
+      end)
 
-    {:ok, length(results)}
+    params = [urls, statuses, redirect_urls, checked_at, redirect_chains]
+
+    case Repo.query(@bulk_update_sql, params) do
+      {:ok, %{rows: [[lifetime_count, performance_count]]}} ->
+        total = length(results)
+
+        if lifetime_count < total do
+          Logger.debug(
+            "HTTP status batch processed #{total} results but only #{lifetime_count} URLs existed in url_lifetime_stats"
+          )
+        end
+
+        cond do
+          lifetime_count == 0 ->
+            Logger.debug(
+              "HTTP status batch skipped because none of the URLs exist in url_lifetime_stats"
+            )
+
+          performance_count == 0 ->
+            Logger.debug(
+              "HTTP status batch updated #{lifetime_count} rows in url_lifetime_stats but legacy gsc_performance had no matching rows; mirroring skipped"
+            )
+
+          lifetime_count > performance_count ->
+            Logger.warning(
+              "HTTP status batch updated #{lifetime_count} rows in url_lifetime_stats but only #{performance_count} rows in gsc_performance; dashboard data may be missing"
+            )
+
+          true ->
+            :ok
+        end
+
+        {:ok, total}
+
+      {:error, error} ->
+        Logger.error("Failed to persist HTTP status batch: #{inspect(error)}")
+        {:error, error}
+    end
   end
 end

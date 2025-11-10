@@ -10,7 +10,9 @@ config :gsc_analytics, GscAnalytics.Repo,
   show_sensitive_data_on_connection_error: true,
   pool_size: 20,
   queue_target: 100,
-  queue_interval: 1000
+  queue_interval: 1000,
+  # Reduce query log verbosity (set to :info or false to disable)
+  log: :info
 
 # For development, we disable any cache and enable
 # debugging and code reloading.

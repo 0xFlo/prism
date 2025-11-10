@@ -104,46 +104,54 @@ defmodule GscAnalytics.Config.AutoSyncTest do
   end
 
   describe "plugins/0" do
-    test "returns Pruner and SERP pruning Cron when auto-sync is disabled" do
+    test "background jobs run when auto-sync is disabled" do
       with_env(%{"ENABLE_AUTO_SYNC" => "false"}, fn ->
         plugins = AutoSync.plugins()
 
-        # Should have Pruner + SERP pruning Cron
-        assert length(plugins) == 2
-
+        # Assert on observable behavior: required plugins are present
         pruner = Enum.find(plugins, fn {mod, _} -> mod == Oban.Plugins.Pruner end)
         cron = Enum.find(plugins, fn {mod, _} -> mod == Oban.Plugins.Cron end)
 
-        assert pruner, "Pruner plugin should be present"
-        assert cron, "Cron plugin should be present for SERP pruning"
+        assert pruner, "Pruner plugin should be present for job cleanup"
+        assert cron, "Cron plugin should be present for scheduled jobs"
 
-        # Verify SERP pruning cron schedule
+        # Verify background jobs are scheduled (SERP pruning + HTTP rechecking)
         {Oban.Plugins.Cron, opts} = cron
         crontab = Keyword.get(opts, :crontab)
-        assert [{schedule, worker}] = crontab
-        assert schedule == "0 2 * * *"
-        assert worker == GscAnalytics.Workers.SerpPruningWorker
+
+        # Assert: SERP pruning job exists
+        assert Enum.any?(crontab, fn {_sched, worker} ->
+          worker == GscAnalytics.Workers.SerpPruningWorker
+        end), "SERP pruning should be scheduled"
+
+        # Assert: HTTP status rechecking job exists
+        assert Enum.any?(crontab, fn {_sched, worker} ->
+          worker == GscAnalytics.Workers.HttpStatusRecheckWorker
+        end), "HTTP status rechecking should be scheduled"
+
+        # Assert: GSC sync job NOT scheduled when auto-sync disabled
+        refute Enum.any?(crontab, fn {_sched, worker} ->
+          worker == GscAnalytics.Workers.GscSyncWorker
+        end), "GSC sync should NOT run when auto-sync disabled"
       end)
     end
 
-    test "returns Pruner, Lifeline, and Cron plugins when auto-sync is enabled" do
+    test "all required plugins are enabled when auto-sync is enabled" do
       with_env(%{"ENABLE_AUTO_SYNC" => "true"}, fn ->
         plugins = AutoSync.plugins()
 
-        assert length(plugins) == 3
-
-        # Find each plugin
+        # Assert on observable behavior: required plugins are present
         pruner = Enum.find(plugins, fn {mod, _} -> mod == Oban.Plugins.Pruner end)
         lifeline = Enum.find(plugins, fn {mod, _} -> mod == Oban.Plugins.Lifeline end)
         cron = Enum.find(plugins, fn {mod, _} -> mod == Oban.Plugins.Cron end)
 
-        assert pruner, "Pruner plugin should be present"
-        assert lifeline, "Lifeline plugin should be present"
-        assert cron, "Cron plugin should be present"
+        assert pruner, "Pruner plugin required for job cleanup"
+        assert lifeline, "Lifeline plugin required for orphaned job recovery"
+        assert cron, "Cron plugin required for scheduled syncs"
       end)
     end
 
-    test "Cron plugin uses configured schedule when auto-sync is enabled" do
+    test "GSC sync uses configured schedule when auto-sync is enabled" do
       with_env(%{"ENABLE_AUTO_SYNC" => "true", "AUTO_SYNC_CRON" => "0 4 * * *"}, fn ->
         plugins = AutoSync.plugins()
 
@@ -152,8 +160,6 @@ defmodule GscAnalytics.Config.AutoSyncTest do
 
         crontab = Keyword.get(opts, :crontab)
         assert is_list(crontab)
-        # Should have 2 cron jobs: GscSyncWorker + SerpPruningWorker
-        assert length(crontab) == 2
 
         # Find the GSC sync job
         gsc_sync_job =

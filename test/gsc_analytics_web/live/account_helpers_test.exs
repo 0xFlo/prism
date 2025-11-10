@@ -115,13 +115,14 @@ defmodule GscAnalyticsWeb.Live.AccountHelpersTest do
       refute prop1_2.property_url in workspace2_urls
     end
 
-    test "dropdown shows active properties for each workspace", %{user: user} do
+    test "user can view all active properties from their workspaces", %{user: user} do
       conn = build_conn() |> Phoenix.ConnTest.init_test_session(%{})
       conn = log_in_user(conn, user)
 
-      {:ok, view, _html} = live(conn, ~p"/dashboard")
+      # Follow redirect to actual dashboard (test behavior, not routing)
+      {:ok, view, _html} = follow_live_redirect(conn, ~p"/dashboard")
 
-      # Get the property dropdown options
+      # Assert on observable behavior: user sees all their active properties
       html = render(view)
 
       assert html =~ "workspace1-site1.com"
@@ -130,7 +131,7 @@ defmodule GscAnalyticsWeb.Live.AccountHelpersTest do
       assert html =~ "workspace2-site2.com"
     end
 
-    test "inactive properties do not appear in dropdown", %{
+    test "user cannot see inactive properties", %{
       user: user,
       workspace1: workspace1
     } do
@@ -144,14 +145,15 @@ defmodule GscAnalyticsWeb.Live.AccountHelpersTest do
       conn = build_conn() |> Phoenix.ConnTest.init_test_session(%{})
       conn = log_in_user(conn, user)
 
-      {:ok, view, _html} = live(conn, ~p"/dashboard")
+      # Follow redirect to actual dashboard (test behavior, not routing)
+      {:ok, view, _html} = follow_live_redirect(conn, ~p"/dashboard")
       html = render(view)
 
-      # Inactive property should not appear
+      # Assert on observable behavior: inactive property is hidden from user
       refute html =~ "sc-domain:inactive-site.com"
     end
 
-    test "saved properties remain visible when OAuth token is missing", %{
+    test "user can still see saved properties even when OAuth token is missing", %{
       user: user,
       workspace1: workspace1
     } do
@@ -160,9 +162,11 @@ defmodule GscAnalyticsWeb.Live.AccountHelpersTest do
       conn = build_conn() |> Phoenix.ConnTest.init_test_session(%{})
       conn = log_in_user(conn, user)
 
-      {:ok, view, _html} = live(conn, ~p"/dashboard")
+      # Follow redirect to actual dashboard (test behavior, not routing)
+      {:ok, view, _html} = follow_live_redirect(conn, ~p"/dashboard")
       html = render(view)
 
+      # Assert on observable behavior: properties remain visible despite missing token
       assert html =~ "workspace1-site1.com"
       assert html =~ "workspace1-site2.com"
     end
@@ -208,7 +212,7 @@ defmodule GscAnalyticsWeb.Live.AccountHelpersTest do
   end
 
   describe "switching between workspaces" do
-    test "switching workspace updates property options correctly" do
+    test "user can switch between workspaces and see their respective properties" do
       user = user_fixture()
 
       {:ok, workspace1} =
@@ -262,18 +266,22 @@ defmodule GscAnalyticsWeb.Live.AccountHelpersTest do
       conn = build_conn() |> Phoenix.ConnTest.init_test_session(%{})
       conn = log_in_user(conn, user)
 
-      {:ok, view, _html} = live(conn, ~p"/dashboard?#{[account_id: workspace1.id]}")
+      # Follow redirect when accessing dashboard with workspace filter
+      {:ok, view, _html} =
+        follow_live_redirect(conn, ~p"/dashboard?#{[account_id: workspace1.id]}")
 
-      # Should see both workspaces' properties but with correct labels
+      # Assert on observable behavior: user sees properties from both workspaces
       html = render(view)
       assert html =~ "ws1-site.com"
       assert html =~ "ws2-site.com"
 
-      # Switch to workspace2
-      {:ok, view, _html} = live(conn, ~p"/dashboard?#{[account_id: workspace2.id]}")
+      # User switches to workspace2
+      {:ok, view, _html} =
+        follow_live_redirect(conn, ~p"/dashboard?#{[account_id: workspace2.id]}")
+
       html = render(view)
 
-      # Should still see both, with correct labels
+      # Properties remain visible across workspace switches
       assert html =~ "ws1-site.com"
       assert html =~ "ws2-site.com"
     end

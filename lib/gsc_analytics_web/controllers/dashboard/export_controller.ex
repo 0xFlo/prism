@@ -59,9 +59,6 @@ defmodule GscAnalyticsWeb.Dashboard.ExportController do
   defp property_error_message(:no_property),
     do: "Select a Search Console property to export analytics."
 
-  defp property_error_message(_),
-    do: "Unable to export analytics for the selected property."
-
   defp generate_csv_content(data, view_mode) do
     headers = Columns.csv_headers(view_mode)
     header_line = Enum.join(headers, ",") <> "\n"

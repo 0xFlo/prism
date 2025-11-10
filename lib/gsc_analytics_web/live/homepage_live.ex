@@ -23,7 +23,9 @@ defmodule GscAnalyticsWeb.HomepageLive do
   def mount(_params, _session, socket) do
     current_scope = Map.get(socket.assigns, :current_scope)
 
-    if authenticated_scope?(current_scope) do
+    # Only redirect authenticated users who have a property configured
+    # Users without properties stay on the homepage to see onboarding/setup prompts
+    if authenticated_scope?(current_scope) && has_property?(current_scope) do
       {:ok, push_navigate(socket, to: PropertyContext.default_dashboard_path(current_scope))}
     else
       # Load demo data for public landing page
@@ -141,4 +143,8 @@ defmodule GscAnalyticsWeb.HomepageLive do
 
   defp authenticated_scope?(%{user: user}) when is_map(user), do: true
   defp authenticated_scope?(_), do: false
+
+  defp has_property?(scope) do
+    PropertyContext.default_property_id(scope) != nil
+  end
 end

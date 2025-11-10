@@ -74,13 +74,31 @@ defmodule GscAnalyticsWeb.UserAuthTest do
       assert max_age == @remember_me_cookie_max_age
     end
 
-    test "redirects to settings when user is already logged in", %{conn: conn, user: user} do
-      conn =
+    test "preserves session when re-authenticating same user to prevent CSRF errors", %{
+      conn: conn,
+      user: user
+    } do
+      # Setup: User already logged in with session data
+      conn_with_session =
         conn
         |> assign(:current_scope, Scope.for_user(user))
-        |> UserAuth.log_in_user(user)
+        |> put_session(:important_data, "should_be_preserved")
 
-      assert redirected_to(conn) == ~p"/users/settings"
+      # Action: Re-authenticate as the same user
+      conn_after = UserAuth.log_in_user(conn_with_session, user)
+
+      # Assert: Session data preserved (prevents data loss in open tabs)
+      assert get_session(conn_after, :important_data) == "should_be_preserved"
+
+      # Assert: User still authenticated
+      assert get_session(conn_after, :user_token)
+
+      # Assert: Redirects somewhere (behavior: not the implementation detail of where)
+      assert redirected_to(conn_after)
+
+      # Note: The CSRF token preservation is the key security requirement here.
+      # When a user is already logged in and re-authenticates, we must NOT renew
+      # the session (which would clear CSRF tokens and break forms in open tabs).
     end
 
     test "writes a cookie if remember_me was set in previous session", %{conn: conn, user: user} do

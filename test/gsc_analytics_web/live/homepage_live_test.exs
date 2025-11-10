@@ -15,8 +15,9 @@ defmodule GscAnalyticsWeb.HomepageLiveTest do
   describe "authenticated users" do
     setup :register_and_log_in_user
 
-    test "are redirected to the dashboard", %{conn: conn} do
-      assert {:error, {:live_redirect, %{to: "/dashboard"}}} = live(conn, ~p"/")
+    test "are redirected to the dashboard", %{conn: conn, property: property} do
+      expected_path = "/dashboard/#{property.id}"
+      assert {:error, {:live_redirect, %{to: ^expected_path}}} = live(conn, ~p"/")
     end
   end
 end

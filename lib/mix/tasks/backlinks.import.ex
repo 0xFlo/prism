@@ -179,22 +179,19 @@ defmodule Mix.Tasks.Backlinks.Import do
 
     # Show summary stats
     case Backlink.summary_stats() do
-      stats when is_map(stats) ->
+      %{} = stats ->
         Mix.shell().info("📈 Backlink Database Summary:")
         Mix.shell().info("   • Total Backlinks: #{stats.total_backlinks}")
         Mix.shell().info("   • Unique Target URLs: #{stats.unique_targets}")
         Mix.shell().info("   • Unique Source Domains: #{stats.unique_sources}")
 
-        if stats.data_sources do
+        if not Enum.empty?(stats.data_sources) do
           Mix.shell().info("\n   By Source:")
 
           Enum.each(stats.data_sources, fn {source, count} ->
             Mix.shell().info("     - #{source}: #{count}")
           end)
         end
-
-      _ ->
-        :ok
     end
   end
 

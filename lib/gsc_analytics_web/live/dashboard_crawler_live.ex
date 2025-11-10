@@ -475,11 +475,15 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
   end
 
   defp property_context(nil) do
-    %{label: nil, favicon_url: nil, url: nil}
+    %{
+      label: nil,
+      favicon_url: nil,
+      url: nil
+    }
   end
 
-  defp property_context(property) do
-    property_url = property && Map.get(property, :property_url)
+  defp property_context(property) when is_map(property) do
+    property_url = Map.get(property, :property_url)
 
     label =
       case Map.get(property, :display_name) do
@@ -493,7 +497,7 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
 
     %{
       label: label,
-      favicon_url: property && Map.get(property, :favicon_url),
+      favicon_url: Map.get(property, :favicon_url),
       url: property_url
     }
   end

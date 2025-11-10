@@ -174,11 +174,11 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
   def handle_event("sort_queries", %{"column" => column}, socket) do
     # Toggle direction if same column, default for new column
     new_direction =
-      if socket.assigns.queries_sort_by == column do
-        if socket.assigns.queries_sort_direction == "asc", do: "desc", else: "asc"
-      else
-        if column == "position", do: "asc", else: "desc"
-      end
+      DashboardParams.toggle_sort_direction(
+        socket.assigns.queries_sort_by,
+        column,
+        socket.assigns.queries_sort_direction
+      )
 
     {:noreply, push_url_patch(socket, %{queries_sort: column, queries_dir: new_direction})}
   end
@@ -187,11 +187,11 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
   def handle_event("sort_backlinks", %{"column" => column}, socket) do
     # Toggle direction if same column, default desc for new column
     new_direction =
-      if socket.assigns.backlinks_sort_by == column do
-        if socket.assigns.backlinks_sort_direction == "asc", do: "desc", else: "asc"
-      else
-        "desc"
-      end
+      DashboardParams.toggle_sort_direction(
+        socket.assigns.backlinks_sort_by,
+        column,
+        socket.assigns.backlinks_sort_direction
+      )
 
     {:noreply, push_url_patch(socket, %{backlinks_sort: column, backlinks_dir: new_direction})}
   end

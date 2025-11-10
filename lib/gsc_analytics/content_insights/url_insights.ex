@@ -39,11 +39,7 @@ defmodule GscAnalytics.ContentInsights.UrlInsights do
         _ -> decoded_url
       end
 
-    urls =
-      case url_group do
-        %{urls: list} when is_list(list) -> list
-        _ -> []
-      end
+    urls = Map.get(url_group, :urls, [])
 
     period_end = resolve_period_end(url_group, Map.get(opts, :period_end))
     selection_start = resolve_selection_start(url_group, period_days, period_end)
@@ -318,24 +314,16 @@ defmodule GscAnalytics.ContentInsights.UrlInsights do
   defp resolve_effective_query_range(_period_start, _period_end, _coverage_start, nil),
     do: %{start_date: nil, end_date: nil}
 
-  defp resolve_effective_query_range(period_start, period_end, coverage_start, coverage_end) do
-    start_date =
-      case {period_start, coverage_start} do
-        {%Date{} = p, %Date{} = c} -> max_date(p, c)
-        {%Date{} = p, _} -> p
-        {_, %Date{} = c} -> c
-        _ -> coverage_start
-      end
+  defp resolve_effective_query_range(
+         %Date{} = period_start,
+         %Date{} = period_end,
+         %Date{} = coverage_start,
+         %Date{} = coverage_end
+       ) do
+    start_date = max_date(period_start, coverage_start)
+    end_date = min_date(period_end, coverage_end)
 
-    end_date =
-      case {period_end, coverage_end} do
-        {%Date{} = p, %Date{} = c} -> min_date(p, c)
-        {%Date{} = p, _} -> p
-        {_, %Date{} = c} -> c
-        _ -> coverage_end
-      end
-
-    if is_nil(start_date) or is_nil(end_date) or Date.compare(start_date, end_date) == :gt do
+    if Date.compare(start_date, end_date) == :gt do
       %{start_date: nil, end_date: nil}
     else
       %{start_date: start_date, end_date: end_date}
@@ -496,27 +484,21 @@ defmodule GscAnalytics.ContentInsights.UrlInsights do
     |> min_date(Date.utc_today())
   end
 
-  defp resolve_selection_start(url_group, period_days, period_end) do
+  defp resolve_selection_start(url_group, period_days, %Date{} = period_end) do
     earliest = Map.get(url_group, :earliest_date)
 
-    case period_end do
-      %Date{} = end_date ->
-        cond do
-          period_days == :all and match?(%Date{}, earliest) ->
-            earliest
+    cond do
+      period_days == :all and match?(%Date{}, earliest) ->
+        earliest
 
-          period_days == :all ->
-            end_date
+      period_days == :all ->
+        period_end
 
-          is_integer(period_days) and period_days > 0 ->
-            days_back = max(period_days - 1, 0)
-            Date.add(end_date, -days_back)
+      is_integer(period_days) and period_days > 0 ->
+        days_back = max(period_days - 1, 0)
+        Date.add(period_end, -days_back)
 
-          true ->
-            nil
-        end
-
-      _ ->
+      true ->
         nil
     end
   end
@@ -534,13 +516,8 @@ defmodule GscAnalytics.ContentInsights.UrlInsights do
   defp presentable_query(""), do: ""
   defp presentable_query(value), do: value
 
-  defp min_date(a, b) do
-    cond do
-      is_nil(a) -> b
-      is_nil(b) -> a
-      Date.compare(a, b) == :gt -> b
-      true -> a
-    end
+  defp min_date(%Date{} = a, %Date{} = b) do
+    if Date.compare(a, b) == :gt, do: b, else: a
   end
 
   defp max_date(a, b) do

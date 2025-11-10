@@ -336,25 +336,19 @@ defmodule GscAnalytics.DataSources.GSC.Core.Sync do
     end
   end
 
-  defp normalize_sync_result(result) do
-    case result do
-      {:ok, summary} ->
-        case summary[:halt_reason] do
-          {:query_fetch_failed, reason} ->
-            {:error, reason, failure_metrics(summary)}
+  defp normalize_sync_result({:ok, summary}) do
+    case summary[:halt_reason] do
+      {:query_fetch_failed, reason} ->
+        {:error, reason, failure_metrics(summary)}
 
-          {:query_fetch_halted, reason} ->
-            {:error, reason, failure_metrics(summary)}
+      {:query_fetch_halted, reason} ->
+        {:error, reason, failure_metrics(summary)}
 
-          :stopped_by_user ->
-            {:error, :stopped_by_user, failure_metrics(summary)}
-
-          _ ->
-            result
-        end
+      :stopped_by_user ->
+        {:error, :stopped_by_user, failure_metrics(summary)}
 
       _ ->
-        result
+        {:ok, summary}
     end
   end
 

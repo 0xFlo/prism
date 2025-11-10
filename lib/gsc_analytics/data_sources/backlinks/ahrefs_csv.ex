@@ -86,15 +86,9 @@ defmodule GscAnalytics.DataSources.Backlinks.Importers.AhrefsCSV do
       |> Stream.reject(&is_nil/1)
       |> Stream.chunk_every(@batch_size)
       |> Enum.reduce({0, 0, []}, fn chunk, {imported, skipped, errors} ->
-        case insert_batch(chunk, batch_id) do
-          {:ok, count} ->
-            Logger.debug("Inserted batch: #{count} records")
-            {imported + count, skipped, errors}
-
-          {:error, reason} ->
-            Logger.warning("Batch insert failed: #{inspect(reason)}")
-            {imported, skipped + length(chunk), [reason | errors]}
-        end
+        {:ok, count} = insert_batch(chunk, batch_id)
+        Logger.debug("Inserted batch: #{count} records")
+        {imported + count, skipped, errors}
       end)
       |> then(fn {imported, skipped, errors} ->
         duration = System.monotonic_time(:millisecond) - start_time
@@ -211,24 +205,24 @@ defmodule GscAnalytics.DataSources.Backlinks.Importers.AhrefsCSV do
       end)
 
     # Ahrefs data takes priority - update existing records with newer Ahrefs data
-    case Repo.insert_all(Backlink, entries,
-           on_conflict:
-             {:replace,
-              [
-                :domain_rating,
-                :domain_traffic,
-                :anchor_text,
-                :first_seen_at,
-                :data_source,
-                :import_batch_id,
-                :imported_at,
-                :import_metadata,
-                :updated_at
-              ]},
-           conflict_target: [:source_url, :target_url]
-         ) do
-      {count, _} -> {:ok, count}
-      error -> {:error, error}
-    end
+    {count, _} =
+      Repo.insert_all(Backlink, entries,
+        on_conflict:
+          {:replace,
+           [
+             :domain_rating,
+             :domain_traffic,
+             :anchor_text,
+             :first_seen_at,
+             :data_source,
+             :import_batch_id,
+             :imported_at,
+             :import_metadata,
+             :updated_at
+           ]},
+        conflict_target: [:source_url, :target_url]
+      )
+
+    {:ok, count}
   end
 end

@@ -63,6 +63,31 @@ defmodule GscAnalytics.DataSources.GSC.Support.Authenticator do
     GenServer.call(__MODULE__, {:refresh_token, workspace_id})
   end
 
+  @doc """
+  Pre-populate the cache with OAuth tokens that were batch-loaded from the database.
+
+  This allows the Authenticator to skip individual database lookups when tokens
+  are already available from a batch load operation (e.g., during LiveView mount).
+
+  ## Parameters
+
+  - `oauth_tokens`: Map of workspace_id => %OAuthToken{} structs
+
+  ## Returns
+
+  `:ok`
+
+  ## Example
+
+      # In LiveView mount after batch loading tokens:
+      oauth_tokens = Auth.batch_get_oauth_tokens(scope, account_ids)
+      Authenticator.cache_tokens(oauth_tokens)
+  """
+  @spec cache_tokens(%{workspace_id() => Auth.OAuthToken.t()}) :: :ok
+  def cache_tokens(oauth_tokens) when is_map(oauth_tokens) do
+    GenServer.cast(__MODULE__, {:cache_tokens, oauth_tokens})
+  end
+
   # GenServer callbacks -------------------------------------------------------
 
   @impl true
@@ -121,6 +146,35 @@ defmodule GscAnalytics.DataSources.GSC.Support.Authenticator do
   @impl true
   def handle_info({:retry, :fetch_token, workspace_id}, state) do
     {new_state, _result} = fetch_token(state, workspace_id, force?: true)
+    {:noreply, new_state}
+  end
+
+  @impl true
+  def handle_cast({:cache_tokens, oauth_tokens}, state) do
+    # Populate cache with batch-loaded OAuth tokens
+    new_state =
+      Enum.reduce(oauth_tokens, state, fn {workspace_id, oauth_token}, acc_state ->
+        # Skip if token needs re-authentication
+        if GscAnalytics.Auth.OAuthToken.needs_reauth?(oauth_token) do
+          acc_state
+        else
+          case oauth_token do
+            %{access_token: access_token, expires_at: expires_at}
+            when is_binary(access_token) and access_token != "" ->
+              acc_state
+              |> put_workspace(workspace_id, %{
+                token: access_token,
+                expires_at: expires_at,
+                last_error: nil
+              })
+              |> schedule_oauth_refresh(workspace_id, expires_at)
+
+            _ ->
+              acc_state
+          end
+        end
+      end)
+
     {:noreply, new_state}
   end
 

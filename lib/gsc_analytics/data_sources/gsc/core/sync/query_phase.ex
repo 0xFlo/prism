@@ -165,8 +165,6 @@ defmodule GscAnalytics.DataSources.GSC.Core.Sync.QueryPhase do
     end
   end
 
-  defp identify_failed_dates(dates, _), do: dates
-
   defp mark_failures([], _reason, _state), do: :ok
 
   defp mark_failures(dates, reason, state) do
@@ -184,9 +182,8 @@ defmodule GscAnalytics.DataSources.GSC.Core.Sync.QueryPhase do
     end)
   end
 
-  defp attach_query_counts(results, state) do
+  defp attach_query_counts(results, state) when is_map(results) do
     counts = State.take_query_counts(state)
-    results = results || %{}
 
     Enum.reduce(counts, results, fn {date, count}, acc ->
       Map.update(acc, date, %{row_count: count}, fn entry ->
