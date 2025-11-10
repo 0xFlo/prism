@@ -2,6 +2,82 @@ import Chart from "../../vendor/chart-wrapper.js"
 
 // Chart.js includes all components pre-registered in UMD bundle
 
+const EVENT_MARKER_PLUGIN = {
+  id: "eventMarkers",
+  afterDatasetsDraw(chart, _args, pluginOptions = {}) {
+    const events = pluginOptions.events || []
+    if (!events.length) return
+
+    const { ctx, scales, chartArea } = chart
+    if (!scales?.x || !chartArea) return
+
+    const top = chartArea.top + 4
+    const bottom = chartArea.bottom
+    const lineColor = pluginOptions.lineColor || "#f97316"
+    const badgeBackground = pluginOptions.badgeBackground || "rgba(249, 115, 22, 0.92)"
+    const badgeBorder = pluginOptions.badgeBorder || "rgba(124, 45, 18, 0.35)"
+    const badgeText = pluginOptions.badgeText || "#0f172a"
+    const font = pluginOptions.font || "10px 'Inter', system-ui, sans-serif"
+
+    ctx.save()
+    ctx.lineWidth = pluginOptions.lineWidth || 1
+    ctx.textAlign = "center"
+    ctx.textBaseline = "middle"
+    ctx.font = font
+
+    events.forEach(event => {
+      // Try to find matching label - event.date might be "2024-11-04" but label could be "2024-11-04 - 2024-11-10"
+      let xPixel = scales.x.getPixelForValue(event.date)
+
+      // If direct match fails, try to find a label that starts with the event date (for weekly/monthly views)
+      if (!Number.isFinite(xPixel)) {
+        const matchingLabel = chart.data.labels.find(label =>
+          typeof label === 'string' && label.startsWith(event.date)
+        )
+        if (matchingLabel) {
+          xPixel = scales.x.getPixelForValue(matchingLabel)
+        }
+      }
+
+      if (!Number.isFinite(xPixel)) return
+
+      ctx.strokeStyle = lineColor
+      ctx.setLineDash(pluginOptions.lineDash || [4, 4])
+      ctx.beginPath()
+      ctx.moveTo(xPixel, top)
+      ctx.lineTo(xPixel, bottom)
+      ctx.stroke()
+      ctx.setLineDash([])
+
+      if (event.label) {
+        const label = event.label
+        const metrics = ctx.measureText(label)
+        const paddingX = 6
+        const rectWidth = metrics.width + paddingX * 2
+        const rectHeight = 16
+        const rectX = xPixel - rectWidth / 2
+        const rectY = top + 2
+
+        ctx.fillStyle = badgeBackground
+        ctx.globalAlpha = 0.95
+        ctx.fillRect(rectX, rectY, rectWidth, rectHeight)
+
+        ctx.globalAlpha = 1
+        ctx.strokeStyle = badgeBorder
+        ctx.strokeRect(rectX, rectY, rectWidth, rectHeight)
+
+        ctx.fillStyle = badgeText
+        ctx.fillText(label, xPixel, rectY + rectHeight / 2)
+      }
+    })
+
+    ctx.restore()
+  },
+}
+
+// Register the event marker plugin with Chart.js
+Chart.register(EVENT_MARKER_PLUGIN)
+
 /**
  * Chart.js-based performance chart for GSC analytics
  * Replaces custom canvas implementation with a maintainable library solution
@@ -174,6 +250,7 @@ class ChartJsPerformanceChart {
     const scales = this.buildScales()
 
     const theme = this.getThemeColors()
+    const events = this.readEvents()
 
     this.chart = new Chart(this.canvas, {
       type: "line",
@@ -189,6 +266,16 @@ class ChartJsPerformanceChart {
           intersect: false,
         },
         plugins: {
+          eventMarkers: {
+            events: events,
+            lineColor: theme.isDark ? "#fb923c" : "#f97316",
+            badgeBackground: theme.isDark ? "rgba(251, 146, 60, 0.92)" : "rgba(249, 115, 22, 0.92)",
+            badgeBorder: theme.isDark ? "rgba(194, 65, 12, 0.4)" : "rgba(124, 45, 18, 0.35)",
+            badgeText: "#0f172a",
+            font: "10px 'Inter', system-ui, sans-serif",
+            lineWidth: 1,
+            lineDash: [4, 4]
+          },
           legend: {
             display: false, // Hide legend - metric cards serve as the legend
           },
@@ -228,6 +315,7 @@ class ChartJsPerformanceChart {
             radius: 0,
             hoverRadius: 6,
             hitRadius: 8,
+            backgroundColor: 'rgba(0, 0, 0, 0)', // Transparent by default
           },
         },
         animations: {
@@ -235,12 +323,10 @@ class ChartJsPerformanceChart {
             duration: 400,
             easing: "easeInOutQuad",
           },
+          radius: false, // Disable point radius animations to prevent bubbles flashing
         },
       },
     })
-
-    // Add event markers if any
-    this.addEventMarkers()
   }
 
   /**
@@ -308,6 +394,9 @@ class ChartJsPerformanceChart {
         fill: true,
         order: config.order,
         hidden: !isVisible,
+        pointRadius: 0, // Hide points by default
+        pointHoverRadius: 6, // Show point on hover
+        pointHitRadius: 8, // Larger hover detection area
       })
     })
 
@@ -460,11 +549,23 @@ class ChartJsPerformanceChart {
 
   addEventMarkers() {
     const events = this.readEvents()
-    if (!events.length) return
+    if (!events.length || !this.chart) return
 
-    // Chart.js doesn't have built-in event markers
-    // We could use a plugin or annotation plugin if needed
-    // For now, events can be added later via chartjs-plugin-annotation
+    // Update plugin options with events and theme colors
+    const theme = this.getThemeColors()
+
+    this.chart.options.plugins.eventMarkers = {
+      events: events,
+      lineColor: theme.isDark ? "#fb923c" : "#f97316",
+      badgeBackground: theme.isDark ? "rgba(251, 146, 60, 0.92)" : "rgba(249, 115, 22, 0.92)",
+      badgeBorder: theme.isDark ? "rgba(194, 65, 12, 0.4)" : "rgba(124, 45, 18, 0.35)",
+      badgeText: "#0f172a",
+      font: "10px 'Inter', system-ui, sans-serif",
+      lineWidth: 1,
+      lineDash: [4, 4]
+    }
+
+    this.chart.update('none') // Update without animation
   }
 
   updateChart() {
@@ -483,11 +584,26 @@ class ChartJsPerformanceChart {
     // Rebuild scales dynamically (Chart.js handles autoscaling)
     this.chart.options.scales = this.buildScales()
 
+    // Update event markers with latest events and theme
+    const events = this.readEvents()
+    const theme = this.getThemeColors()
+
+    this.chart.options.plugins.eventMarkers = {
+      events: events,
+      lineColor: theme.isDark ? "#fb923c" : "#f97316",
+      badgeBackground: theme.isDark ? "rgba(251, 146, 60, 0.92)" : "rgba(249, 115, 22, 0.92)",
+      badgeBorder: theme.isDark ? "rgba(194, 65, 12, 0.4)" : "rgba(124, 45, 18, 0.35)",
+      badgeText: "#0f172a",
+      font: "10px 'Inter', system-ui, sans-serif",
+      lineWidth: 1,
+      lineDash: [4, 4]
+    }
+
     // Ensure canvas dimensions are correct before update
     this.chart.resize()
 
-    // Full update with animation to show axis changes
-    this.chart.update('active')
+    // Update without animation to prevent points from flashing
+    this.chart.update('none')
   }
 }
 
