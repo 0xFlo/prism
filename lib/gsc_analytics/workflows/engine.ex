@@ -256,9 +256,8 @@ defmodule GscAnalytics.Workflows.Engine do
       step["name"]
     )
 
-    # TODO: Execute step via Step.Executor protocol
-    # For now, simulate success
-    step_output = %{simulated: true}
+    # Execute step based on type
+    step_output = execute_step(step)
 
     # Store output in runtime state
     Runtime.store_step_output(state.runtime_table, step_id, step_output)
@@ -318,6 +317,32 @@ defmodule GscAnalytics.Workflows.Engine do
   defp find_step(workflow_def, step_id) do
     steps = workflow_def["steps"] || []
     Enum.find(steps, &(&1["id"] == step_id))
+  end
+
+  defp execute_step(step) do
+    step_type = step["type"]
+    config = step["config"] || %{}
+
+    case step_type do
+      "test" ->
+        # Test step - respects delay_ms configuration
+        delay_ms = Map.get(config, "delay_ms", 0)
+
+        if delay_ms > 0 do
+          Process.sleep(delay_ms)
+        end
+
+        %{
+          type: "test",
+          delay_ms: delay_ms,
+          completed_at: DateTime.utc_now()
+        }
+
+      _ ->
+        # Unknown step type - just return success
+        Logger.warning("Unknown step type: #{step_type}")
+        %{type: step_type, simulated: true}
+    end
   end
 
   defp via_tuple(execution_id) do

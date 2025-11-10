@@ -115,12 +115,12 @@ defmodule GscAnalytics.Workflows.ProgressTracker do
   end
 
   @doc """
-  Publishes execution finished event.
+  Publishes execution completed event.
   """
   def publish_finished(execution_id, status, output_data) do
     GenServer.cast(
       __MODULE__,
-      {:publish, execution_id, :execution_finished, %{status: status, output_data: output_data}}
+      {:publish, execution_id, :execution_completed, %{status: status, output_data: output_data}}
     )
   end
 

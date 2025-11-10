@@ -103,7 +103,7 @@ defmodule GscAnalytics.Workflows.ProgressTrackerTest do
       ProgressTracker.publish_finished(execution_id, :completed, output_data)
 
       assert_receive {:workflow_progress, event}, 1000
-      assert event.event_type == :execution_finished
+      assert event.event_type == :execution_completed
       assert event.payload.status == :completed
       assert event.payload.output_data == output_data
 
@@ -112,7 +112,7 @@ defmodule GscAnalytics.Workflows.ProgressTrackerTest do
 
         Enum.any?(
           events,
-          &(&1.execution_id == execution_id && &1.event_type == :execution_finished)
+          &(&1.execution_id == execution_id && &1.event_type == :execution_completed)
         )
       end)
     end
@@ -259,7 +259,7 @@ defmodule GscAnalytics.Workflows.ProgressTrackerTest do
       assert :execution_started in event_types
       assert :step_started in event_types
       assert :step_completed in event_types
-      assert :execution_finished in event_types
+      assert :execution_completed in event_types
 
       # Verify step IDs are tracked
       step_events = Enum.filter(events, &(&1.step_id == "step_1"))

@@ -220,6 +220,36 @@ defmodule GscAnalyticsWeb.DashboardWorkflowsLive do
   end
 
   @impl true
+  def handle_event("delete_workflow", %{"id" => workflow_id}, socket) do
+    account_id = socket.assigns.current_account_id
+
+    case Workflows.get_workflow(workflow_id, account_id) do
+      nil ->
+        {:noreply, put_flash(socket, :error, "Workflow not found")}
+
+      workflow ->
+        case Workflows.delete_workflow(workflow) do
+          {:ok, _deleted_workflow} ->
+            # Reload workflows list
+            workflows = list_workflows(account_id)
+            filters = socket.assigns.workflow_filters
+            filtered = apply_workflow_filters(workflows, filters)
+
+            socket =
+              socket
+              |> assign(:workflows, workflows)
+              |> assign(:filtered_workflows, filtered)
+              |> put_flash(:info, "Workflow deleted successfully")
+
+            {:noreply, socket}
+
+          {:error, _changeset} ->
+            {:noreply, put_flash(socket, :error, "Failed to delete workflow")}
+        end
+    end
+  end
+
+  @impl true
   def handle_info({:workflow_progress, event}, socket) do
     account_id = socket.assigns.current_account_id
 
@@ -406,7 +436,7 @@ defmodule GscAnalyticsWeb.DashboardWorkflowsLive do
       :execution_paused -> "hero-pause"
       :execution_resumed -> "hero-play"
       :execution_cancelled -> "hero-x-mark"
-      :execution_finished -> "hero-check"
+      :execution_completed -> "hero-check"
       :step_started -> "hero-arrow-right"
       :step_completed -> "hero-check-circle"
       :step_failed -> "hero-x-circle"
@@ -421,7 +451,7 @@ defmodule GscAnalyticsWeb.DashboardWorkflowsLive do
       :execution_paused -> "text-yellow-600"
       :execution_resumed -> "text-blue-600"
       :execution_cancelled -> "text-gray-600"
-      :execution_finished -> "text-green-600"
+      :execution_completed -> "text-green-600"
       :step_started -> "text-blue-500"
       :step_completed -> "text-green-500"
       :step_failed -> "text-red-500"
