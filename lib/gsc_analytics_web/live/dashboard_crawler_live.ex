@@ -13,10 +13,13 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
     only: [format_number: 1, format_datetime: 1]
 
   import GscAnalyticsWeb.Components.DashboardComponents,
-    only: [property_selector: 1, pagination: 1]
+    only: [property_selector: 1]
+
+  import GscAnalyticsWeb.Dashboard.Formatters
 
   alias GscAnalytics.Crawler
   alias GscAnalyticsWeb.Live.AccountHelpers
+  alias GscAnalyticsWeb.Live.PaginationHelpers
   alias GscAnalyticsWeb.PropertyRoutes
 
   @filter_options [
@@ -66,7 +69,7 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
       {problem_urls, total_count} =
         fetch_problem_urls_paginated(account.id, property_url, "all", 1, 25)
 
-      total_pages = calculate_total_pages(total_count, 25)
+      total_pages = PaginationHelpers.calculate_total_pages(total_count, 25)
       global_stats = fetch_global_stats(account.id, property_url)
       property_id = property && property.id
       scoped_job = scoped_job_for_selection(current_job, account.id, property_id)
@@ -118,8 +121,8 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
       property_context(property)
 
     # Parse pagination params from URL
-    page = parse_page(params["problem_page"])
-    limit = parse_limit(params["problem_limit"])
+    page = PaginationHelpers.parse_page(params["problem_page"])
+    limit = PaginationHelpers.parse_limit(params["problem_limit"])
 
     # Fetch paginated problem URLs and total count
     {problem_urls, total_count} =
@@ -131,7 +134,7 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
         limit
       )
 
-    total_pages = calculate_total_pages(total_count, limit)
+    total_pages = PaginationHelpers.calculate_total_pages(total_count, limit)
 
     socket =
       socket
@@ -324,7 +327,8 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
           socket.assigns.problem_limit
         )
 
-      total_pages = calculate_total_pages(total_count, socket.assigns.problem_limit)
+      total_pages =
+        PaginationHelpers.calculate_total_pages(total_count, socket.assigns.problem_limit)
 
       # Refresh global stats to reflect latest database state
       global_stats = fetch_global_stats(account_id, property_url)
@@ -354,6 +358,13 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
 
   @impl true
   def handle_info(_message, socket), do: {:noreply, socket}
+
+  @impl true
+  def terminate(_reason, _socket) do
+    # Detach telemetry handler to prevent memory leaks
+    :telemetry.detach("dashboard-http-checks-#{inspect(self())}")
+    :ok
+  end
 
   # ============================================================================
   # Private Helpers
@@ -497,42 +508,7 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
   defp parse_filter("redirected"), do: :redirected
   defp parse_filter(_), do: :stale
 
-  defp format_duration(nil), do: "—"
-
-  defp format_duration(ms) when is_integer(ms) do
-    cond do
-      ms < 1000 -> "#{ms} ms"
-      ms < 60_000 -> "#{Float.round(ms / 1000, 1)}s"
-      true -> "#{Float.round(ms / 60_000, 1)}m"
-    end
-  end
-
-  defp format_duration(_), do: "—"
-
-  defp format_rate(nil), do: "—"
-
-  defp format_rate(rate) when is_float(rate) do
-    cond do
-      rate >= 10 -> "#{Float.round(rate, 1)} URLs/sec"
-      rate >= 1 -> "#{Float.round(rate, 2)} URLs/sec"
-      rate > 0 -> "#{Float.round(rate * 60, 1)} URLs/min"
-      true -> "—"
-    end
-  end
-
-  defp format_rate(_), do: "—"
-
-  defp status_code_badge_class(status) when status >= 200 and status < 300,
-    do: "badge badge-success"
-
-  defp status_code_badge_class(status) when status >= 300 and status < 400,
-    do: "badge badge-warning"
-
-  defp status_code_badge_class(status) when status >= 400 and status < 500,
-    do: "badge badge-error"
-
-  defp status_code_badge_class(status) when status >= 500, do: "badge badge-error"
-  defp status_code_badge_class(_), do: "badge badge-ghost"
+  # Formatting helpers moved to GscAnalyticsWeb.Dashboard.Formatters module
 
   defp fetch_problem_urls_paginated(nil, _property_url, _status_filter, _page, _limit),
     do: {[], 0}
@@ -588,9 +564,12 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
       |> limit(^limit)
       |> offset(^offset)
       |> select([p], %{
+        id: p.id,
         url: p.url,
         http_status: p.http_status,
-        http_checked_at: p.http_checked_at
+        http_checked_at: p.http_checked_at,
+        redirect_url: p.redirect_url,
+        http_redirect_chain: p.http_redirect_chain
       })
       |> Repo.all()
 
@@ -719,27 +698,8 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
   end
 
   # ============================================================================
-  # Pagination Helpers
+  # Pagination Helpers - Moved to PaginationHelpers module
   # ============================================================================
-
-  defp parse_page(nil), do: 1
-  defp parse_page(page) when is_binary(page), do: String.to_integer(page)
-  defp parse_page(page) when is_integer(page), do: page
-  defp parse_page(_), do: 1
-
-  defp parse_limit(nil), do: 25
-  defp parse_limit(limit) when is_binary(limit), do: normalize_limit(String.to_integer(limit))
-  defp parse_limit(limit) when is_integer(limit), do: normalize_limit(limit)
-  defp parse_limit(_), do: 25
-
-  defp normalize_limit(limit) when limit in [10, 25, 50, 100], do: limit
-  defp normalize_limit(_), do: 25
-
-  defp calculate_total_pages(0, _limit), do: 1
-
-  defp calculate_total_pages(total_count, limit) do
-    Float.ceil(total_count / limit) |> trunc()
-  end
 
   defp push_crawler_patch(socket, params) do
     # Merge pagination params with current account/property params
@@ -868,6 +828,46 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
 
   defp filter_label_for_value(_), do: nil
 
+  def redirect_destination(url_info) when is_map(url_info) do
+    redirect_url =
+      url_info
+      |> Map.get(:redirect_url)
+      |> presence_or_nil()
+
+    cond do
+      redirect_url ->
+        redirect_url
+
+      true ->
+        url_info
+        |> Map.get(:http_redirect_chain)
+        |> final_redirect_from_chain()
+    end
+  end
+
+  def redirect_destination(_), do: nil
+
+  def redirecting?(url_info) when is_map(url_info) do
+    status = Map.get(url_info, :http_status)
+    destination = redirect_destination(url_info)
+    status && status >= 300 && status < 400 && not is_nil(destination)
+  end
+
+  def redirecting?(_), do: false
+
+  def truncate_url(url, max_length \\ 80)
+
+  def truncate_url(url, max_length)
+      when is_binary(url) and is_integer(max_length) and max_length > 0 do
+    if String.length(url) <= max_length do
+      url
+    else
+      String.slice(url, 0, max_length) <> "…"
+    end
+  end
+
+  def truncate_url(_url, _max_length), do: nil
+
   def status_color_class(status) when is_integer(status) do
     cond do
       status >= 200 and status < 300 -> "mi-status-active"
@@ -878,4 +878,36 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
   end
 
   def status_color_class(_), do: "mi-terminal-text"
+
+  defp presence_or_nil(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp presence_or_nil(_), do: nil
+
+  defp final_redirect_from_chain(%{} = chain) when map_size(chain) > 0 do
+    chain
+    |> Enum.map(fn {step, target} -> {parse_step_index(step), presence_or_nil(target)} end)
+    |> Enum.reject(fn {_idx, target} -> is_nil(target) end)
+    |> Enum.sort_by(&elem(&1, 0))
+    |> List.last()
+    |> case do
+      {_, target} -> target
+      _ -> nil
+    end
+  end
+
+  defp final_redirect_from_chain(_), do: nil
+
+  defp parse_step_index("step_" <> index) do
+    case Integer.parse(index) do
+      {value, _} -> value
+      :error -> 0
+    end
+  end
+
+  defp parse_step_index(_), do: 0
 end

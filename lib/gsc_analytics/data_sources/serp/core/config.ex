@@ -13,15 +13,14 @@ defmodule GscAnalytics.DataSources.SERP.Core.Config do
   def api_key do
     api_key = Application.get_env(:gsc_analytics, :scrapfly_api_key)
 
-    cond do
-      is_binary(api_key) && String.length(api_key) > 0 ->
-        api_key
-
-      @is_test ->
+    if is_binary(api_key) && String.length(api_key) > 0 do
+      api_key
+    else
+      if @is_test do
         "test_api_key_placeholder"
-
-      true ->
+      else
         raise "SCRAPFLY_API_KEY not configured. Set SCRAPFLY_API_KEY environment variable."
+      end
     end
   end
 

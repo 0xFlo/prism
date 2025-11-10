@@ -82,9 +82,6 @@ defmodule GscAnalytics.ContentInsights.UrlPerformance do
   end
 
   defp build_hybrid_query(account_id, property_url, period_days, search_pattern) do
-    period_query =
-      build_period_metrics_query(account_id, property_url, period_days, search_pattern)
-
     backlink_query =
       Backlink
       |> maybe_filter_backlinks(search_pattern)
@@ -100,15 +97,63 @@ defmodule GscAnalytics.ContentInsights.UrlPerformance do
         backlinks_last_imported: max(b.imported_at)
       })
 
-    from(ls in "url_lifetime_stats")
-    |> where([ls], ls.account_id == ^account_id and ls.property_url == ^property_url)
-    |> join(:left, [ls], pm in subquery(period_query), on: pm.url == ls.url)
-    |> join(:left, [ls, pm], bl in subquery(backlink_query), on: bl.target_url == ls.url)
-    |> join(:left, [ls, pm, bl], p in Performance,
+    base_query =
+      from(ls in "url_lifetime_stats")
+      |> where([ls], ls.account_id == ^account_id and ls.property_url == ^property_url)
+
+    # Optimization: Skip period JOIN entirely when viewing lifetime data (period_days >= 10_000)
+    # This saves ~200-500ms by avoiding a subquery that returns WHERE FALSE
+    query_with_period =
+      if lifetime_window?(period_days) do
+        base_query
+      else
+        period_query =
+          build_period_metrics_query(account_id, property_url, period_days, search_pattern)
+
+        join(base_query, :left, [ls], pm in subquery(period_query), on: pm.url == ls.url)
+      end
+
+    query_with_period
+    |> join(:left, [ls], bl in subquery(backlink_query), on: bl.target_url == ls.url)
+    |> join(:left, [ls], p in Performance,
       on: p.url == ls.url and p.account_id == ^account_id and p.property_url == ^property_url
     )
     |> maybe_filter_lifetime_stats(search_pattern)
-    |> select([ls, pm, bl, p], %{
+    |> build_select_clause(lifetime_window?(period_days))
+  end
+
+  defp build_select_clause(query, true = _lifetime_window) do
+    # Lifetime window: no period metrics join, simpler select
+    select(query, [ls, bl, p], %{
+      url: ls.url,
+      lifetime_clicks: ls.lifetime_clicks,
+      lifetime_impressions: ls.lifetime_impressions,
+      lifetime_avg_position: ls.avg_position,
+      lifetime_avg_ctr: ls.avg_ctr,
+      first_seen_date: ls.first_seen_date,
+      last_seen_date: ls.last_seen_date,
+      days_with_data: ls.days_with_data,
+      period_clicks: 0,
+      period_impressions: 0,
+      period_position: 0.0,
+      period_ctr: 0.0,
+      backlink_count: coalesce(bl.backlink_count, 0),
+      backlinks_last_imported: bl.backlinks_last_imported,
+      http_status: p.http_status,
+      redirect_url: p.redirect_url,
+      http_checked_at: p.http_checked_at,
+      data_available:
+        fragment(
+          "(? > 0 OR ? > 0)",
+          ls.lifetime_clicks,
+          ls.lifetime_impressions
+        )
+    })
+  end
+
+  defp build_select_clause(query, false = _lifetime_window) do
+    # Period window: include period metrics from join
+    select(query, [ls, pm, bl, p], %{
       url: ls.url,
       lifetime_clicks: ls.lifetime_clicks,
       lifetime_impressions: ls.lifetime_impressions,

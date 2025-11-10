@@ -55,24 +55,17 @@ defmodule GscAnalytics.Workers.HttpStatusRecheckWorker do
     # Enqueue stale URL checks for each workspace
     results =
       Enum.map(workspaces, fn workspace ->
-        case HttpStatusCheckWorker.enqueue_stale_urls(
-               account_id: workspace.account_id,
-               property_url: workspace.property_url,
-               # Limit to 1000 URLs per workspace to prevent overwhelming the queue
-               limit: 1000,
-               # Use lower priority since these are periodic re-checks
-               priority: 3
-             ) do
-          {:ok, jobs} ->
-            {:ok, length(jobs)}
+        {:ok, jobs} =
+          HttpStatusCheckWorker.enqueue_stale_urls(
+            account_id: workspace.account_id,
+            property_url: workspace.property_url,
+            # Limit to 1000 URLs per workspace to prevent overwhelming the queue
+            limit: 1000,
+            # Use lower priority since these are periodic re-checks
+            priority: 3
+          )
 
-          {:error, reason} ->
-            Logger.error(
-              "Failed to enqueue stale URLs for workspace #{workspace.account_id}: #{inspect(reason)}"
-            )
-
-            {:error, reason}
-        end
+        {:ok, length(jobs)}
       end)
 
     successful = Enum.count(results, &match?({:ok, _}, &1))

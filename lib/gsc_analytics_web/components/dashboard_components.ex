@@ -13,6 +13,7 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
 
   import GscAnalyticsWeb.Dashboard.HTMLHelpers
   alias GscAnalyticsWeb.PropertyRoutes
+  alias GscAnalyticsWeb.Live.PaginationHelpers
 
   @doc """
   Renders a URL in breadcrumb-style hierarchical format.
@@ -462,12 +463,17 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
   attr :per_page_options, :list, default: [50, 100, 200, 500]
 
   def pagination(assigns) do
-    # Calculate range being displayed
-    start_item = (assigns.current_page - 1) * assigns.per_page + 1
-    end_item = min(assigns.current_page * assigns.per_page, assigns.total_items)
+    # Calculate range being displayed using PaginationHelpers
+    {start_item, end_item} =
+      PaginationHelpers.calculate_item_range(
+        assigns.current_page,
+        assigns.per_page,
+        assigns.total_items
+      )
 
     # Generate visible page numbers with ellipsis
-    visible_pages = calculate_visible_pages(assigns.current_page, assigns.total_pages)
+    visible_pages =
+      PaginationHelpers.calculate_visible_pages(assigns.current_page, assigns.total_pages)
 
     assigns =
       assigns
@@ -712,27 +718,6 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
   defp column_header_label(:position, period_label), do: "Position · #{period_label}"
   defp column_header_label(_key, _period_label), do: nil
 
-  @doc false
-  defp calculate_visible_pages(_current, total) when total <= 7 do
-    # If 7 or fewer pages, show all
-    Enum.to_list(1..total)
-  end
-
-  defp calculate_visible_pages(current, total) when current <= 4 do
-    # Near the start: [1, 2, 3, 4, 5, ..., last]
-    [1, 2, 3, 4, 5, :ellipsis, total]
-  end
-
-  defp calculate_visible_pages(current, total) when current >= total - 3 do
-    # Near the end: [1, ..., last-4, last-3, last-2, last-1, last]
-    [1, :ellipsis, total - 4, total - 3, total - 2, total - 1, total]
-  end
-
-  defp calculate_visible_pages(current, total) do
-    # In the middle: [1, ..., current-1, current, current+1, ..., last]
-    [1, :ellipsis, current - 1, current, current + 1, :ellipsis, total]
-  end
-
   @doc """
   Renders a group of toggle buttons with active state styling.
 
@@ -944,6 +929,7 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
   attr :property_favicon_url, :string, default: nil
   attr :current_property_id, :string, default: nil
   attr :empty_message, :string, default: "No property selected"
+  attr :class, :string, default: nil
 
   def property_selector(assigns) do
     ~H"""
@@ -959,7 +945,7 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
       <% end %>
     <% else %>
       <div class="dropdown dropdown-end">
-        <label tabindex="0" class="btn btn-ghost gap-2 normal-case text-base font-medium">
+        <label tabindex="0" class={["btn btn-ghost gap-2 normal-case text-base font-medium", @class]}>
           <%= if @property_favicon_url do %>
             <img src={@property_favicon_url} alt="" class="w-4 h-4 flex-shrink-0" />
           <% end %>
@@ -1260,7 +1246,8 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
       %{value: "30", label: "Last 30 days"},
       %{value: "90", label: "Last 90 days"},
       %{value: "180", label: "Last 6 months"},
-      %{value: "all", label: "Last 12 months"}
+      %{value: "365", label: "Last 12 months"},
+      %{value: "all", label: "All time"}
     ]
   end
 

@@ -11,9 +11,7 @@ defmodule GscAnalyticsWeb.DashboardWorkflowBuilderLive do
 
   use GscAnalyticsWeb, :live_view
 
-  alias GscAnalytics.Repo
   alias GscAnalytics.Workflows
-  alias GscAnalytics.Schemas.Workflow
   alias GscAnalyticsWeb.Live.AccountHelpers
   alias GscAnalyticsWeb.PropertyRoutes
 
@@ -112,6 +110,12 @@ defmodule GscAnalyticsWeb.DashboardWorkflowBuilderLive do
         # Silent failure for auto-save - don't spam user with errors
         {:noreply, socket}
     end
+  end
+
+  @impl true
+  def handle_event("navigate_back", _params, socket) do
+    workflows_path = PropertyRoutes.workflows_path(socket.assigns.current_property_id)
+    {:noreply, push_navigate(socket, to: workflows_path)}
   end
 
   @impl true
