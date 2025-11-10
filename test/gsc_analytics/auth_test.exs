@@ -554,7 +554,7 @@ defmodule GscAnalytics.AuthTest do
     end
 
     test "mark_valid/1 clears error and sets status to valid", %{account: account} do
-      # Create an invalid OAuth token
+      # Create a valid OAuth token first
       {:ok, token} =
         Auth.store_oauth_token(nil, %{
           account_id: account.id,
@@ -562,16 +562,21 @@ defmodule GscAnalytics.AuthTest do
           refresh_token: "test_refresh_token",
           access_token: "test_access_token",
           expires_at: DateTime.add(DateTime.utc_now(), 3600),
-          scopes: ["https://www.googleapis.com/auth/webmasters.readonly"],
-          status: :invalid,
-          last_error: "Previous error"
+          scopes: ["https://www.googleapis.com/auth/webmasters.readonly"]
         })
 
-      assert token.status == :invalid
+      # Mark as invalid using mark_invalid
+      token_from_db = Repo.get(OAuthToken, token.id)
+
+      {:ok, invalid_token} =
+        token_from_db
+        |> OAuthToken.mark_invalid("Previous error")
+        |> Repo.update()
+
+      assert invalid_token.status == :invalid
 
       # Mark as valid
-      token_from_db = Repo.get(OAuthToken, token.id)
-      changeset = OAuthToken.mark_valid(token_from_db)
+      changeset = OAuthToken.mark_valid(invalid_token)
       {:ok, updated_token} = Repo.update(changeset)
 
       assert updated_token.status == :valid
@@ -668,18 +673,24 @@ defmodule GscAnalytics.AuthTest do
     test "validate_oauth_token_status/2 returns status immediately for already invalid tokens", %{
       account: account
     } do
-      # Create an invalid token
-      {:ok, token} =
+      # Create a valid token first
+      {:ok, initial_token} =
         Auth.store_oauth_token(nil, %{
           account_id: account.id,
           google_email: "test@example.com",
           refresh_token: "test_refresh_token",
           access_token: "test_access_token",
           expires_at: DateTime.add(DateTime.utc_now(), 3600),
-          scopes: ["https://www.googleapis.com/auth/webmasters.readonly"],
-          status: :invalid,
-          last_error: "Token revoked"
+          scopes: ["https://www.googleapis.com/auth/webmasters.readonly"]
         })
+
+      # Manually mark token as invalid in database
+      db_token = Repo.get(OAuthToken, initial_token.id)
+
+      {:ok, token} =
+        db_token
+        |> OAuthToken.mark_invalid("Token revoked")
+        |> Repo.update()
 
       # Should return invalid without database write
       assert {:ok, :invalid} = Auth.validate_oauth_token_status(nil, account.id)
@@ -758,35 +769,48 @@ defmodule GscAnalytics.AuthTest do
     end
 
     test "Authenticator.get_token/1 rejects invalid tokens", %{account: account} do
-      # Create an invalid token
-      {:ok, _token} =
+      # Create a valid token first
+      {:ok, initial_token} =
         Auth.store_oauth_token(nil, %{
           account_id: account.id,
           google_email: "test@example.com",
           refresh_token: "test_refresh_token",
           access_token: "test_access_token",
           expires_at: DateTime.add(DateTime.utc_now(), 3600),
-          scopes: ["https://www.googleapis.com/auth/webmasters.readonly"],
-          status: :invalid,
-          last_error: "Token has been revoked"
+          scopes: ["https://www.googleapis.com/auth/webmasters.readonly"]
         })
+
+      # Manually mark token as invalid in database
+      db_token = Repo.get(OAuthToken, initial_token.id)
+
+      {:ok, _token} =
+        db_token
+        |> OAuthToken.mark_invalid("Token has been revoked")
+        |> Repo.update()
 
       # Authenticator should reject the token
       assert {:error, :oauth_token_invalid} = Authenticator.get_token(account.id)
     end
 
     test "Authenticator.get_token/1 rejects expired tokens", %{account: account} do
-      # Create an expired token
-      {:ok, _token} =
+      # Create a valid token first
+      {:ok, initial_token} =
         Auth.store_oauth_token(nil, %{
           account_id: account.id,
           google_email: "test@example.com",
           refresh_token: "test_refresh_token",
           access_token: "test_access_token",
           expires_at: DateTime.add(DateTime.utc_now(), 3600),
-          scopes: ["https://www.googleapis.com/auth/webmasters.readonly"],
-          status: :expired
+          scopes: ["https://www.googleapis.com/auth/webmasters.readonly"]
         })
+
+      # Manually mark token as expired in database
+      db_token = Repo.get(OAuthToken, initial_token.id)
+
+      {:ok, _token} =
+        db_token
+        |> OAuthToken.mark_expired()
+        |> Repo.update()
 
       # Authenticator should reject the token
       assert {:error, :oauth_token_invalid} = Authenticator.get_token(account.id)
@@ -807,6 +831,75 @@ defmodule GscAnalytics.AuthTest do
       # Authenticator should return the token
       assert {:ok, access_token} = Authenticator.get_token(account.id)
       assert access_token == token.access_token
+    end
+
+    test "store_oauth_token sets status to valid when storing fresh tokens", %{account: account} do
+      # Create a token without specifying status
+      {:ok, token} =
+        Auth.store_oauth_token(nil, %{
+          account_id: account.id,
+          google_email: "test@example.com",
+          refresh_token: "test_refresh_token",
+          access_token: "test_access_token",
+          expires_at: DateTime.add(DateTime.utc_now(), 3600),
+          scopes: ["https://www.googleapis.com/auth/webmasters.readonly"]
+        })
+
+      # Status should be automatically set to :valid
+      assert token.status == :valid
+
+      # Verify in database as well
+      db_token = Repo.get(OAuthToken, token.id)
+      assert db_token.status == :valid
+    end
+
+    test "store_oauth_token updates invalid tokens to valid status", %{account: account} do
+      # Create a valid token first
+      {:ok, initial_token} =
+        Auth.store_oauth_token(nil, %{
+          account_id: account.id,
+          google_email: "test@example.com",
+          refresh_token: "old_refresh_token",
+          access_token: "old_access_token",
+          expires_at: DateTime.add(DateTime.utc_now(), 3600),
+          scopes: ["https://www.googleapis.com/auth/webmasters.readonly"]
+        })
+
+      assert initial_token.status == :valid
+
+      # Manually mark token as invalid in database (simulating token revocation)
+      db_token = Repo.get(OAuthToken, initial_token.id)
+
+      {:ok, invalid_token} =
+        db_token
+        |> OAuthToken.mark_invalid("Token has been expired or revoked.")
+        |> Repo.update()
+
+      assert invalid_token.status == :invalid
+      assert invalid_token.last_error == "Token has been expired or revoked."
+
+      # Now update with fresh tokens (simulating OAuth re-authentication callback)
+      {:ok, updated_token} =
+        Auth.store_oauth_token(nil, %{
+          account_id: account.id,
+          google_email: "test@example.com",
+          refresh_token: "new_refresh_token",
+          access_token: "new_access_token",
+          expires_at: DateTime.add(DateTime.utc_now(), 3600),
+          scopes: ["https://www.googleapis.com/auth/webmasters.readonly"]
+        })
+
+      # Status should be updated to :valid
+      assert updated_token.status == :valid
+      assert updated_token.access_token == "new_access_token"
+      assert updated_token.refresh_token == "new_refresh_token"
+
+      # Verify this is the same token record (update, not insert)
+      assert updated_token.id == invalid_token.id
+
+      # Verify in database
+      db_token_after = Repo.get(OAuthToken, updated_token.id)
+      assert db_token_after.status == :valid
     end
   end
 end

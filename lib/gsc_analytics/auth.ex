@@ -346,6 +346,8 @@ defmodule GscAnalytics.Auth do
         attrs
         |> Map.put(:account_id, account_id)
         |> normalize_scope_attr()
+        # Ensure status is set to :valid when storing fresh tokens
+        |> Map.put(:status, :valid)
 
       result =
         case Repo.get_by(OAuthToken, account_id: account_id) do
