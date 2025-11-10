@@ -20,7 +20,7 @@
         </p>
       </div>
       <.link
-        navigate={~p"/dashboard"}
+        navigate={GscAnalyticsWeb.PropertyRoutes.dashboard_path(@current_property_id)}
         class="btn btn-ghost gap-2 text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
       >
         <.icon name="hero-arrow-left" class="h-5 w-5" /> Back to dashboard

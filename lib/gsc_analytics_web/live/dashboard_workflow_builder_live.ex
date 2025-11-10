@@ -15,6 +15,7 @@ defmodule GscAnalyticsWeb.DashboardWorkflowBuilderLive do
   alias GscAnalytics.Workflows
   alias GscAnalytics.Schemas.Workflow
   alias GscAnalyticsWeb.Live.AccountHelpers
+  alias GscAnalyticsWeb.PropertyRoutes
 
   @impl true
   def mount(%{"id" => workflow_id}, _session, socket) do
@@ -40,12 +41,15 @@ defmodule GscAnalyticsWeb.DashboardWorkflowBuilderLive do
           {:ok,
            socket
            |> put_flash(:error, "Workflow not found")
-           |> redirect(to: ~p"/dashboard/workflows")}
+           |> redirect(to: PropertyRoutes.workflows_path(socket.assigns.current_property_id))}
 
         workflow ->
+          current_path =
+            PropertyRoutes.workflow_edit_path(socket.assigns.current_property_id, workflow_id)
+
           socket =
             socket
-            |> assign(:current_path, "/dashboard/workflows/#{workflow_id}/edit")
+            |> assign(:current_path, current_path)
             |> assign(:page_title, "Edit Workflow: #{workflow.name}")
             |> assign(:workflow, workflow)
             |> assign(:workflow_id, workflow_id)
@@ -58,11 +62,12 @@ defmodule GscAnalyticsWeb.DashboardWorkflowBuilderLive do
   end
 
   @impl true
-  def handle_params(params, _uri, socket) do
+  def handle_params(params, uri, socket) do
     socket =
       socket
       |> AccountHelpers.assign_current_account(params)
       |> AccountHelpers.assign_current_property(params)
+      |> assign(:current_path, URI.parse(uri).path || socket.assigns[:current_path])
 
     {:noreply, socket}
   end

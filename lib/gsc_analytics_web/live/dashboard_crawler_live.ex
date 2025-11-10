@@ -17,6 +17,7 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
 
   alias GscAnalytics.Crawler
   alias GscAnalyticsWeb.Live.AccountHelpers
+  alias GscAnalyticsWeb.PropertyRoutes
 
   @filter_options [
     {"Stale URLs (unchecked or >7 days old)", "stale"},
@@ -24,6 +25,8 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
     {"Broken Links (4xx/5xx)", "broken"},
     {"Redirected URLs (3xx)", "redirected"}
   ]
+
+  @filter_label_lookup Map.new(@filter_options, fn {label, value} -> {value, label} end)
 
   @impl true
   def mount(params, _session, socket) do
@@ -71,7 +74,6 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
 
       socket =
         socket
-        |> assign(:current_path, "/dashboard/crawler")
         |> assign(:page_title, "URL Health Monitor")
         |> assign(:filter_options, @filter_options)
         |> assign(:form, build_form("stale"))
@@ -206,12 +208,17 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
 
   @impl true
   def handle_event("change_account", %{"account_id" => account_id}, socket) do
-    {:noreply, push_patch(socket, to: ~p"/dashboard/crawler?#{[account_id: account_id]}")}
+    {:noreply,
+     push_patch(
+       socket,
+       to:
+         PropertyRoutes.crawler_path(socket.assigns.current_property_id, %{account_id: account_id})
+     )}
   end
 
   @impl true
   def handle_event("switch_property", %{"property_id" => property_id}, socket) do
-    {:noreply, push_patch(socket, to: ~p"/dashboard/crawler?#{[property_id: property_id]}")}
+    {:noreply, push_patch(socket, to: PropertyRoutes.crawler_path(property_id))}
   end
 
   def handle_event("switch_property", _params, socket), do: {:noreply, socket}
@@ -353,23 +360,27 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
   # ============================================================================
 
   defp assign_progress(socket, nil) do
+    status_counts = default_status_counts()
+
     assign(socket, :progress, %{
       job_id: nil,
       running?: false,
       total_urls: 0,
       checked: 0,
+      checked_urls: 0,
       percent: 0.0,
       rate: nil,
+      crawl_speed: nil,
       started_at: nil,
       finished_at: nil,
       duration_ms: nil,
-      status_counts: %{
-        "2xx" => 0,
-        "3xx" => 0,
-        "4xx" => 0,
-        "5xx" => 0,
-        "errors" => 0
-      }
+      status_counts: status_counts,
+      status_2xx: Map.get(status_counts, "2xx"),
+      status_3xx: Map.get(status_counts, "3xx"),
+      status_4xx: Map.get(status_counts, "4xx"),
+      status_5xx: Map.get(status_counts, "5xx"),
+      errors: Map.get(status_counts, "errors"),
+      filter: nil
     })
   end
 
@@ -377,6 +388,7 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
     total = job.total_urls || 0
     checked = job.checked || 0
     running? = is_nil(Map.get(job, :finished_at))
+    duration_ms = calculate_duration_for_progress(job, running?)
 
     percent =
       if total > 0 do
@@ -387,26 +399,29 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
 
     # Calculate crawl speed (URLs per second)
     rate = calculate_crawl_rate(job, checked, running?)
+    status_counts = job.status_counts || default_status_counts()
+    filter = Map.get(job, :filter) || get_in(job, [:metadata, :filter])
+    checked_urls = Map.get(job, :checked_urls, checked)
 
     assign(socket, :progress, %{
       job_id: job.id,
       running?: running?,
       total_urls: total,
       checked: checked,
+      checked_urls: checked_urls,
       percent: percent,
       rate: rate,
+      crawl_speed: rate,
       started_at: job.started_at,
       finished_at: Map.get(job, :finished_at),
-      duration_ms: Map.get(job, :duration_ms),
-      status_counts:
-        job.status_counts ||
-          %{
-            "2xx" => 0,
-            "3xx" => 0,
-            "4xx" => 0,
-            "5xx" => 0,
-            "errors" => 0
-          }
+      duration_ms: duration_ms,
+      status_counts: status_counts,
+      status_2xx: Map.get(status_counts, "2xx", 0),
+      status_3xx: Map.get(status_counts, "3xx", 0),
+      status_4xx: Map.get(status_counts, "4xx", 0),
+      status_5xx: Map.get(status_counts, "5xx", 0),
+      errors: Map.get(status_counts, "errors", 0),
+      filter: filter
     })
   end
 
@@ -428,6 +443,24 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
     else
       nil
     end
+  end
+
+  defp calculate_duration_for_progress(job, true) do
+    DateTime.diff(DateTime.utc_now(), job.started_at, :millisecond)
+  end
+
+  defp calculate_duration_for_progress(job, false) do
+    Map.get(job, :duration_ms)
+  end
+
+  defp default_status_counts do
+    %{
+      "2xx" => 0,
+      "3xx" => 0,
+      "4xx" => 0,
+      "5xx" => 0,
+      "errors" => 0
+    }
   end
 
   defp property_context(nil) do
@@ -717,7 +750,10 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
 
     merged_params = Map.merge(current_params, params)
 
-    push_patch(socket, to: ~p"/dashboard/crawler?#{merged_params}")
+    push_patch(
+      socket,
+      to: PropertyRoutes.crawler_path(socket.assigns.current_property_id, merged_params)
+    )
   end
 
   # ============================================================================
@@ -777,4 +813,69 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
 
     Map.put(stats, :last_completed_at, last_check)
   end
+
+  # ============================================================================
+  # Mission Impossible Theme Helper Functions
+  # ============================================================================
+
+  defp history_status(check) do
+    status =
+      Map.get(check, :status) ||
+        Map.get(check, "status") ||
+        get_in(check, [:metadata, :status])
+
+    cond do
+      is_binary(status) -> String.downcase(status)
+      is_atom(status) -> status |> Atom.to_string() |> String.downcase()
+      true -> "completed"
+    end
+  end
+
+  defp history_status_class("completed"), do: "mi-status-active"
+  defp history_status_class("failed"), do: "mi-status-critical"
+  defp history_status_class("running"), do: "mi-status-warning"
+  defp history_status_class(_), do: nil
+
+  defp history_checked_count(check) do
+    Map.get(check, :checked_urls) ||
+      Map.get(check, "checked_urls") ||
+      Map.get(check, :checked) ||
+      Map.get(check, "checked") ||
+      0
+  end
+
+  defp history_filter_label(check) do
+    filter =
+      Map.get(check, :filter) ||
+        Map.get(check, "filter") ||
+        get_in(check, [:metadata, :filter]) ||
+        get_in(check, ["metadata", "filter"])
+
+    filter_label_for_value(filter)
+  end
+
+  defp filter_label_for_value(nil), do: nil
+
+  defp filter_label_for_value(filter) when is_atom(filter) do
+    filter
+    |> Atom.to_string()
+    |> filter_label_for_value()
+  end
+
+  defp filter_label_for_value(filter) when is_binary(filter) do
+    Map.get(@filter_label_lookup, filter, filter)
+  end
+
+  defp filter_label_for_value(_), do: nil
+
+  def status_color_class(status) when is_integer(status) do
+    cond do
+      status >= 200 and status < 300 -> "mi-status-active"
+      status >= 300 and status < 400 -> "mi-status-warning"
+      status >= 400 -> "mi-status-critical"
+      true -> "mi-terminal-text"
+    end
+  end
+
+  def status_color_class(_), do: "mi-terminal-text"
 end

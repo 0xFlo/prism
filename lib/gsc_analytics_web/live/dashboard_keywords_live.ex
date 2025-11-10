@@ -5,6 +5,7 @@ defmodule GscAnalyticsWeb.DashboardKeywordsLive do
   alias GscAnalytics.Dashboard, as: DashboardUtils
   alias GscAnalyticsWeb.Live.AccountHelpers
   alias GscAnalyticsWeb.Layouts
+  alias GscAnalyticsWeb.PropertyRoutes
 
   import GscAnalyticsWeb.Dashboard.HTMLHelpers
 
@@ -100,20 +101,30 @@ defmodule GscAnalyticsWeb.DashboardKeywordsLive do
   def handle_event("search", %{"search" => search_term}, socket) do
     # Update search - reset to page 1 when searching
     params = build_params(socket, %{search: search_term, page: 1})
-    {:noreply, push_patch(socket, to: ~p"/dashboard/keywords?#{params}")}
+
+    {:noreply,
+     push_patch(
+       socket,
+       to: PropertyRoutes.keywords_path(socket.assigns.current_property_id, params)
+     )}
   end
 
   @impl true
   def handle_event("change_period", %{"period" => period}, socket) do
     # Update period - reset to page 1 since data changes
     params = build_params(socket, %{period: period, page: 1})
-    {:noreply, push_patch(socket, to: ~p"/dashboard/keywords?#{params}")}
+
+    {:noreply,
+     push_patch(
+       socket,
+       to: PropertyRoutes.keywords_path(socket.assigns.current_property_id, params)
+     )}
   end
 
   @impl true
   def handle_event("switch_property", %{"property_id" => property_id}, socket) do
-    params = build_params(socket, %{property_id: property_id})
-    {:noreply, push_patch(socket, to: ~p"/dashboard/keywords?#{params}")}
+    params = build_params(socket, %{})
+    {:noreply, push_patch(socket, to: PropertyRoutes.keywords_path(property_id, params))}
   end
 
   @impl true
@@ -128,7 +139,12 @@ defmodule GscAnalyticsWeb.DashboardKeywordsLive do
       end
 
     params = build_params(socket, %{sort_by: column, sort_direction: new_direction, page: 1})
-    {:noreply, push_patch(socket, to: ~p"/dashboard/keywords?#{params}")}
+
+    {:noreply,
+     push_patch(
+       socket,
+       to: PropertyRoutes.keywords_path(socket.assigns.current_property_id, params)
+     )}
   end
 
   @impl true
@@ -137,21 +153,36 @@ defmodule GscAnalyticsWeb.DashboardKeywordsLive do
     page_num = max(1, min(page_num, socket.assigns.total_pages))
 
     params = build_params(socket, %{page: page_num})
-    {:noreply, push_patch(socket, to: ~p"/dashboard/keywords?#{params}")}
+
+    {:noreply,
+     push_patch(
+       socket,
+       to: PropertyRoutes.keywords_path(socket.assigns.current_property_id, params)
+     )}
   end
 
   @impl true
   def handle_event("next_page", _params, socket) do
     next_page = min(socket.assigns.page + 1, socket.assigns.total_pages)
     params = build_params(socket, %{page: next_page})
-    {:noreply, push_patch(socket, to: ~p"/dashboard/keywords?#{params}")}
+
+    {:noreply,
+     push_patch(
+       socket,
+       to: PropertyRoutes.keywords_path(socket.assigns.current_property_id, params)
+     )}
   end
 
   @impl true
   def handle_event("prev_page", _params, socket) do
     prev_page = max(socket.assigns.page - 1, 1)
     params = build_params(socket, %{page: prev_page})
-    {:noreply, push_patch(socket, to: ~p"/dashboard/keywords?#{params}")}
+
+    {:noreply,
+     push_patch(
+       socket,
+       to: PropertyRoutes.keywords_path(socket.assigns.current_property_id, params)
+     )}
   end
 
   # Helper to build URL params preserving current state
@@ -162,8 +193,7 @@ defmodule GscAnalyticsWeb.DashboardKeywordsLive do
       limit: Map.get(overrides, :limit, socket.assigns.limit),
       page: Map.get(overrides, :page, socket.assigns.page),
       period: Map.get(overrides, :period, socket.assigns.period_days),
-      search: Map.get(overrides, :search, socket.assigns.search),
-      property_id: Map.get(overrides, :property_id, socket.assigns.current_property_id)
+      search: Map.get(overrides, :search, socket.assigns.search)
     }
 
     base

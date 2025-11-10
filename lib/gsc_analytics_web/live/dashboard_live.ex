@@ -10,6 +10,7 @@ defmodule GscAnalyticsWeb.DashboardLive do
   alias GscAnalyticsWeb.Live.DashboardParams
   alias GscAnalyticsWeb.Dashboard.Columns
   alias GscAnalyticsWeb.Presenters.ChartDataPresenter
+  alias GscAnalyticsWeb.PropertyRoutes
 
   # Import component functions for template
   import GscAnalyticsWeb.Components.DashboardComponents
@@ -462,11 +463,16 @@ defmodule GscAnalyticsWeb.DashboardLive do
   defp normalize_sort_by(_), do: "clicks"
 
   defp push_dashboard_patch(socket, overrides) do
+    property_override = Map.get(overrides, :property_id)
+    sanitized_overrides = Map.delete(overrides, :property_id)
+
     params =
       socket.assigns
-      |> DashboardParams.build_dashboard_query(overrides)
+      |> DashboardParams.build_dashboard_query(sanitized_overrides)
 
-    push_patch(socket, to: ~p"/dashboard?#{params}")
+    property_id = property_override || socket.assigns.current_property_id
+
+    push_patch(socket, to: PropertyRoutes.dashboard_path(property_id, params))
   end
 
   # Display label helpers - extract inline template computations to proper assigns

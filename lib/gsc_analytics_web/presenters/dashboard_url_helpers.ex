@@ -6,6 +6,7 @@ defmodule GscAnalyticsWeb.Presenters.DashboardUrlHelpers do
   use GscAnalyticsWeb, :verified_routes
 
   alias GscAnalyticsWeb.Live.DashboardParams
+  alias GscAnalyticsWeb.PropertyRoutes
 
   @doc """
   Human-friendly label for the chart resolution dropdown.
@@ -89,14 +90,10 @@ defmodule GscAnalyticsWeb.Presenters.DashboardUrlHelpers do
       visible_series: Map.get(assigns, :visible_series, [:clicks, :impressions])
     }
 
+    property_id = Map.get(assigns, :current_property_id)
     dashboard_query = DashboardParams.build_dashboard_query(base)
 
-    dashboard_path =
-      if dashboard_query == [] do
-        ~p"/dashboard"
-      else
-        ~p"/dashboard?#{dashboard_query}"
-      end
+    dashboard_path = PropertyRoutes.dashboard_path(property_id, dashboard_query)
 
     export_query =
       DashboardParams.build_dashboard_query(
@@ -104,12 +101,7 @@ defmodule GscAnalyticsWeb.Presenters.DashboardUrlHelpers do
         %{limit: 100, sort_by: "clicks", view_mode: "basic"}
       )
 
-    export_path =
-      if export_query == [] do
-        ~p"/dashboard/export"
-      else
-        ~p"/dashboard/export?#{export_query}"
-      end
+    export_path = PropertyRoutes.export_path(property_id, export_query)
 
     %{return_path: dashboard_path, export_path: export_path}
   end

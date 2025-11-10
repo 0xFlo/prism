@@ -13,6 +13,7 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
   alias GscAnalytics.DataSources.GSC.Support.SyncProgress
   alias GscAnalytics.Schemas.{Performance, SyncDay, TimeSeries}
   alias GscAnalyticsWeb.Live.AccountHelpers
+  alias GscAnalyticsWeb.PropertyRoutes
 
   @max_days 540
   @default_days "30"
@@ -48,7 +49,6 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
     else
       socket =
         socket
-        |> assign(:current_path, "/dashboard/sync")
         |> assign(:page_title, "Sync Status")
         |> assign(:day_options, @day_options)
         |> assign(:form, build_form(@default_days))
@@ -79,13 +79,16 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
   end
 
   @impl true
-  def handle_params(params, _uri, socket) do
+  def handle_params(params, uri, socket) do
     previous_property_id = socket.assigns[:current_property_id]
+
+    current_path = URI.parse(uri).path || "/dashboard/sync"
 
     socket =
       socket
       |> AccountHelpers.assign_current_account(params)
       |> AccountHelpers.assign_current_property(params)
+      |> assign(:current_path, current_path)
 
     account_id = socket.assigns.current_account_id
     new_property_id = socket.assigns[:current_property_id]
@@ -187,12 +190,16 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
 
   @impl true
   def handle_event("change_account", %{"account_id" => account_id}, socket) do
-    {:noreply, push_patch(socket, to: ~p"/dashboard/sync?#{[account_id: account_id]}")}
+    {:noreply,
+     push_patch(
+       socket,
+       to: PropertyRoutes.sync_path(socket.assigns.current_property_id, %{account_id: account_id})
+     )}
   end
 
   @impl true
   def handle_event("switch_property", %{"property_id" => property_id}, socket) do
-    {:noreply, push_patch(socket, to: ~p"/dashboard/sync?#{[property_id: property_id]}")}
+    {:noreply, push_patch(socket, to: PropertyRoutes.sync_path(property_id))}
   end
 
   @impl true

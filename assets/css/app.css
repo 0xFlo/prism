@@ -121,3 +121,9 @@ html {
 }
 
 /* This file is for your main application CSS */
+
+/* Import React Flow styles for workflow builder */
+@import "@xyflow/react/dist/style.css";
+
+/* Import Mission Impossible 1996 Retro Theme */
+@import "./mission-impossible-retro.css";

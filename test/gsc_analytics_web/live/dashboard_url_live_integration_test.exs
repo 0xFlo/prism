@@ -23,6 +23,7 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
 
   alias GscAnalytics.Repo
   alias GscAnalytics.Schemas.TimeSeries
+  alias GscAnalyticsWeb.PropertyRoutes
 
   @property_url "sc-domain:example.com"
 
@@ -34,7 +35,11 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
   end
 
   describe "URL detail user journey: viewing time series" do
-    test "user can view URL with daily time series chart", %{conn: conn, account_id: account_id} do
+    test "user can view URL with daily time series chart", %{
+      conn: conn,
+      account_id: account_id,
+      property: property
+    } do
       # Setup: Create 30 days of data for a URL
       url = "https://example.com/test-article"
 
@@ -49,7 +54,7 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
 
       # Action: Navigate to URL detail page
       encoded_url = URI.encode_www_form(url)
-      {:ok, view, html} = live(conn, ~p"/dashboard/url?url=#{encoded_url}")
+      {:ok, view, html} = live(conn, property_url(property, %{url: encoded_url}))
 
       # Assert: Page loads with URL shown
       assert html =~ "test-article"
@@ -69,12 +74,12 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
       assert html =~ "Daily" or html =~ "Date"
     end
 
-    test "user sees empty state for URL with no data", %{conn: conn} do
+    test "user sees empty state for URL with no data", %{conn: conn, property: property} do
       # No data setup
 
       # Action: Try to view non-existent URL
       encoded_url = URI.encode_www_form("https://example.com/nonexistent")
-      {:ok, _view, html} = live(conn, ~p"/dashboard/url?url=#{encoded_url}")
+      {:ok, _view, html} = live(conn, property_url(property, %{url: encoded_url}))
 
       # Assert: Shows appropriate message (not an error crash)
       assert html =~ "No performance data yet"
@@ -82,7 +87,8 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
 
     test "user can view URL with partial data (some days missing)", %{
       conn: conn,
-      account_id: account_id
+      account_id: account_id,
+      property: property
     } do
       # Setup: Sparse data (only some days have metrics)
       # account_id from setup
@@ -96,7 +102,7 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
 
       # Action: View URL detail
       encoded_url = URI.encode_www_form(url)
-      {:ok, _view, html} = live(conn, ~p"/dashboard/url?url=#{encoded_url}")
+      {:ok, _view, html} = live(conn, property_url(property, %{url: encoded_url}))
 
       # Assert: Page loads (doesn't crash on missing data)
       assert html =~ "sparse-data"
@@ -110,7 +116,8 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
   describe "URL detail user journey: switching time views" do
     test "user can switch between daily, weekly, and monthly views", %{
       conn: conn,
-      account_id: account_id
+      account_id: account_id,
+      property: property
     } do
       # Setup: Create enough data for meaningful aggregations
       # account_id from setup
@@ -124,7 +131,9 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
       end
 
       encoded_url = URI.encode_www_form(url)
-      {:ok, view, html} = live(conn, ~p"/dashboard/url?url=#{encoded_url}&view=daily")
+
+      {:ok, view, html} =
+        live(conn, property_url(property, %{url: encoded_url, view: "daily"}))
 
       # Assert: Daily view active
       assert html =~ "Daily" or html =~ "Date"
@@ -148,7 +157,11 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
       assert view_toggle_active?(html, "monthly")
     end
 
-    test "view mode persists in URL params", %{conn: conn, account_id: account_id} do
+    test "view mode persists in URL params", %{
+      conn: conn,
+      account_id: account_id,
+      property: property
+    } do
       # Setup
       # account_id from setup
       url = "https://example.com/test"
@@ -160,13 +173,16 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
 
       # Action: Load with weekly view
       encoded_url = URI.encode_www_form(url)
-      {:ok, _view, html} = live(conn, ~p"/dashboard/url?url=#{encoded_url}&view=weekly")
+
+      {:ok, _view, html} =
+        live(conn, property_url(property, %{url: encoded_url, view: "weekly"}))
 
       # Assert: URL params reflect view mode (view loads with weekly active)
       assert view_toggle_active?(html, "weekly")
 
       # Action: Refresh page (simulate bookmark/reload)
-      {:ok, _view, html} = live(conn, ~p"/dashboard/url?url=#{encoded_url}&view=weekly")
+      {:ok, _view, html} =
+        live(conn, property_url(property, %{url: encoded_url, view: "weekly"}))
 
       # Assert: Weekly view still active
       assert view_toggle_active?(html, "weekly")
@@ -176,7 +192,8 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
   describe "URL detail user journey: viewing top queries" do
     test "user can see top performing search queries for URL", %{
       conn: conn,
-      account_id: account_id
+      account_id: account_id,
+      property: property
     } do
       # Setup: Create URL with top queries data
       # account_id from setup
@@ -215,7 +232,7 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
 
       # Action: View URL detail
       encoded_url = URI.encode_www_form(url)
-      {:ok, _view, html} = live(conn, ~p"/dashboard/url?url=#{encoded_url}")
+      {:ok, _view, html} = live(conn, property_url(property, %{url: encoded_url}))
 
       # Assert: Shows top queries section
       assert html =~ "Top Queries" or html =~ "Search Queries" or html =~ "Keywords"
@@ -230,7 +247,11 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
       assert html =~ "100"
     end
 
-    test "user sees message when no query data available", %{conn: conn, account_id: account_id} do
+    test "user sees message when no query data available", %{
+      conn: conn,
+      account_id: account_id,
+      property: property
+    } do
       # Setup: URL with no top_queries data
       # account_id from setup
       url = "https://example.com/no-queries"
@@ -245,7 +266,7 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
 
       # Action: View URL detail
       encoded_url = URI.encode_www_form(url)
-      {:ok, _view, html} = live(conn, ~p"/dashboard/url?url=#{encoded_url}")
+      {:ok, _view, html} = live(conn, property_url(property, %{url: encoded_url}))
 
       # Assert: Shows appropriate message (not a crash)
       assert html =~ "No query data" or html =~ "no queries" or html =~ "N/A"
@@ -255,7 +276,8 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
   describe "URL detail user journey: summary statistics" do
     test "user sees accurate summary stats matching chart data", %{
       conn: conn,
-      account_id: account_id
+      account_id: account_id,
+      property: property
     } do
       # Setup: Precise data for verification
       # account_id from setup
@@ -268,7 +290,7 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
 
       # Action: View URL detail
       encoded_url = URI.encode_www_form(url)
-      {:ok, _view, html} = live(conn, ~p"/dashboard/url?url=#{encoded_url}")
+      {:ok, _view, html} = live(conn, property_url(property, %{url: encoded_url}))
 
       # Assert: Shows summary section
       assert html =~ "Total Clicks" or html =~ "Clicks"
@@ -282,7 +304,11 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
       assert html =~ "4500" or html =~ "4,500"
     end
 
-    test "user can see time range of data", %{conn: conn, account_id: account_id} do
+    test "user can see time range of data", %{
+      conn: conn,
+      account_id: account_id,
+      property: property
+    } do
       # Setup: Data spanning specific range
       # account_id from setup
       url = "https://example.com/test"
@@ -298,7 +324,7 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
 
       # Action: View URL detail
       encoded_url = URI.encode_www_form(url)
-      {:ok, _view, html} = live(conn, ~p"/dashboard/url?url=#{encoded_url}")
+      {:ok, _view, html} = live(conn, property_url(property, %{url: encoded_url}))
 
       # Assert: Shows date range information
       assert html =~ "15 days" or html =~ "Oct" or html =~ "2025"
@@ -306,7 +332,11 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
   end
 
   describe "URL detail user journey: URL encoding edge cases" do
-    test "user can view URL with special characters", %{conn: conn, account_id: account_id} do
+    test "user can view URL with special characters", %{
+      conn: conn,
+      account_id: account_id,
+      property: property
+    } do
       # Setup: URL with query parameters and special chars
       # account_id from setup
       url = "https://example.com/search?q=test+query&category=docs"
@@ -316,13 +346,17 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
 
       # Action: View URL detail (URL encoding handled by route)
       encoded_url = URI.encode_www_form(url)
-      {:ok, _view, html} = live(conn, ~p"/dashboard/url?url=#{encoded_url}")
+      {:ok, _view, html} = live(conn, property_url(property, %{url: encoded_url}))
 
       # Assert: Page loads successfully
       assert html =~ "search" or html =~ "test"
     end
 
-    test "user can view URL with UTF-8 characters", %{conn: conn, account_id: account_id} do
+    test "user can view URL with UTF-8 characters", %{
+      conn: conn,
+      account_id: account_id,
+      property: property
+    } do
       # Setup: URL with international characters
       # account_id from setup
       url = "https://example.com/guía/español"
@@ -332,7 +366,7 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
 
       # Action: View URL detail
       encoded_url = URI.encode_www_form(url)
-      {:ok, _view, html} = live(conn, ~p"/dashboard/url?url=#{encoded_url}")
+      {:ok, _view, html} = live(conn, property_url(property, %{url: encoded_url}))
 
       # Assert: Page loads and displays URL correctly
       assert html =~ "guía" or html =~ "español" or html =~ "example.com"
@@ -342,7 +376,8 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
   describe "URL detail user journey: navigation" do
     test "user can navigate back to dashboard from URL detail", %{
       conn: conn,
-      account_id: account_id
+      account_id: account_id,
+      property: property
     } do
       # Setup
       # account_id from setup
@@ -351,15 +386,21 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
 
       # Action: Navigate to URL detail
       encoded_url = URI.encode_www_form(url)
-      {:ok, view, _html} = live(conn, ~p"/dashboard/url?url=#{encoded_url}")
+
+      {:ok, view, _html} =
+        live(conn, PropertyRoutes.url_path(property.id, %{url: encoded_url}))
 
       # Assert: Has back link/button
       assert has_element?(view, "a[href='/']") or
-               has_element?(view, "a[href='/dashboard']") or
+               has_element?(view, "a[href='#{PropertyRoutes.dashboard_path(property.id)}']") or
                render(view) =~ "Back"
     end
 
-    test "user can share URL detail page via URL", %{conn: conn, account_id: account_id} do
+    test "user can share URL detail page via URL", %{
+      conn: conn,
+      account_id: account_id,
+      property: property
+    } do
       # Setup
       # account_id from setup
       url = "https://example.com/shareable-article"
@@ -372,7 +413,9 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
 
       # Action: Load page with full URL (simulating shared link)
       encoded_url = URI.encode_www_form(url)
-      {:ok, _view, html} = live(conn, ~p"/dashboard/url?url=#{encoded_url}&view=weekly")
+
+      {:ok, _view, html} =
+        live(conn, property_url(property, %{url: encoded_url, view: "weekly"}))
 
       # Assert: Page loads with correct state
       assert html =~ "shareable-article"
@@ -389,7 +432,8 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
       url = "https://example.com/property-specific"
       populate_url_data(account_id, url, ~D[2025-10-10], %{clicks: 42, impressions: 420})
 
-      {:ok, view, _html} = live(conn, ~p"/dashboard/url?url=#{url}")
+      {:ok, view, _html} =
+        live(conn, PropertyRoutes.url_path(property.id, %{url: url}))
 
       view
       |> element("button", "Weekly")
@@ -404,11 +448,10 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
         {:backlinks_sort, "first_seen_at"},
         {:backlinks_dir, "desc"},
         {:series, "clicks,impressions"},
-        {:account_id, account_id},
-        {:property_id, property.id}
+        {:account_id, account_id}
       ]
 
-      assert_patch(view, ~p"/dashboard/url?#{expected_params}")
+      assert_patch(view, PropertyRoutes.url_path(property.id, expected_params))
     end
   end
 
@@ -419,6 +462,10 @@ defmodule GscAnalyticsWeb.DashboardUrlLiveIntegrationTest do
       ~r/<button[^>]*(phx-value-view="#{view}"[^>]*data-state="active"|data-state="active"[^>]*phx-value-view="#{view}")/m
 
     Regex.match?(pattern, html)
+  end
+
+  defp property_url(property, params) do
+    PropertyRoutes.url_path(property.id, params)
   end
 
   defp populate_url_data(account_id, url, date, opts) do

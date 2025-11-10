@@ -38,8 +38,7 @@ defmodule GscAnalytics.Workflows.Engine do
   require Logger
 
   alias GscAnalytics.Repo
-  alias GscAnalytics.Workflows.{Execution, ExecutionEvent, Runtime, ProgressTracker}
-  alias GscAnalytics.Schemas.Workflow
+  alias GscAnalytics.Workflows.{Execution, Runtime, ProgressTracker}
 
   @type engine_state :: %{
           execution_id: binary(),
@@ -257,56 +256,25 @@ defmodule GscAnalytics.Workflows.Engine do
       step["name"]
     )
 
-    start_time = System.monotonic_time(:millisecond)
-
     # TODO: Execute step via Step.Executor protocol
     # For now, simulate success
-    result = {:ok, %{simulated: true}}
+    step_output = %{simulated: true}
 
-    duration_ms = System.monotonic_time(:millisecond) - start_time
+    # Store output in runtime state
+    Runtime.store_step_output(state.runtime_table, step_id, step_output)
+    Runtime.mark_step_completed(state.runtime_table, step_id)
 
-    case result do
-      {:ok, step_output} ->
-        # Store output in runtime state
-        Runtime.store_step_output(state.runtime_table, step_id, step_output)
-        Runtime.mark_step_completed(state.runtime_table, step_id)
+    # Publish step completed
+    ProgressTracker.publish_step_completed(
+      state.execution_id,
+      step_id,
+      step["name"],
+      :ok
+    )
 
-        # Publish step completed
-        ProgressTracker.publish_step_completed(
-          state.execution_id,
-          step_id,
-          step["name"],
-          :ok
-        )
-
-        # Continue with next steps
-        new_state = %{state | step_queue: remaining}
-        execute_workflow(new_state)
-
-      {:error, reason} ->
-        # Mark step as failed
-        Runtime.mark_step_failed(state.runtime_table, step_id)
-
-        ProgressTracker.publish_step_failed(
-          state.execution_id,
-          step_id,
-          step["name"],
-          reason
-        )
-
-        finalize_execution(state, :failed, inspect(reason))
-
-      {:wait_for_review, review_id} ->
-        # Human review required - pause execution
-        ProgressTracker.publish_awaiting_review(
-          state.execution_id,
-          step_id,
-          review_id
-        )
-
-        # Pause and wait for resume
-        :ok
-    end
+    # Continue with next steps
+    new_state = %{state | step_queue: remaining}
+    execute_workflow(new_state)
   end
 
   defp finalize_execution(state, status, output_or_error) do

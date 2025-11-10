@@ -167,7 +167,8 @@ defmodule GscAnalytics.Crawler.BatchProcessor do
       account_id: account_id,
       property_id: property_id,
       property_url: property_url,
-      property_label: property_label
+      property_label: property_label,
+      filter: filter
     })
 
     # Process all URLs concurrently (Task.async_stream handles concurrency limits)
@@ -191,7 +192,8 @@ defmodule GscAnalytics.Crawler.BatchProcessor do
         where: u.account_id == ^account_id,
         select: %{
           total: count(u.url),
-          with_traffic: fragment("COUNT(*) FILTER (WHERE lifetime_clicks > 0 OR lifetime_impressions > 0)")
+          with_traffic:
+            fragment("COUNT(*) FILTER (WHERE lifetime_clicks > 0 OR lifetime_impressions > 0)")
         }
       )
       |> filter_by_property(property_url)

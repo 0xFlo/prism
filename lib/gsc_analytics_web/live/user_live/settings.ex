@@ -132,7 +132,7 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
                           Workspace {account.id}
                         <% end %>
                       </h3>
-                      <%= if account.oauth do %>
+                      <%= if account.oauth && account.oauth.status == :valid do %>
                         <span class="inline-flex items-center gap-1.5 rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700">
                           <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
                             <path
@@ -875,7 +875,8 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
       # Create a unified property list by merging API properties with saved properties
       saved_by_url = Map.new(saved_properties, fn prop -> {prop.property_url, prop} end)
 
-      unified_properties =
+      # Start with properties from API
+      api_properties =
         property_options
         |> Enum.map(fn opt ->
           saved_prop = Map.get(saved_by_url, opt.value)
@@ -890,6 +891,29 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
             property_id: if(saved_prop, do: saved_prop.id, else: nil)
           }
         end)
+
+      # Get property URLs already in API response
+      api_property_urls = MapSet.new(api_properties, & &1.property_url)
+
+      # Add saved properties not in API response (happens when OAuth is invalid)
+      saved_only_properties =
+        saved_properties
+        |> Enum.reject(fn prop -> MapSet.member?(api_property_urls, prop.property_url) end)
+        |> Enum.map(fn prop ->
+          %{
+            property_url: prop.property_url,
+            label: prop.display_name || format_property_label(prop.property_url),
+            permission_level: nil,
+            has_api_access: false,
+            is_saved: true,
+            is_active: prop.is_active,
+            property_id: prop.id
+          }
+        end)
+
+      # Combine and sort
+      unified_properties =
+        (api_properties ++ saved_only_properties)
         |> Enum.sort_by(fn prop ->
           # Sort alphabetically by label for stable ordering (no jumping on toggle)
           String.downcase(prop.label || prop.property_url)

@@ -162,7 +162,10 @@
             </form>
             <.link
               href={
-                ~p"/dashboard/export?#{%{view_mode: @view_mode, sort_by: @sort_by, limit: @limit}}"
+                GscAnalyticsWeb.PropertyRoutes.export_path(
+                  @current_property_id,
+                  %{view_mode: @view_mode, sort_by: @sort_by, limit: @limit}
+                )
               }
               class="btn btn-sm btn-ghost gap-2"
             >

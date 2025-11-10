@@ -31,6 +31,23 @@ defmodule GscAnalytics.Schemas.Workflow do
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
 
+  @derive {JSON.Encoder,
+           only: [
+             :id,
+             :name,
+             :description,
+             :status,
+             :definition,
+             :input_schema,
+             :tags,
+             :version,
+             :published_at,
+             :account_id,
+             :created_by_id,
+             :inserted_at,
+             :updated_at
+           ]}
+
   schema "workflows" do
     field :name, :string
     field :description, :string

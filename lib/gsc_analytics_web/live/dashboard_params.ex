@@ -216,7 +216,6 @@ defmodule GscAnalyticsWeb.Live.DashboardParams do
       {:chart_view, Map.get(overrides, :chart_view, Map.get(assigns, :chart_view))},
       {:search, Map.get(overrides, :search, Map.get(assigns, :search))},
       {:period, Map.get(overrides, :period, Map.get(assigns, :period_days))},
-      {:property_id, Map.get(overrides, :property_id, Map.get(assigns, :current_property_id))},
       {:account_id, Map.get(overrides, :account_id, Map.get(assigns, :current_account_id))},
       {:series,
        Map.get(
@@ -259,8 +258,7 @@ defmodule GscAnalyticsWeb.Live.DashboardParams do
          :series,
          encode_series(Map.get(assigns, :visible_series, @default_series))
        )},
-      {:account_id, Map.get(overrides, :account_id, Map.get(assigns, :current_account_id))},
-      {:property_id, Map.get(overrides, :property_id, Map.get(assigns, :current_property_id))}
+      {:account_id, Map.get(overrides, :account_id, Map.get(assigns, :current_account_id))}
     ]
     |> reject_blank_values()
   end

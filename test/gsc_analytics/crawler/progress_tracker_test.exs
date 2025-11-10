@@ -28,6 +28,8 @@ defmodule GscAnalytics.Crawler.ProgressTrackerTest do
       assert job.id == job_id
       assert job.total_urls == 100
       assert job.checked == 0
+      assert job.checked_urls == 0
+      assert job.status == "running"
     end
 
     test "creates job with status counters initialized to zero" do
@@ -59,13 +61,15 @@ defmodule GscAnalytics.Crawler.ProgressTrackerTest do
         account_id: 123,
         property_id: "prop-123",
         property_url: "https://example.com",
-        property_label: "Example"
+        property_label: "Example",
+        filter: :stale
       }
 
       {:ok, _job_id} = ProgressTracker.start_check(5, metadata)
 
       assert_receive {:crawler_progress, %{type: :started, job: job}}, 100
       assert job.metadata == metadata
+      assert job.filter == :stale
     end
   end
 
@@ -85,6 +89,7 @@ defmodule GscAnalytics.Crawler.ProgressTrackerTest do
 
       assert_receive {:crawler_progress, %{type: :update, job: job}}, 100
       assert job.checked == 1
+      assert job.checked_urls == 1
     end
 
     test "increments 2xx counter for successful responses" do
@@ -159,6 +164,7 @@ defmodule GscAnalytics.Crawler.ProgressTrackerTest do
       assert_receive {:crawler_progress, %{type: :update, job: job}}, 100
 
       assert job.checked == 3
+      assert job.checked_urls == 3
       assert job.status_counts["2xx"] == 1
       assert job.status_counts["4xx"] == 1
       assert job.status_counts["5xx"] == 1
@@ -219,8 +225,10 @@ defmodule GscAnalytics.Crawler.ProgressTrackerTest do
 
       assert finished_job.id == job.id
       assert finished_job.checked == 3
+      assert finished_job.checked_urls == 3
       assert finished_job.status_counts["2xx"] == 2
       assert finished_job.status_counts["4xx"] == 1
+      assert finished_job.status == "completed"
     end
 
     test "includes duration_ms in finished job" do
@@ -359,6 +367,8 @@ defmodule GscAnalytics.Crawler.ProgressTrackerTest do
       completed_job = Enum.find(history, fn job -> job.id == job_id end)
       assert completed_job != nil
       assert completed_job.checked == 1
+      assert completed_job.checked_urls == 1
+      assert completed_job.status == "completed"
       assert Map.has_key?(completed_job, :finished_at)
       assert Map.has_key?(completed_job, :duration_ms)
     end
@@ -400,7 +410,7 @@ defmodule GscAnalytics.Crawler.ProgressTrackerTest do
     end
 
     test "history entries retain metadata" do
-      metadata = %{account_id: 456, property_id: "prop-history"}
+      metadata = %{account_id: 456, property_id: "prop-history", filter: :broken}
 
       {:ok, job_id} = ProgressTracker.start_check(1, metadata)
       assert_receive {:crawler_progress, %{type: :started}}, 100
@@ -422,6 +432,7 @@ defmodule GscAnalytics.Crawler.ProgressTrackerTest do
       completed_job = Enum.find(history, fn job -> job.id == job_id end)
       refute completed_job == nil
       assert completed_job.metadata == metadata
+      assert completed_job.filter == :broken
     end
   end
 

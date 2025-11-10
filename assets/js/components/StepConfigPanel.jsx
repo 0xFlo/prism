@@ -1,4 +1,5 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
+import STEP_TYPES from "./stepTypes.js";
 
 /**
  * Step configuration panel for editing node properties.
@@ -9,14 +10,33 @@ const StepConfigPanel = React.memo(({ selectedNode, onUpdateNode, onClose }) => 
   const [formData, setFormData] = useState({
     name: selectedNode?.data?.name || "",
     type: selectedNode?.data?.type || "test",
-    config: selectedNode?.data?.config || {},
+    config: { ...(selectedNode?.data?.config || {}) },
   });
 
+  useEffect(() => {
+    setFormData({
+      name: selectedNode?.data?.name || "",
+      type: selectedNode?.data?.type || "test",
+      config: { ...(selectedNode?.data?.config || {}) },
+    });
+  }, [selectedNode]);
+
   const handleChange = useCallback((field, value) => {
-    setFormData((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
+    setFormData((prev) => {
+      if (field === "type") {
+        const nextType = STEP_TYPES[value] ? value : "test";
+        return {
+          ...prev,
+          type: nextType,
+          config: { ...(STEP_TYPES[nextType]?.defaultConfig || {}) },
+        };
+      }
+
+      return {
+        ...prev,
+        [field]: value,
+      };
+    });
   }, []);
 
   const handleConfigChange = useCallback((key, value) => {
@@ -100,12 +120,11 @@ const StepConfigPanel = React.memo(({ selectedNode, onUpdateNode, onClose }) => 
             value={formData.type}
             onChange={(e) => handleChange("type", e.target.value)}
           >
-            <option value="test">Test Step</option>
-            <option value="gsc_query">GSC Query</option>
-            <option value="api">API Call</option>
-            <option value="llm">AI/LLM</option>
-            <option value="conditional">Conditional</option>
-            <option value="code">Code</option>
+            {Object.entries(STEP_TYPES).map(([value, config]) => (
+              <option key={value} value={value}>
+                {config.label}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -154,6 +173,25 @@ const StepConfigPanel = React.memo(({ selectedNode, onUpdateNode, onClose }) => 
               <option value="claude-3-opus">Claude 3 Opus</option>
               <option value="gpt-4">GPT-4</option>
             </select>
+          </div>
+        )}
+
+        {formData.type === "conditional" && (
+          <div className="form-control">
+            <label className="label">
+              <span className="label-text">Condition</span>
+            </label>
+            <textarea
+              className="textarea textarea-bordered w-full h-20 font-mono text-sm"
+              value={formData.config.condition || ""}
+              onChange={(e) => handleConfigChange("condition", e.target.value)}
+              placeholder="analyze.output.score > 0.8"
+            />
+            <label className="label">
+              <span className="label-text-alt text-slate-500 text-xs">
+                Use any expression supported by the workflow engine. Must evaluate to true/false.
+              </span>
+            </label>
           </div>
         )}
 

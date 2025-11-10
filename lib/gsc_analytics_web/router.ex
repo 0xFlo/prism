@@ -2,6 +2,7 @@ defmodule GscAnalyticsWeb.Router do
   use GscAnalyticsWeb, :router
 
   import GscAnalyticsWeb.UserAuth
+  import GscAnalyticsWeb.Router.PropertyScopedRoutes
 
   pipeline :browser do
     plug :accepts, ["html"]
@@ -50,13 +51,13 @@ defmodule GscAnalyticsWeb.Router do
 
     live_session :require_authenticated_user,
       on_mount: [{GscAnalyticsWeb.UserAuth, :require_authenticated}] do
-      live "/dashboard", DashboardLive, :index
-      live "/dashboard/keywords", DashboardKeywordsLive, :index
-      live "/dashboard/sync", DashboardSyncLive, :index
-      live "/dashboard/crawler", DashboardCrawlerLive, :index
-      live "/dashboard/workflows", DashboardWorkflowsLive, :index
-      live "/dashboard/workflows/:id/edit", DashboardWorkflowBuilderLive, :edit
-      live "/dashboard/url", DashboardUrlLive, :show
+      property_live("/dashboard", DashboardLive, :index)
+      property_live("/dashboard/keywords", DashboardKeywordsLive, :index)
+      property_live("/dashboard/sync", DashboardSyncLive, :index)
+      property_live("/dashboard/crawler", DashboardCrawlerLive, :index)
+      property_live("/dashboard/workflows", DashboardWorkflowsLive, :index)
+      property_live("/dashboard/workflows/:id/edit", DashboardWorkflowBuilderLive, :edit)
+      property_live("/dashboard/url", DashboardUrlLive, :show)
       live "/users/settings", UserLive.Settings, :edit
       live "/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email
     end
@@ -70,7 +71,9 @@ defmodule GscAnalyticsWeb.Router do
       get "/callback", GoogleAuthController, :callback
     end
 
-    get "/dashboard/export", Dashboard.ExportController, :export_csv
+    property_get("/dashboard/export", Dashboard.ExportController, :export_csv)
+    get "/dashboard", DashboardRedirectController, :dashboard
+    get "/dashboard/export", DashboardRedirectController, :export
     post "/users/update-password", UserSessionController, :update_password
   end
 

@@ -13,6 +13,7 @@ defmodule GscAnalyticsWeb.HomepageLive do
 
   alias GscAnalyticsWeb.Live.HomepageDemoData
   alias GscAnalyticsWeb.Presenters.ChartDataPresenter
+  alias GscAnalyticsWeb.PropertyContext
 
   # Import component functions for template
   import GscAnalyticsWeb.Components.DashboardComponents
@@ -23,7 +24,7 @@ defmodule GscAnalyticsWeb.HomepageLive do
     current_scope = Map.get(socket.assigns, :current_scope)
 
     if authenticated_scope?(current_scope) do
-      {:ok, push_navigate(socket, to: ~p"/dashboard")}
+      {:ok, push_navigate(socket, to: PropertyContext.default_dashboard_path(current_scope))}
     else
       # Load demo data for public landing page
       metrics = HomepageDemoData.demo_metrics()

@@ -1,0 +1,450 @@
+/* Mission Impossible 1996 Retro Terminal Theme */
+
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+
+/* Root variables for the retro terminal color scheme */
+:root {
+  --mi-green: #00ff41;
+  --mi-green-bright: #39ff14;
+  --mi-green-dim: #00aa2a;
+  --mi-amber: #ffb000;
+  --mi-amber-bright: #ffc61a;
+  --mi-red: #ff0030;
+  --mi-bg-dark: #0a0a0a;
+  --mi-bg-terminal: #0d1117;
+  --mi-bg-screen: #001100;
+  --mi-scanline-opacity: 0.05;
+  --mi-text-shadow: 0 0 5px currentColor, 0 0 10px currentColor;
+}
+
+/* Main container with CRT effect */
+.mi-terminal-container {
+  position: relative;
+  background: var(--mi-bg-dark);
+  color: var(--mi-green);
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+/* CRT screen effect wrapper */
+.mi-crt-screen {
+  position: relative;
+  background: radial-gradient(ellipse at center, var(--mi-bg-screen) 0%, var(--mi-bg-dark) 100%);
+  min-height: 100vh;
+  padding: 2rem;
+  animation: flicker 0.15s infinite;
+}
+
+/* Scanlines effect */
+.mi-crt-screen::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    transparent 50%,
+    rgba(0, 255, 65, 0.03) 50%
+  );
+  background-size: 100% 4px;
+  pointer-events: none;
+  z-index: 1;
+  animation: scanlines 8s linear infinite;
+}
+
+/* Phosphor glow overlay */
+.mi-crt-screen::after {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(ellipse at center, transparent 0%, rgba(0, 0, 0, 0.4) 100%);
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Terminal header with ASCII art */
+.mi-terminal-header {
+  border: 2px solid var(--mi-green);
+  padding: 1rem;
+  margin-bottom: 2rem;
+  position: relative;
+  background: linear-gradient(180deg, rgba(0, 255, 65, 0.1) 0%, transparent 100%);
+  box-shadow:
+    inset 0 0 20px rgba(0, 255, 65, 0.2),
+    0 0 20px rgba(0, 255, 65, 0.1);
+}
+
+.mi-ascii-logo {
+  font-size: 0.7rem;
+  line-height: 1;
+  text-align: center;
+  color: var(--mi-green-bright);
+  text-shadow: var(--mi-text-shadow);
+  white-space: pre;
+  letter-spacing: 0.1em;
+}
+
+/* Terminal text styles */
+.mi-terminal-text {
+  color: var(--mi-green);
+  text-shadow: 0 0 3px currentColor;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  letter-spacing: 0.05em;
+}
+
+.mi-terminal-title {
+  color: var(--mi-green-bright);
+  text-transform: uppercase;
+  font-size: 1.5rem;
+  font-weight: 700;
+  text-shadow: var(--mi-text-shadow);
+  animation: pulse-glow 2s ease-in-out infinite;
+  letter-spacing: 0.2em;
+}
+
+.mi-terminal-subtitle {
+  color: var(--mi-amber);
+  text-transform: uppercase;
+  font-size: 0.8rem;
+  letter-spacing: 0.3em;
+  text-shadow: 0 0 5px var(--mi-amber);
+}
+
+/* Status indicators */
+.mi-status-active {
+  color: var(--mi-green-bright);
+  animation: blink 1s infinite;
+}
+
+.mi-status-warning {
+  color: var(--mi-amber);
+  animation: warning-pulse 1s infinite;
+}
+
+.mi-status-critical {
+  color: var(--mi-red);
+  animation: critical-flash 0.5s infinite;
+}
+
+/* Terminal panels/cards */
+.mi-terminal-panel {
+  border: 1px solid var(--mi-green);
+  background: rgba(0, 17, 0, 0.8);
+  padding: 1rem;
+  margin-bottom: 1rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.mi-terminal-panel::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--mi-green), transparent);
+  animation: scan-horizontal 3s linear infinite;
+}
+
+.mi-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--mi-green-dim);
+  margin-bottom: 1rem;
+}
+
+.mi-panel-title {
+  color: var(--mi-green-bright);
+  text-transform: uppercase;
+  font-size: 0.9rem;
+  letter-spacing: 0.1em;
+}
+
+/* Data grid/table styling */
+.mi-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.mi-data-table thead {
+  border-bottom: 2px solid var(--mi-green);
+}
+
+.mi-data-table th {
+  text-align: left;
+  padding: 0.5rem;
+  color: var(--mi-amber);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.mi-data-table td {
+  padding: 0.5rem;
+  border-bottom: 1px solid rgba(0, 255, 65, 0.2);
+  color: var(--mi-green);
+}
+
+.mi-data-table tr:hover {
+  background: rgba(0, 255, 65, 0.05);
+  text-shadow: 0 0 5px var(--mi-green);
+}
+
+/* Buttons */
+.mi-btn {
+  background: transparent;
+  border: 1px solid var(--mi-green);
+  color: var(--mi-green);
+  padding: 0.5rem 1rem;
+  font-family: inherit;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.mi-btn:hover {
+  background: rgba(0, 255, 65, 0.1);
+  box-shadow:
+    inset 0 0 10px rgba(0, 255, 65, 0.3),
+    0 0 20px rgba(0, 255, 65, 0.2);
+  text-shadow: var(--mi-text-shadow);
+}
+
+.mi-btn:active {
+  transform: scale(0.98);
+}
+
+.mi-btn-danger {
+  border-color: var(--mi-red);
+  color: var(--mi-red);
+}
+
+.mi-btn-danger:hover {
+  background: rgba(255, 0, 48, 0.1);
+  box-shadow:
+    inset 0 0 10px rgba(255, 0, 48, 0.3),
+    0 0 20px rgba(255, 0, 48, 0.2);
+}
+
+/* Progress bars */
+.mi-progress-container {
+  background: rgba(0, 17, 0, 0.5);
+  border: 1px solid var(--mi-green-dim);
+  height: 20px;
+  position: relative;
+  overflow: hidden;
+}
+
+.mi-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg,
+    var(--mi-green-dim) 0%,
+    var(--mi-green) 50%,
+    var(--mi-green-bright) 100%);
+  transition: width 0.3s ease;
+  box-shadow: 0 0 10px var(--mi-green);
+  position: relative;
+}
+
+.mi-progress-bar::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 2px;
+  background: white;
+  box-shadow: 0 0 10px white;
+  animation: pulse-glow 1s infinite;
+}
+
+/* Input fields */
+.mi-input {
+  background: rgba(0, 17, 0, 0.5);
+  border: 1px solid var(--mi-green-dim);
+  color: var(--mi-green);
+  padding: 0.5rem;
+  font-family: inherit;
+  width: 100%;
+}
+
+.mi-input:focus {
+  outline: none;
+  border-color: var(--mi-green);
+  box-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
+}
+
+/* Loading spinner */
+.mi-spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(0, 255, 65, 0.3);
+  border-top-color: var(--mi-green);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+/* Typing effect for text */
+.mi-typing {
+  overflow: hidden;
+  white-space: nowrap;
+  animation: typing 2s steps(40, end);
+}
+
+/* Glitch effect */
+.mi-glitch {
+  position: relative;
+  animation: glitch 2s infinite;
+}
+
+.mi-glitch::before,
+.mi-glitch::after {
+  content: attr(data-text);
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.mi-glitch::before {
+  animation: glitch-1 0.5s infinite;
+  color: var(--mi-red);
+  z-index: -1;
+}
+
+.mi-glitch::after {
+  animation: glitch-2 0.5s infinite;
+  color: var(--mi-amber);
+  z-index: -2;
+}
+
+/* Animations */
+@keyframes flicker {
+  0% { opacity: 1; }
+  50% { opacity: 0.98; }
+  100% { opacity: 1; }
+}
+
+@keyframes scanlines {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(10px); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+@keyframes warning-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.05); }
+}
+
+@keyframes critical-flash {
+  0%, 49% { opacity: 1; background: rgba(255, 0, 48, 0.1); }
+  50%, 100% { opacity: 0.3; background: transparent; }
+}
+
+@keyframes scan-horizontal {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+@keyframes spin {
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes typing {
+  from { width: 0; }
+  to { width: 100%; }
+}
+
+@keyframes glitch {
+  0%, 100% { transform: translate(0); }
+  20% { transform: translate(-1px, 1px); }
+  40% { transform: translate(-1px, -1px); }
+  60% { transform: translate(1px, 1px); }
+  80% { transform: translate(1px, -1px); }
+}
+
+@keyframes glitch-1 {
+  0%, 100% { clip-path: inset(0 0 0 0); }
+  25% { clip-path: inset(10% 0 60% 0); }
+  50% { clip-path: inset(50% 0 30% 0); }
+  75% { clip-path: inset(80% 0 5% 0); }
+}
+
+@keyframes glitch-2 {
+  0%, 100% { clip-path: inset(0 0 0 0); }
+  25% { clip-path: inset(80% 0 10% 0); }
+  50% { clip-path: inset(20% 0 60% 0); }
+  75% { clip-path: inset(40% 0 40% 0); }
+}
+
+/* Special status displays */
+.mi-status-display {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid currentColor;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.mi-status-display.online {
+  color: var(--mi-green-bright);
+  border-color: var(--mi-green-bright);
+  animation: pulse-glow 2s infinite;
+}
+
+.mi-status-display.offline {
+  color: var(--mi-red);
+  border-color: var(--mi-red);
+  animation: critical-flash 1s infinite;
+}
+
+/* Matrix-like background text effect */
+.mi-matrix-bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0.05;
+  z-index: 0;
+}
+
+.mi-matrix-column {
+  position: absolute;
+  font-size: 10px;
+  color: var(--mi-green);
+  animation: matrix-fall linear infinite;
+}
+
+@keyframes matrix-fall {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}

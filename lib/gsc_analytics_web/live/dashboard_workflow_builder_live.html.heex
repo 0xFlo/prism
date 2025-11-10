@@ -2,7 +2,7 @@
   id="workflow-builder"
   phx-hook="WorkflowBuilder"
   phx-update="ignore"
-  data-workflow={Jason.encode!(@workflow)}
+  data-workflow={JSON.encode!(@workflow)}
   class="h-screen w-full"
 >
   <!-- Loading state (shown briefly while React mounts) -->

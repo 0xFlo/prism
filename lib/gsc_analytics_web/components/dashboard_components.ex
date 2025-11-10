@@ -12,6 +12,7 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
   use GscAnalyticsWeb, :html
 
   import GscAnalyticsWeb.Dashboard.HTMLHelpers
+  alias GscAnalyticsWeb.PropertyRoutes
 
   @doc """
   Renders a URL in breadcrumb-style hierarchical format.
@@ -20,16 +21,19 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
 
   ## Attributes
   - `url` - The full URL to display (required)
+  - `property_id` - Property identifier used to build the default URL detail link
   - `link_to` - The target path for the link (default: URL detail page)
   - `max_segments` - Maximum path segments to show (default: 3)
 
   ## Example
       <.url_breadcrumb
         url="https://scrapfly.io/blog/web-scraping/tutorial"
-        link_to="/dashboard/url?url=https://scrapfly.io/blog/web-scraping/tutorial"
+        property_id="scoped-property-id"
+        link_to="/dashboard/<property-id>/url?url=https://scrapfly.io/blog/web-scraping/tutorial"
       />
   """
   attr :url, :string, required: true
+  attr :property_id, :string, required: true
   attr :link_to, :string, default: nil
   attr :max_segments, :integer, default: 3
 
@@ -41,6 +45,9 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
       |> assign(:breadcrumb, breadcrumb)
       |> assign(:domain, breadcrumb.domain)
       |> assign(:has_path, breadcrumb.segments != [])
+      |> assign_new(:default_link, fn ->
+        PropertyRoutes.url_path(assigns.property_id, %{url: assigns.url})
+      end)
 
     ~H"""
     <div class="flex items-center gap-1 text-xs sm:text-sm overflow-hidden min-w-0">
@@ -62,7 +69,7 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
             <% :last -> %>
               <!-- Last segment (page name) - emphasized, clickable, truncates if too long -->
               <a
-                href={@link_to || ~p"/dashboard/url?url=#{@url}"}
+                href={@link_to || @default_link}
                 class="link link-primary font-semibold hover:underline truncate max-w-xs"
                 title={segment.text}
               >
@@ -78,7 +85,7 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
       <% else %>
         <!-- No path - show domain only (fallback for domain-only URLs like homepage) -->
         <a
-          href={@link_to || ~p"/dashboard/url?url=#{@url}"}
+          href={@link_to || @default_link}
           class="link link-primary font-semibold hover:underline min-w-0 overflow-hidden text-ellipsis whitespace-nowrap"
           title={@breadcrumb.domain}
         >
@@ -98,7 +105,7 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
   - `sort_by` - Current sort column
   - `sort_direction` - Sort direction ("asc" or "desc")
   - `account_id` - Currently selected workspace/account id (used to preserve context)
-  - `property_id` - Currently selected property id (optional, preserves property context)
+  - `property_id` - Currently selected property id (required, scopes the generated links)
 
   ## Example
       <.url_table
@@ -106,6 +113,7 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
         view_mode={@view_mode}
         sort_by={@sort_by}
         sort_direction={@sort_direction}
+        property_id={@current_property_id}
       />
   """
   attr :urls, :list, required: true
@@ -114,7 +122,7 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
   attr :sort_direction, :string, default: "desc"
   attr :period_label, :string, default: "Last 30 days"
   attr :account_id, :integer, default: nil
-  attr :property_id, :string, default: nil
+  attr :property_id, :string, required: true
 
   def url_table(assigns) do
     ~H"""
@@ -163,11 +171,12 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
                   <% params =
                     []
                     |> maybe_put_param(:url, url.url)
-                    |> maybe_put_param(:account_id, @account_id)
-                    |> maybe_put_param(:property_id, @property_id) %>
+                    |> maybe_put_param(:account_id, @account_id) %>
+                  <% link_path = PropertyRoutes.url_path(@property_id, params) %>
                   <.url_breadcrumb
                     url={url.url}
-                    link_to={~p"/dashboard/url?#{params}"}
+                    property_id={@property_id}
+                    link_to={link_path}
                     max_segments={if @view_mode == "all", do: 2, else: 3}
                   />
                 </div>
@@ -177,7 +186,8 @@ defmodule GscAnalyticsWeb.Components.DashboardComponents do
                     <div class="tooltip tooltip-bottom flex-1" data-tip={url.redirect_url}>
                       <.url_breadcrumb
                         url={url.redirect_url}
-                        link_to={~p"/dashboard/url?#{params}"}
+                        property_id={@property_id}
+                        link_to={link_path}
                         max_segments={if @view_mode == "all", do: 2, else: 2}
                       />
                     </div>

@@ -15,15 +15,17 @@ defmodule GscAnalyticsWeb.DashboardWorkflowsLive do
 
   alias GscAnalytics.Repo
   alias GscAnalytics.Schemas.Workflow
+  alias GscAnalytics.Workflows
   alias GscAnalytics.Workflows.{Engine, Execution, ExecutionEvent, ProgressTracker}
   alias GscAnalyticsWeb.Live.AccountHelpers
+  alias GscAnalyticsWeb.PropertyRoutes
 
   @impl true
   def mount(params, _session, socket) do
     # Subscribe to workflow progress updates and workflow changes
     if connected?(socket) do
       ProgressTracker.subscribe()
-      GscAnalytics.Workflows.subscribe()
+      Workflows.subscribe()
     end
 
     {socket, account, _property} =
@@ -43,11 +45,15 @@ defmodule GscAnalyticsWeb.DashboardWorkflowsLive do
       active_executions = list_active_executions(account.id)
       recent_executions = list_recent_executions(account.id, limit: 10)
 
+      filters = default_filters()
+      filtered_workflows = apply_workflow_filters(workflows, filters)
+
       socket =
         socket
-        |> assign(:current_path, "/dashboard/workflows")
         |> assign(:page_title, "Workflow Runner")
         |> assign(:workflows, workflows)
+        |> assign(:workflow_filters, filters)
+        |> assign(:filtered_workflows, filtered_workflows)
         |> assign(:active_executions, active_executions)
         |> assign(:recent_executions, recent_executions)
         |> assign(:selected_execution_id, nil)
@@ -58,11 +64,12 @@ defmodule GscAnalyticsWeb.DashboardWorkflowsLive do
   end
 
   @impl true
-  def handle_params(params, _uri, socket) do
+  def handle_params(params, uri, socket) do
     socket =
       socket
       |> AccountHelpers.assign_current_account(params)
       |> AccountHelpers.assign_current_property(params)
+      |> assign(:current_path, URI.parse(uri).path || "/dashboard/workflows")
 
     account_id = socket.assigns.current_account_id
 
@@ -71,13 +78,73 @@ defmodule GscAnalyticsWeb.DashboardWorkflowsLive do
     active_executions = list_active_executions(account_id)
     recent_executions = list_recent_executions(account_id, limit: 10)
 
+    filters = socket.assigns[:workflow_filters] || default_filters()
+    filtered_workflows = apply_workflow_filters(workflows, filters)
+
     socket =
       socket
       |> assign(:workflows, workflows)
+      |> assign(:filtered_workflows, filtered_workflows)
       |> assign(:active_executions, active_executions)
       |> assign(:recent_executions, recent_executions)
 
     {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("create_workflow", _params, socket) do
+    account_id = socket.assigns.current_account_id
+    user_id = socket.assigns.current_scope.user && socket.assigns.current_scope.user.id
+
+    attrs = default_workflow_attrs(account_id, user_id)
+
+    case Workflows.create_workflow(attrs) do
+      {:ok, workflow} ->
+        workflows = list_workflows(account_id)
+        filters = socket.assigns.workflow_filters
+        filtered = apply_workflow_filters(workflows, filters)
+
+        socket =
+          socket
+          |> assign(:workflows, workflows)
+          |> assign(:filtered_workflows, filtered)
+          |> put_flash(:info, "Created workflow #{workflow.name}")
+          |> push_navigate(
+            to:
+              PropertyRoutes.workflow_edit_path(
+                socket.assigns.current_property_id,
+                workflow.id
+              )
+          )
+
+        {:noreply, socket}
+
+      {:error, changeset} ->
+        {:noreply,
+         put_flash(socket, :error, "Failed to create workflow: #{format_errors(changeset)}")}
+    end
+  end
+
+  @impl true
+  def handle_event("filter_workflows", %{"filters" => filters_params}, socket) do
+    filters = normalize_filters(filters_params)
+    filtered = apply_workflow_filters(socket.assigns.workflows, filters)
+
+    {:noreply,
+     socket
+     |> assign(:workflow_filters, filters)
+     |> assign(:filtered_workflows, filtered)}
+  end
+
+  @impl true
+  def handle_event("reset_filters", _params, socket) do
+    filters = default_filters()
+    filtered = apply_workflow_filters(socket.assigns.workflows, filters)
+
+    {:noreply,
+     socket
+     |> assign(:workflow_filters, filters)
+     |> assign(:filtered_workflows, filtered)}
   end
 
   @impl true
@@ -183,8 +250,12 @@ defmodule GscAnalyticsWeb.DashboardWorkflowsLive do
 
     # Reload workflows list when a workflow is created/updated/deleted
     workflows = list_workflows(account_id)
+    filtered = apply_workflow_filters(workflows, socket.assigns.workflow_filters)
 
-    socket = assign(socket, :workflows, workflows)
+    socket =
+      socket
+      |> assign(:workflows, workflows)
+      |> assign(:filtered_workflows, filtered)
 
     {:noreply, socket}
   end
@@ -230,6 +301,91 @@ defmodule GscAnalyticsWeb.DashboardWorkflowsLive do
     |> ExecutionEvent.for_execution(execution_id)
     |> ExecutionEvent.chronological()
     |> Repo.all()
+  end
+
+  defp default_workflow_attrs(account_id, user_id) do
+    now = DateTime.utc_now()
+    timestamp = Calendar.strftime(now, "%b %-d · %I:%M %p")
+
+    %{
+      name: "Untitled Workflow (#{timestamp})",
+      description: "Auto-generated workflow",
+      status: :draft,
+      account_id: account_id,
+      created_by_id: user_id,
+      definition: default_workflow_definition()
+    }
+  end
+
+  defp default_workflow_definition do
+    %{
+      "version" => "1.0",
+      "steps" => [
+        %{
+          "id" => "step_1",
+          "type" => "test",
+          "name" => "New Step",
+          "config" => %{"delay_ms" => 1000},
+          "position" => %{"x" => 0, "y" => 0}
+        }
+      ],
+      "connections" => []
+    }
+  end
+
+  defp apply_workflow_filters(workflows, %{query: query, status: status}) do
+    workflows
+    |> Enum.filter(fn workflow ->
+      matches_status =
+        status == "all" || Atom.to_string(workflow.status) == status
+
+      normalized_query = String.downcase(query || "")
+
+      matches_query =
+        normalized_query == "" or
+          String.contains?(String.downcase(workflow.name), normalized_query) or
+          (workflow.description &&
+             String.contains?(String.downcase(workflow.description), normalized_query))
+
+      matches_status and matches_query
+    end)
+  end
+
+  defp default_filters, do: %{query: "", status: "all"}
+
+  defp normalize_filters(params) do
+    query =
+      params
+      |> Map.get("query", "")
+      |> to_string()
+      |> String.trim()
+
+    status =
+      params
+      |> Map.get("status", "all")
+      |> to_string()
+      |> case do
+        "draft" -> "draft"
+        "published" -> "published"
+        "archived" -> "archived"
+        _ -> "all"
+      end
+
+    %{query: query, status: status}
+  end
+
+  defp workflow_stats(workflows) do
+    total = length(workflows)
+    published = Enum.count(workflows, &(&1.status == :published))
+    draft = Enum.count(workflows, &(&1.status == :draft))
+    last_updated = workflows |> Enum.max_by(& &1.updated_at, fn -> nil end)
+
+    %{
+      total: total,
+      published: published,
+      draft: draft,
+      last_updated_at: last_updated && last_updated.updated_at
+    }
   end
 
   defp status_badge_class(status) do
@@ -279,5 +435,13 @@ defmodule GscAnalyticsWeb.DashboardWorkflowsLive do
     |> Atom.to_string()
     |> String.replace("_", " ")
     |> String.capitalize()
+  end
+
+  defp format_errors(changeset) do
+    Ecto.Changeset.traverse_errors(changeset, fn {msg, _opts} -> msg end)
+    |> Enum.map(fn {field, errors} ->
+      "#{field}: #{Enum.join(errors, ", ")}"
+    end)
+    |> Enum.join("; ")
   end
 end

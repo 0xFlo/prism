@@ -5,6 +5,8 @@ defmodule GscAnalyticsWeb.Layouts do
   """
   use GscAnalyticsWeb, :html
 
+  alias GscAnalyticsWeb.PropertyRoutes
+
   # Embed all files in layouts/* within this module.
   # The default root.html.heex file contains the HTML
   # skeleton of your application, namely HTML headers
@@ -101,7 +103,7 @@ defmodule GscAnalyticsWeb.Layouts do
               <li>
                 <.link
                   navigate={account_nav(assigns, :root)}
-                  class={nav_link_class(assigns, "/")}
+                  class={nav_link_class(assigns, :dashboard)}
                 >
                   <.icon name="hero-home" class="h-5 w-5" /> Dashboard
                 </.link>
@@ -109,7 +111,7 @@ defmodule GscAnalyticsWeb.Layouts do
               <li>
                 <.link
                   navigate={account_nav(assigns, :keywords)}
-                  class={nav_link_class(assigns, "/dashboard/keywords")}
+                  class={nav_link_class(assigns, :keywords)}
                 >
                   <.icon name="hero-magnifying-glass" class="h-5 w-5" /> Keywords
                 </.link>
@@ -117,7 +119,7 @@ defmodule GscAnalyticsWeb.Layouts do
               <li>
                 <.link
                   navigate={account_nav(assigns, :sync)}
-                  class={nav_link_class(assigns, "/dashboard/sync")}
+                  class={nav_link_class(assigns, :sync)}
                 >
                   <.icon name="hero-arrow-path" class="h-5 w-5" /> Sync Status
                 </.link>
@@ -125,7 +127,7 @@ defmodule GscAnalyticsWeb.Layouts do
               <li>
                 <.link
                   navigate={account_nav(assigns, :crawler)}
-                  class={nav_link_class(assigns, "/dashboard/crawler")}
+                  class={nav_link_class(assigns, :crawler)}
                 >
                   <.icon name="hero-shield-check" class="h-5 w-5" /> URL Health
                 </.link>
@@ -133,7 +135,7 @@ defmodule GscAnalyticsWeb.Layouts do
               <li>
                 <.link
                   navigate={account_nav(assigns, :workflows)}
-                  class={nav_link_class(assigns, "/dashboard/workflows")}
+                  class={nav_link_class(assigns, :workflows)}
                 >
                   <.icon name="hero-cog-6-tooth" class="h-5 w-5" /> Workflows
                 </.link>
@@ -147,64 +149,51 @@ defmodule GscAnalyticsWeb.Layouts do
   end
 
   # Helper function to determine active nav link styling
-  defp nav_link_class(assigns, path) do
-    current_path = Map.get(assigns, :current_path, "")
+  defp nav_link_class(assigns, section) do
+    segments =
+      assigns
+      |> Map.get(:current_path, "")
+      |> path_segments()
 
-    if current_path == path or (path == "/" and current_path == "/dashboard") do
-      "active"
-    else
-      ""
-    end
+    active? =
+      case {section, segments} do
+        {:dashboard, ["dashboard"]} -> true
+        {:dashboard, ["dashboard", _property]} -> true
+        {:dashboard, ["dashboard", _property, _rest | _]} -> true
+        {:keywords, ["dashboard", _property, "keywords" | _rest]} -> true
+        {:sync, ["dashboard", _property, "sync" | _rest]} -> true
+        {:crawler, ["dashboard", _property, "crawler" | _rest]} -> true
+        {:workflows, ["dashboard", _property, "workflows" | _rest]} -> true
+        _ -> false
+      end
+
+    if active?, do: "active", else: ""
   end
 
-  defp account_nav(assigns, :root) do
-    case account_query(assigns) do
-      [] -> ~p"/"
-      params -> ~p"/?#{params}"
-    end
+  defp path_segments(path) when is_binary(path) do
+    path
+    |> String.trim_leading("/")
+    |> String.split("/", trim: true)
   end
 
-  defp account_nav(assigns, :keywords) do
-    case account_query(assigns) do
-      [] -> ~p"/dashboard/keywords"
-      params -> ~p"/dashboard/keywords?#{params}"
-    end
-  end
+  defp path_segments(_), do: []
 
-  defp account_nav(assigns, :sync) do
-    case account_query(assigns) do
-      [] -> ~p"/dashboard/sync"
-      params -> ~p"/dashboard/sync?#{params}"
-    end
-  end
-
-  defp account_nav(assigns, :crawler) do
-    case account_query(assigns) do
-      [] -> ~p"/dashboard/crawler"
-      params -> ~p"/dashboard/crawler?#{params}"
-    end
-  end
-
-  defp account_nav(assigns, :workflows) do
-    case account_query(assigns) do
-      [] -> ~p"/dashboard/workflows"
-      params -> ~p"/dashboard/workflows?#{params}"
-    end
-  end
-
-  defp account_query(assigns) do
+  defp account_nav(assigns, section) do
     property_id = Map.get(assigns, :current_property_id)
 
-    params =
-      []
-      |> maybe_put(:property_id, property_id)
-
-    Enum.reverse(params)
+    case {section, property_id} do
+      {:root, nil} -> ~p"/dashboard"
+      {:keywords, nil} -> ~p"/dashboard"
+      {:sync, nil} -> ~p"/dashboard"
+      {:crawler, nil} -> ~p"/dashboard"
+      {:workflows, nil} -> ~p"/dashboard"
+      {:root, id} -> PropertyRoutes.dashboard_path(id)
+      {:keywords, id} -> PropertyRoutes.keywords_path(id)
+      {:sync, id} -> PropertyRoutes.sync_path(id)
+      {:crawler, id} -> PropertyRoutes.crawler_path(id)
+      {:workflows, id} -> PropertyRoutes.workflows_path(id)
+    end
   end
-
-  defp maybe_put(params, _key, nil), do: params
-  defp maybe_put(params, _key, ""), do: params
-  defp maybe_put(params, key, value), do: [{key, value} | params]
 
   @doc """
   Shows the flash group with standard titles and content.

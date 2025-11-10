@@ -8,6 +8,7 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
   alias GscAnalyticsWeb.Live.DashboardParams
   alias GscAnalyticsWeb.Presenters.ChartDataPresenter
   alias GscAnalyticsWeb.Presenters.DashboardUrlHelpers, as: UrlHelpers
+  alias GscAnalyticsWeb.PropertyRoutes
 
   import GscAnalyticsWeb.Dashboard.HTMLHelpers
   import GscAnalyticsWeb.Components.DashboardComponents
@@ -133,13 +134,17 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
   end
 
   def handle_params(_params, uri, socket) do
-    socket = AccountHelpers.assign_current_account(socket, %{})
+    socket =
+      socket
+      |> AccountHelpers.assign_current_account(%{})
+      |> AccountHelpers.assign_current_property(%{})
+
     current_path = URI.parse(uri).path || "/dashboard/url"
 
     {:noreply,
      socket
      |> assign(:current_path, current_path)
-     |> push_navigate(to: ~p"/dashboard")}
+     |> push_navigate(to: PropertyRoutes.dashboard_path(socket.assigns.current_property_id))}
   end
 
   @impl true
@@ -266,14 +271,35 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
   end
 
   defp build_url_params(socket, overrides, assign_overrides) do
-    socket.assigns
-    |> Map.merge(assign_overrides)
-    |> DashboardParams.build_url_query(overrides)
+    property_override =
+      case Map.fetch(overrides, :property_id) do
+        {:ok, value} -> value
+        :error -> :no_override
+      end
+
+    sanitized_overrides = Map.delete(overrides, :property_id)
+
+    params =
+      socket.assigns
+      |> Map.merge(assign_overrides)
+      |> DashboardParams.build_url_query(sanitized_overrides)
+
+    property_id =
+      case property_override do
+        :no_override -> socket.assigns.current_property_id
+        value -> value
+      end
+
+    {params, property_id}
   end
 
   defp push_url_patch(socket, overrides, assign_overrides \\ %{}) do
-    params = build_url_params(socket, overrides, assign_overrides)
-    push_patch(socket, to: ~p"/dashboard/url?#{params}")
+    {params, property_id} = build_url_params(socket, overrides, assign_overrides)
+
+    push_patch(
+      socket,
+      to: PropertyRoutes.url_path(property_id, params)
+    )
   end
 
   defp normalize_chart_view("weekly"), do: "weekly"

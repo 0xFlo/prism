@@ -96,11 +96,16 @@ defmodule GscAnalytics.Crawler.ProgressTracker do
 
   @impl true
   def handle_call({:start_check, total_urls, metadata}, _from, state) do
+    filter = Map.get(metadata || %{}, :filter)
+
     job = %{
       id: generate_job_id(),
       started_at: DateTime.utc_now(),
       total_urls: total_urls,
       checked: 0,
+      checked_urls: 0,
+      status: "running",
+      filter: filter,
       metadata: metadata || %{},
       status_counts: %{
         "2xx" => 0,
@@ -125,9 +130,13 @@ defmodule GscAnalytics.Crawler.ProgressTracker do
         {:reply, {:error, :no_job_running}, state}
 
       job ->
+        status = normalize_status(Map.get(stats, :status, "completed"))
+
         finished_job = %{
           job
           | checked: stats.checked,
+            checked_urls: stats.checked,
+            status: status,
             status_counts: %{
               "2xx" => stats.status_2xx,
               "3xx" => stats.status_3xx,
@@ -189,6 +198,7 @@ defmodule GscAnalytics.Crawler.ProgressTracker do
   defp increment_counters(job, result) do
     job
     |> Map.update!(:checked, &(&1 + 1))
+    |> Map.update(:checked_urls, 1, &(&1 + 1))
     |> update_status_counts(result)
   end
 
@@ -216,6 +226,23 @@ defmodule GscAnalytics.Crawler.ProgressTracker do
   defp calculate_duration(started_at) do
     DateTime.diff(DateTime.utc_now(), started_at, :millisecond)
   end
+
+  defp normalize_status(status) when is_binary(status) do
+    status
+    |> String.downcase()
+    |> case do
+      "running" -> "running"
+      "failed" -> "failed"
+      "completed" -> "completed"
+      other -> other
+    end
+  end
+
+  defp normalize_status(status) when is_atom(status) do
+    status |> Atom.to_string() |> normalize_status()
+  end
+
+  defp normalize_status(_), do: "completed"
 
   defp add_to_history(history, job) do
     [job | history]

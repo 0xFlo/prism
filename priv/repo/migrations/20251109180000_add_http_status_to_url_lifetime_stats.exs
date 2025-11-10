@@ -16,20 +16,20 @@ defmodule GscAnalytics.Repo.Migrations.AddHttpStatusToUrlLifetimeStats do
 
     # Partial index for broken links (4xx/5xx)
     create index(:url_lifetime_stats, [:account_id, :property_url, :http_status],
-      where: "http_status >= 400",
-      name: :idx_lifetime_stats_broken_links
-    )
+             where: "http_status >= 400",
+             name: :idx_lifetime_stats_broken_links
+           )
 
     # Partial index for redirects
     create index(:url_lifetime_stats, [:account_id, :property_url, :http_status],
-      where: "http_status IN (301, 302, 307, 308)",
-      name: :idx_lifetime_stats_redirects
-    )
+             where: "http_status IN (301, 302, 307, 308)",
+             name: :idx_lifetime_stats_redirects
+           )
 
     # Partial index for URLs never checked
     create index(:url_lifetime_stats, [:account_id, :property_url],
-      where: "http_checked_at IS NULL",
-      name: :idx_lifetime_stats_not_checked
-    )
+             where: "http_checked_at IS NULL",
+             name: :idx_lifetime_stats_not_checked
+           )
   end
 end
