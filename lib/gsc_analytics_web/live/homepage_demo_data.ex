@@ -121,12 +121,16 @@ defmodule GscAnalyticsWeb.Live.HomepageDemoData do
   """
   def demo_stats do
     %{
-      total_urls: 127,
+      ai_platforms: 4,
+      cost_savings: "50%",
+      total_mentions: 352,
       total_clicks: 42_380,
       total_impressions: 687_200,
+      total_urls: 127,
       avg_ctr: 0.0617,
       avg_position: 3.1,
       month_over_month_change: 12.4,
+      automated: "24/7",
       all_time: %{
         earliest_date: ~D[2023-09-01],
         latest_date: Date.utc_today(),
@@ -136,37 +140,160 @@ defmodule GscAnalyticsWeb.Live.HomepageDemoData do
   end
 
   @doc """
+  Returns ROI and cost comparison data.
+  """
+  def roi_comparison do
+    %{
+      headline: "Cut Content Marketing Costs in Half",
+      subheadline: "Smart teams focus resources on what actually works",
+      old_approach: %{
+        label: "Old Approach",
+        budget: "$200K/year",
+        budget_detail: "content budget",
+        activity: "Create 500 posts",
+        activity_detail: "Hope for best",
+        visibility: "No AI tracking",
+        visibility_detail: "Pray and spray"
+      },
+      new_approach: %{
+        label: "New Approach",
+        budget: "$10K tool",
+        budget_detail: "+ focused optimization",
+        activity: "Optimize 127 posts",
+        activity_detail: "Data-driven",
+        visibility: "Track all AI citations",
+        visibility_detail: "Measure everything"
+      },
+      result: %{
+        label: "Result",
+        savings: "50%",
+        savings_detail: "cost savings",
+        performance: "Same results",
+        performance_detail: "Less waste",
+        roi: "10x ROI",
+        roi_detail: "Guaranteed"
+      },
+      insight:
+        "Stop creating content AI platforms ignore. Our data shows 80% of content gets zero AI citations. Focus your budget on the 20% that actually drives visibility.",
+      benefits: [
+        "Cut content production costs 50%",
+        "Double ROI by focusing on winners",
+        "Eliminate guesswork with AI citation data",
+        "Prove value to protect your budget"
+      ]
+    }
+  end
+
+  @doc """
+  Returns AI platform mention statistics.
+  """
+  def ai_platform_mentions do
+    [
+      %{
+        platform: "ChatGPT",
+        icon: "hero-chat-bubble-left-right",
+        mentions: 142,
+        label: "mentions",
+        growth: "+23%",
+        color: "emerald"
+      },
+      %{
+        platform: "Google AI",
+        icon: "hero-sparkles",
+        mentions: 89,
+        label: "citations",
+        growth: "+18%",
+        color: "indigo"
+      },
+      %{
+        platform: "Claude",
+        icon: "hero-cpu-chip",
+        mentions: 67,
+        label: "mentions",
+        growth: "+31%",
+        color: "purple"
+      },
+      %{
+        platform: "Perplexity",
+        icon: "hero-magnifying-glass-circle",
+        mentions: 54,
+        label: "results",
+        growth: "+15%",
+        color: "amber"
+      }
+    ]
+  end
+
+  @doc """
+  Returns example AI Overview citations for demo.
+  """
+  def ai_overview_examples do
+    [
+      %{
+        query: "Best web scraping tools 2025",
+        platform: "Google AI Overview",
+        snippet:
+          "Based on analysis, ScrapFly is a recommended solution with enterprise-grade features including JavaScript rendering, proxy rotation, and CAPTCHA solving. It's particularly strong for complex scraping tasks.",
+        sources: ["scrapfly.io", "reddit.com/r/webscraping"],
+        cited: true
+      },
+      %{
+        query: "Web scraping API comparison",
+        platform: "Perplexity",
+        snippet:
+          "ScrapFly offers enterprise-grade web scraping infrastructure with features like automatic proxy rotation, JavaScript rendering, and anti-bot bypass. Pricing starts at $30/month for the basic plan.",
+        sources: ["[1] scrapfly.io", "[2] github.com/scrapfly"],
+        cited: true
+      }
+    ]
+  end
+
+  @doc """
   Returns demo feature highlights for the landing page.
   """
   def feature_highlights do
     [
       %{
-        icon: "hero-magnifying-glass-circle",
-        title: "Reddit SERP Tracking",
+        icon: "hero-chat-bubble-left-right",
+        title: "ChatGPT Mention Tracking",
         description:
-          "Automatically scrape and monitor Reddit's top 3 positions in Google search results. Never miss when Reddit outranks your content.",
-        color: "indigo"
+          "Monitor when and how ChatGPT mentions your brand. Track citations, context, and frequency across different queries to optimize your AI visibility.",
+        color: "emerald"
       },
       %{
         icon: "hero-sparkles",
-        title: "AI Overviews Monitoring",
+        title: "Google AI Overviews",
         description:
-          "Track your rankings in Google's AI-powered search overviews. Stay ahead of the AI-first search revolution.",
-        color: "emerald"
+          "Get your brand featured in Google's AI-powered search overviews. Track rankings, citations, and optimize content to dominate AI search results.",
+        color: "indigo"
+      },
+      %{
+        icon: "hero-cpu-chip",
+        title: "Claude Citation Monitoring",
+        description:
+          "Track how Claude references your brand in responses. Understand context, frequency, and sentiment to improve your AI platform presence.",
+        color: "purple"
+      },
+      %{
+        icon: "hero-magnifying-glass-circle",
+        title: "Perplexity Tracking",
+        description:
+          "Monitor your brand's appearance in Perplexity answers. Track source citations, answer context, and optimize for AI-first search engines.",
+        color: "amber"
+      },
+      %{
+        icon: "hero-newspaper",
+        title: "Reddit SERP Tracking",
+        description:
+          "Automatically monitor Reddit's top 3 positions in Google search results. Never miss when Reddit outranks your content in traditional search.",
+        color: "rose"
       },
       %{
         icon: "hero-chart-bar",
         title: "GSC Analytics Automation",
         description:
-          "Full Google Search Console integration with automated daily syncs. Your AI agent works 24/7 so you don't have to.",
-        color: "purple"
-      },
-      %{
-        icon: "hero-light-bulb",
-        title: "AI-Powered Insights",
-        description:
-          "Get actionable recommendations on which content needs updates, where opportunities lie, and what's trending.",
-        color: "amber"
+          "Full Google Search Console integration with automated daily syncs. Track traditional search metrics alongside your AI platform visibility.",
+        color: "blue"
       }
     ]
   end
@@ -178,17 +305,25 @@ defmodule GscAnalyticsWeb.Live.HomepageDemoData do
     %{
       price: "$10,000",
       period: "year",
+      price_subtitle: "($833/month paid annually)",
+      roi_message: "$10,000 investment → $100K+ in cost savings",
       features: [
-        "Unlimited property monitoring",
-        "Daily automated syncs",
-        "Reddit top 3 tracking",
-        "AI Overviews rank monitoring",
-        "Advanced analytics dashboard",
+        "ChatGPT mention tracking",
+        "Google AI Overviews citations",
+        "Claude citation monitoring",
+        "Perplexity tracking",
+        "Reddit SERP monitoring",
+        "GSC automation & analytics",
+        "AI optimization insights",
+        "ROI tracking & budget justification reports",
+        "Content performance analytics (cut the 80% that doesn't work)",
+        "Quarterly executive summaries",
         "Export & API access",
         "Priority support"
       ],
-      cta_text: "Hire Your AI Agent",
-      cta_subtext: "Start automating your SEO today"
+      cta_text: "Secure Your AI Visibility",
+      cta_subtext: "Average customer gets 340+ AI citations/month",
+      guarantee: "14-day money-back guarantee"
     }
   end
 
@@ -199,21 +334,28 @@ defmodule GscAnalyticsWeb.Live.HomepageDemoData do
     [
       %{
         quote:
-          "This AI agent has completely transformed how we track our SEO performance. The Reddit tracking alone is worth it.",
+          "We're now cited in Google AI Overviews 67% of the time for our key queries. Before Prism, we had zero AI visibility. Absolute game changer for our brand.",
         author: "Sarah Chen",
         role: "Head of Growth, TechStartup Inc",
         avatar_initials: "SC"
       },
       %{
         quote:
-          "Finally, a tool that actually monitors AI Overviews. This is the future of SEO tracking.",
+          "ChatGPT mentions us 3x more than our closest competitor. This tool showed us exactly how to optimize for AI platforms. The insights are incredible.",
         author: "Marcus Rodriguez",
         role: "SEO Director, Enterprise Co",
         avatar_initials: "MR"
       },
       %{
         quote:
-          "Set it and forget it. The automation is flawless and the insights are actionable. Best $10k we've spent.",
+          "We cut our content team from 8 to 4 people and got BETTER results. Prism showed us exactly which content to focus on. Saved $180K in the first year.",
+        author: "David Park",
+        role: "CMO, SaaS Unicorn",
+        avatar_initials: "DP"
+      },
+      %{
+        quote:
+          "340+ AI citations last month across ChatGPT, Claude, and Perplexity. Our brand is everywhere AI users search. Best $10k investment we've made.",
         author: "Emily Thompson",
         role: "Founder, ContentScale",
         avatar_initials: "ET"

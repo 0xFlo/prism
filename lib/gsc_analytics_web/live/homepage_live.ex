@@ -36,10 +36,16 @@ defmodule GscAnalyticsWeb.HomepageLive do
       features = HomepageDemoData.feature_highlights()
       pricing = HomepageDemoData.pricing_info()
       testimonials = HomepageDemoData.testimonials()
+      ai_platforms = HomepageDemoData.ai_platform_mentions()
+      ai_overviews = HomepageDemoData.ai_overview_examples()
+      roi_comparison = HomepageDemoData.roi_comparison()
 
       {:ok,
        socket
-       |> assign(:page_title, "AI SEO Agent - Automate Your Search Console Analytics")
+       |> assign(
+         :page_title,
+         "AI Visibility Platform - Get Cited by ChatGPT, Google AI, Claude & Perplexity"
+       )
        |> assign(:metrics, metrics)
        |> assign(:time_series, time_series)
        |> assign(:time_series_json, ChartDataPresenter.encode_time_series(time_series))
@@ -48,6 +54,9 @@ defmodule GscAnalyticsWeb.HomepageLive do
        |> assign(:features, features)
        |> assign(:pricing, pricing)
        |> assign(:testimonials, testimonials)
+       |> assign(:ai_platforms, ai_platforms)
+       |> assign(:ai_overviews, ai_overviews)
+       |> assign(:roi_comparison, roi_comparison)
        |> assign(:visible_series, [:clicks, :impressions])
        |> assign(:view_mode, "basic")
        |> assign(:sort_by, "clicks")
@@ -130,6 +139,20 @@ defmodule GscAnalyticsWeb.HomepageLive do
           border: "border-amber-500/30",
           bg: "bg-amber-500/10",
           icon: "text-amber-400"
+        }
+
+      "rose" ->
+        %{
+          border: "border-rose-500/30",
+          bg: "bg-rose-500/10",
+          icon: "text-rose-400"
+        }
+
+      "blue" ->
+        %{
+          border: "border-blue-500/30",
+          bg: "bg-blue-500/10",
+          icon: "text-blue-400"
         }
 
       _ ->
