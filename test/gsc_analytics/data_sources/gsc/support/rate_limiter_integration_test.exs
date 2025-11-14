@@ -76,6 +76,11 @@ defmodule GscAnalytics.DataSources.GSC.Support.RateLimiterIntegrationTest do
       assert wait_time == 60_000
     end
 
+    test "request_count multiplier consumes quota proportionally" do
+      assert :ok = RateLimiter.check_rate(@account_id, @test_site, 1_000)
+      assert {:error, :rate_limited, _} = RateLimiter.check_rate(@account_id, @test_site, 300)
+    end
+
     test "tracks rate separately for different sites" do
       # Business requirement: "Per-site rate limiting to allow multi-site monitoring"
 

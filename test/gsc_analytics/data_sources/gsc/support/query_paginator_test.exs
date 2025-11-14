@@ -25,7 +25,10 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryPaginatorTest do
     older = ~D[2024-01-01]
 
     assert {:ok, results, total_calls, _batch_calls} =
-             QueryPaginator.fetch_all_queries(1, @site_url, [newest, older], batch_size: 2)
+             QueryPaginator.fetch_all_queries(1, @site_url, [newest, older],
+               batch_size: 2,
+               max_concurrency: 1
+             )
 
     assert total_calls == 3
 
@@ -52,6 +55,7 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryPaginatorTest do
 
     QueryPaginator.fetch_all_queries(1, @site_url, [newest, older],
       batch_size: 2,
+      max_concurrency: 1,
       on_complete: fn payload ->
         send(self(), {:completed, payload})
         :continue
@@ -70,6 +74,7 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryPaginatorTest do
     {:ok, results, _, _} =
       QueryPaginator.fetch_all_queries(1, @site_url, [newest],
         batch_size: 2,
+        max_concurrency: 1,
         on_complete: fn _ -> :continue end
       )
 
@@ -84,6 +89,7 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryPaginatorTest do
     assert {:halt, :custom_halt, results, _total_calls, _batch_calls} =
              QueryPaginator.fetch_all_queries(1, @site_url, [newest, older],
                batch_size: 2,
+               max_concurrency: 1,
                on_complete: fn payload ->
                  send(self(), {:completed, payload.date})
 
@@ -113,6 +119,7 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryPaginatorTest do
     assert {:halt, {:callback_error, error_msg}, _results, _total_calls, _batch_calls} =
              QueryPaginator.fetch_all_queries(1, @site_url, [newest, older],
                batch_size: 2,
+               max_concurrency: 1,
                on_complete: fn payload ->
                  # Raise exception on first completion
                  if payload.date == newest do

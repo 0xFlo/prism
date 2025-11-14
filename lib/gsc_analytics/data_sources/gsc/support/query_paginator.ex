@@ -14,6 +14,14 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryPaginator do
   require Logger
   alias MapSet
 
+  alias GscAnalytics.DataSources.GSC.Core.Config
+
+  alias GscAnalytics.DataSources.GSC.Support.{
+    ConcurrentBatchWorker,
+    QueryCoordinator,
+    RateLimiter
+  }
+
   @page_size 25_000
   @default_batch_size 8
   @agent_timeout 5_000
@@ -32,6 +40,9 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryPaginator do
     - `:dimensions` - Query dimensions (default: ["page", "query"])
     - `:operation` - Operation name for logging
     - `:client` - Client module to use
+    - `:max_concurrency` - Number of concurrent workers (default: Config.max_concurrency/0)
+    - `:max_queue_size` / `:max_in_flight` - Coordinator backpressure limits
+    - `:rate_limiter` - Module implementing `check_rate/3` (default: RateLimiter)
 
   ## Returns
 
@@ -50,13 +61,23 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryPaginator do
   end
 
   def fetch_all_queries(account_id, site_url, dates, opts) when is_list(dates) do
-    batch_size = Keyword.get(opts, :batch_size, @default_batch_size)
+    opts = Keyword.put_new(opts, :batch_size, @default_batch_size)
+    max_concurrency = Keyword.get(opts, :max_concurrency, Config.max_concurrency())
+
+    if max_concurrency <= 1 do
+      fetch_all_queries_sequential(account_id, site_url, dates, opts)
+    else
+      fetch_all_queries_concurrent(account_id, site_url, dates, opts, max_concurrency)
+    end
+  end
+
+  defp fetch_all_queries_sequential(account_id, site_url, dates, opts) do
+    batch_size = Keyword.fetch!(opts, :batch_size)
     client = Keyword.get(opts, :client, client_module())
     operation = Keyword.get(opts, :operation, "fetch_all_queries_batch")
     dimensions = Keyword.get(opts, :dimensions, ["page", "query"])
     on_complete = Keyword.get(opts, :on_complete)
 
-    # Initialize pagination state
     initial_state = %{
       queue: :queue.from_list(Enum.map(dates, &{&1, 0})),
       results:
@@ -76,7 +97,6 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryPaginator do
       on_complete: on_complete
     }
 
-    # Execute pagination loop
     do_paginated_fetch(
       account_id,
       site_url,
@@ -86,6 +106,83 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryPaginator do
       dimensions,
       initial_state
     )
+  end
+
+  defp fetch_all_queries_concurrent(account_id, site_url, dates, opts, max_concurrency) do
+    batch_size = Keyword.fetch!(opts, :batch_size)
+    client = Keyword.get(opts, :client, client_module())
+    operation = Keyword.get(opts, :operation, "fetch_all_queries_batch")
+    dimensions = Keyword.get(opts, :dimensions, ["page", "query"])
+    on_complete = Keyword.get(opts, :on_complete)
+    rate_limiter = Keyword.get(opts, :rate_limiter, RateLimiter)
+
+    coordinator_opts = [
+      account_id: account_id,
+      site_url: site_url,
+      dates: dates,
+      on_complete: on_complete,
+      max_queue_size: Keyword.get(opts, :max_queue_size, Config.max_queue_size()),
+      max_in_flight: Keyword.get(opts, :max_in_flight, Config.max_in_flight())
+    ]
+
+    with {:ok, coordinator} <- QueryCoordinator.start_link(coordinator_opts) do
+      worker_opts = [
+        account_id: account_id,
+        site_url: site_url,
+        operation: operation,
+        dimensions: dimensions,
+        batch_size: batch_size,
+        max_concurrency: max_concurrency,
+        client: client,
+        rate_limiter: rate_limiter
+      ]
+
+      case await_worker_tasks(ConcurrentBatchWorker.start_workers(coordinator, worker_opts)) do
+        :ok ->
+          finalize_concurrent(coordinator)
+
+        {:error, reason} ->
+          QueryCoordinator.halt(coordinator, {:worker_exit, reason})
+          finalize_concurrent(coordinator)
+      end
+    else
+      {:error, reason} ->
+        {:error, reason, %{}, 0, 0}
+    end
+  end
+
+  defp finalize_concurrent(coordinator) do
+    try do
+      coordinator
+      |> QueryCoordinator.finalize()
+      |> format_coordinator_result()
+    after
+      GenServer.stop(coordinator, :normal)
+    end
+  end
+
+  defp await_worker_tasks(tasks) do
+    try do
+      Task.await_many(tasks, :infinity)
+      :ok
+    catch
+      :exit, reason ->
+        {:error, reason}
+    after
+      Enum.each(tasks, &Task.shutdown(&1, :brutal_kill))
+    end
+  end
+
+  defp format_coordinator_result({:ok, _reason, results, total_calls, http_batches}) do
+    {:ok, results, total_calls, http_batches}
+  end
+
+  defp format_coordinator_result({:halt, reason, results, total_calls, http_batches}) do
+    {:halt, reason, results, total_calls, http_batches}
+  end
+
+  defp format_coordinator_result({:error, reason, results, total_calls, http_batches}) do
+    {:error, reason, results, total_calls, http_batches}
   end
 
   @doc """

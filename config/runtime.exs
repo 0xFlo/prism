@@ -264,3 +264,28 @@ hammer_backend =
   end
 
 config :hammer, backend: hammer_backend
+
+if config_env() != :test do
+  max_concurrency =
+    case System.get_env("GSC_MAX_CONCURRENCY") do
+      nil -> 1
+      value -> String.to_integer(value)
+    end
+
+  max_queue_size =
+    case System.get_env("GSC_MAX_QUEUE_SIZE") do
+      nil -> 1_000
+      value -> String.to_integer(value)
+    end
+
+  max_in_flight =
+    case System.get_env("GSC_MAX_IN_FLIGHT") do
+      nil -> 10
+      value -> String.to_integer(value)
+    end
+
+  config :gsc_analytics, GscAnalytics.DataSources.GSC.Core.Config,
+    max_concurrency: max_concurrency,
+    max_queue_size: max_queue_size,
+    max_in_flight: max_in_flight
+end

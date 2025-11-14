@@ -144,6 +144,7 @@ defmodule GscAnalytics.DataSources.GSC.PaginationIntegrationTest do
       {:ok, _results, api_calls, _batch_calls} =
         QueryPaginator.fetch_all_queries(@account_id, @site_url, [~D[2025-07-06]],
           batch_size: 4,
+          max_concurrency: 1,
           on_complete: callback
         )
 
@@ -186,7 +187,10 @@ defmodule GscAnalytics.DataSources.GSC.PaginationIntegrationTest do
       # This is expected behavior - one extra API call is acceptable
 
       {:ok, results, api_calls, _batch_calls} =
-        QueryPaginator.fetch_all_queries(@account_id, @site_url, [~D[2025-07-03]], batch_size: 2)
+        QueryPaginator.fetch_all_queries(@account_id, @site_url, [~D[2025-07-03]],
+          batch_size: 2,
+          max_concurrency: 1
+        )
 
       # Should make 2 API calls (initial + pagination check that returns 0)
       assert api_calls == 2

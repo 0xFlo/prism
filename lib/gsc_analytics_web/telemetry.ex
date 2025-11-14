@@ -75,6 +75,37 @@ defmodule GscAnalyticsWeb.Telemetry do
           "The time the connection spent waiting before being checked out for the query"
       ),
 
+      # GSC concurrency metrics
+      last_value("gsc_analytics.coordinator.queue_size",
+        measurement: :size,
+        tags: [:site_url]
+      ),
+      last_value("gsc_analytics.coordinator.in_flight",
+        measurement: :count,
+        tags: [:site_url]
+      ),
+      summary("gsc_analytics.worker.batch.duration",
+        measurement: :duration_ms,
+        unit: {:native, :millisecond},
+        tags: [:worker_id, :site_url]
+      ),
+      last_value("gsc_analytics.worker.batch.size",
+        measurement: :batch_size,
+        tags: [:site_url]
+      ),
+      last_value("gsc_analytics.rate_limit.usage",
+        measurement: :count,
+        tags: [:site_url]
+      ),
+      counter("gsc_analytics.rate_limit.approaching.count",
+        measurement: :count,
+        tags: [:site_url]
+      ),
+      counter("gsc_analytics.rate_limit.exceeded.count",
+        measurement: :count,
+        tags: [:site_url]
+      ),
+
       # VM Metrics
       summary("vm.memory.total", unit: {:byte, :kilobyte}),
       summary("vm.total_run_queue_lengths.total"),

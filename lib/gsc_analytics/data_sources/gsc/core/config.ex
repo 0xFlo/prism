@@ -156,7 +156,21 @@ defmodule GscAnalytics.DataSources.GSC.Core.Config do
   Maximum concurrent URL fetches in batch operations.
   """
   def max_concurrency do
-    get_config(:max_concurrency, 10)
+    get_config(:max_concurrency, 3)
+  end
+
+  @doc """
+  Maximum number of pagination jobs allowed in the coordinator queue.
+  """
+  def max_queue_size do
+    get_config(:max_queue_size, 1_000)
+  end
+
+  @doc """
+  Maximum number of in-flight batches pending result processing.
+  """
+  def max_in_flight do
+    get_config(:max_in_flight, 10)
   end
 
   # ============================================================================

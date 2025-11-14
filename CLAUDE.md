@@ -6,6 +6,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Phoenix LiveView application that fetches, stores, and visualizes Google Search Console (GSC) analytics data. Built with Elixir/Phoenix 1.8, this app provides a dashboard for analyzing URL performance metrics including clicks, impressions, CTR, and search positions.
 
+## 📚 Elixir/OTP Pattern Documentation
+
+**NEW**: Comprehensive guides on Elixir/OTP patterns for concurrent systems are now available in `docs/elixir-patterns/`:
+
+- **[GenServer Coordination](docs/elixir-patterns/genserver-coordination.md)** - Coordinator patterns, backpressure, state recovery, Task supervision
+- **[Rate Limiting](docs/elixir-patterns/rate-limiting.md)** - Hammer library, token/leaky bucket algorithms, QPM management, backoff strategies
+- **[Telemetry](docs/elixir-patterns/telemetry.md)** - Instrumentation, metrics, PromEx, OpenTelemetry integration
+- **[Concurrent Processing](docs/elixir-patterns/concurrent-processing.md)** - Task.async_stream, HTTP clients, error handling, batch processing
+
+**See**: [docs/elixir-patterns/README.md](docs/elixir-patterns/README.md) for full index and quick reference patterns.
+
+These guides provide official documentation links, real code examples from this codebase, and best practices directly applicable to Phase 4 implementation.
+
 ## Development Commands
 
 ### Setup & Development
