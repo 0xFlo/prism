@@ -1,6 +1,8 @@
-import React from "react";
+import React, { Suspense, lazy } from "react";
 import ReactDOM from "react-dom/client";
-import WorkflowBuilder from "./components/WorkflowBuilder.jsx";
+
+// Lazy load WorkflowBuilder and React Flow (~250KB) - only loads when needed
+const WorkflowBuilder = lazy(() => import("./components/WorkflowBuilder.jsx"));
 
 /**
  * LiveView hook for integrating React Flow workflow builder.
@@ -12,6 +14,7 @@ import WorkflowBuilder from "./components/WorkflowBuilder.jsx";
  * Performance:
  * - Uses phx-update="ignore" to prevent LiveView from touching React's DOM
  * - React re-renders are cheap (props update without destroying component)
+ * - CODE SPLITTING: WorkflowBuilder loads on-demand (~250KB saved from initial bundle)
  */
 const WorkflowBuilderHook = {
   mounted() {
@@ -34,15 +37,27 @@ const WorkflowBuilderHook = {
 
   /**
    * Render or update the React component with new workflow data
+   * Wrapped in Suspense for lazy loading
    */
   renderWorkflow(workflow) {
     this.root.render(
-      <WorkflowBuilder
-        workflow={workflow}
-        onSave={(data) => this.handleSave(data)}
-        onAutoSave={(data) => this.handleAutoSave(data)}
-        onBack={() => this.handleBack()}
-      />
+      <Suspense
+        fallback={
+          <div className="flex items-center justify-center h-screen">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto mb-4"></div>
+              <p className="text-gray-600">Loading workflow builder...</p>
+            </div>
+          </div>
+        }
+      >
+        <WorkflowBuilder
+          workflow={workflow}
+          onSave={(data) => this.handleSave(data)}
+          onAutoSave={(data) => this.handleAutoSave(data)}
+          onBack={() => this.handleBack()}
+        />
+      </Suspense>
     );
   },
 

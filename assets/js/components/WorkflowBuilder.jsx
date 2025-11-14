@@ -14,7 +14,8 @@ import {
   getIncomers,
   getOutgoers,
 } from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
+// NOTE: React Flow styles are imported globally in assets/css/app.css
+// This ensures CSS loads before the lazy-loaded component to prevent FOUC
 
 import ErrorBoundary from "./ErrorBoundary.jsx";
 import CustomNode from "./CustomNode.jsx";

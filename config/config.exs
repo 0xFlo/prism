@@ -50,11 +50,13 @@ config :req, :default_options,
 config :gsc_analytics, :http_client, GscAnalytics.HTTPClient.Req
 
 # Configure esbuild (the version is required)
+# NOTE: Shared config includes --splitting --format=esm for dev/prod parity
+# This ensures code splitting works in development and gets tested before production
 config :esbuild,
   version: "0.25.4",
   gsc_analytics: [
     args:
-      ~w(js/app.jsx --bundle --target=es2022 --outdir=../priv/static/assets/js --external:/fonts/* --external:/images/* --loader:.js=jsx --loader:.jsx=jsx --alias:@=. --alias:phoenix-colocated=../_build/dev/phoenix-colocated),
+      ~w(js/app.jsx --bundle --target=es2022 --outdir=../priv/static/assets/js --external:/fonts/* --external:/images/* --loader:.js=jsx --loader:.jsx=jsx --alias:@=. --alias:phoenix-colocated=../_build/dev/phoenix-colocated --splitting --format=esm),
     cd: Path.expand("../assets", __DIR__),
     env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
   ]

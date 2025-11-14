@@ -102,17 +102,19 @@ defmodule GscAnalytics.DataSources.GSC.Core.Config do
   @doc """
   Default number of concurrent requests in a batch.
   Balances API rate limits with performance.
+  Increased from 8 to 50 to better utilize Google Batch API (supports up to 100).
   """
   def default_batch_size do
-    get_config(:default_batch_size, 8)
+    get_config(:default_batch_size, 50)
   end
 
   @doc """
   Number of dates to process in each scheduler chunk.
   Smaller chunks provide more frequent progress updates.
+  Increased from 8 to 16 for better parallelization.
   """
   def query_scheduler_chunk_size do
-    get_config(:query_scheduler_chunk_size, 8)
+    get_config(:query_scheduler_chunk_size, 16)
   end
 
   @doc """
@@ -126,19 +128,20 @@ defmodule GscAnalytics.DataSources.GSC.Core.Config do
   @doc """
   Batch size for time series bulk inserts.
   Prevents hitting PostgreSQL parameter limits (65,535 total parameters).
-  With 10 fields per record, 500 URLs = 5,000 parameters (safe margin).
+  With 10 fields per record, 1000 URLs = 10,000 parameters (safe margin).
+  Increased from 500 to 1000 to reduce database round trips.
   """
   def time_series_batch_size do
-    get_config(:time_series_batch_size, 500)
+    get_config(:time_series_batch_size, 1000)
   end
 
   @doc """
   Batch size for lifetime stats refresh operations.
-  Smaller batches reduce transaction lock time and improve concurrency.
-  500 URLs per batch balances throughput with lock contention.
+  Increased from 500 to 2000 to reduce transaction overhead.
+  Larger batches significantly improve throughput when deferred to end of sync.
   """
   def lifetime_stats_batch_size do
-    get_config(:lifetime_stats_batch_size, 500)
+    get_config(:lifetime_stats_batch_size, 2000)
   end
 
   @doc """
@@ -180,9 +183,10 @@ defmodule GscAnalytics.DataSources.GSC.Core.Config do
 
   @doc """
   Default HTTP request timeout in milliseconds.
+  Increased from 30s to 45s to accommodate larger batch sizes (50 requests/batch).
   """
   def http_timeout do
-    get_config(:http_timeout, 30_000)
+    get_config(:http_timeout, 45_000)
   end
 
   @doc """

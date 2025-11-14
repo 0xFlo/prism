@@ -11,8 +11,8 @@ config :gsc_analytics, GscAnalytics.Repo,
   pool_size: 20,
   queue_target: 100,
   queue_interval: 1000,
-  # Reduce query log verbosity (set to :info or false to disable)
-  log: :info
+  # Disable query logging in development (set to :info to re-enable)
+  log: false
 
 # For development, we disable any cache and enable
 # debugging and code reloading.

@@ -1,3 +1,19 @@
+<%!--
+  Performance optimization: Modulepreload hint
+
+  To reduce the Suspense spinner duration, consider adding modulepreload hints:
+  <link rel="modulepreload" phx-track-static href={~p"/assets/js/WorkflowBuilder-[HASH].js"}>
+  <link rel="modulepreload" phx-track-static href={~p"/assets/js/chunk-[HASH].js"}>
+
+  Challenge: Chunk filenames include content hashes that change with each build.
+  Solution options:
+  1. Read manifest.json at runtime to resolve chunk URLs
+  2. Use Phoenix.Digester to generate helper functions
+  3. Accept short Suspense spinner on first visit (browser caches thereafter)
+
+  Current approach: Lazy loading works well, chunks are cached after first load.
+--%>
+
 <div
   id="workflow-builder"
   phx-hook="WorkflowBuilder"

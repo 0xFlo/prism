@@ -275,56 +275,54 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
   end
 
   defp refresh_url_batch(account_id, property_url, urls, _batch_num, _total_batches) do
-    Repo.transaction(fn ->
-      # Step 1: Delete existing stats for this batch of URLs
-      Repo.query!(
-        """
-        DELETE FROM url_lifetime_stats
-        WHERE account_id = $1 AND property_url = $2 AND url = ANY($3::text[])
-        """,
-        [account_id, property_url, urls]
+    # Use UPSERT (INSERT ... ON CONFLICT DO UPDATE) instead of DELETE+INSERT
+    # This is significantly faster and avoids table fragmentation
+    Repo.query!(
+      """
+      INSERT INTO url_lifetime_stats (
+        account_id, property_url, url,
+        lifetime_clicks, lifetime_impressions,
+        avg_position, avg_ctr,
+        first_seen_date, last_seen_date,
+        days_with_data, refreshed_at
       )
-
-      # Step 2: Recalculate and insert fresh stats for this batch
-      Repo.query!(
-        """
-        INSERT INTO url_lifetime_stats (
-          account_id, property_url, url,
-          lifetime_clicks, lifetime_impressions,
-          avg_position, avg_ctr,
-          first_seen_date, last_seen_date,
-          days_with_data, refreshed_at
-        )
-        SELECT
-          account_id, property_url, url,
-          SUM(clicks) as lifetime_clicks,
-          SUM(impressions) as lifetime_impressions,
-          CASE
-            WHEN SUM(impressions) > 0
-            THEN SUM(position * impressions) / SUM(impressions)
-            ELSE 0.0
-          END as avg_position,
-          CASE
-            WHEN SUM(impressions) > 0
-            THEN SUM(clicks)::DOUBLE PRECISION / SUM(impressions)
-            ELSE 0.0
-          END as avg_ctr,
-          MIN(date) as first_seen_date,
-          MAX(date) as last_seen_date,
-          COUNT(DISTINCT date) as days_with_data,
-          NOW() as refreshed_at
-        FROM gsc_time_series
-        WHERE account_id = $1
-          AND property_url = $2
-          AND url = ANY($3::text[])
-          AND data_available = true
-        GROUP BY account_id, property_url, url
-        """,
-        [account_id, property_url, urls]
-      )
-
-      # Batch complete (removed verbose logging)
-    end)
+      SELECT
+        account_id, property_url, url,
+        SUM(clicks) as lifetime_clicks,
+        SUM(impressions) as lifetime_impressions,
+        CASE
+          WHEN SUM(impressions) > 0
+          THEN SUM(position * impressions) / SUM(impressions)
+          ELSE 0.0
+        END as avg_position,
+        CASE
+          WHEN SUM(impressions) > 0
+          THEN SUM(clicks)::DOUBLE PRECISION / SUM(impressions)
+          ELSE 0.0
+        END as avg_ctr,
+        MIN(date) as first_seen_date,
+        MAX(date) as last_seen_date,
+        COUNT(DISTINCT date) as days_with_data,
+        NOW() as refreshed_at
+      FROM gsc_time_series
+      WHERE account_id = $1
+        AND property_url = $2
+        AND url = ANY($3::text[])
+        AND data_available = true
+      GROUP BY account_id, property_url, url
+      ON CONFLICT (account_id, property_url, url)
+      DO UPDATE SET
+        lifetime_clicks = EXCLUDED.lifetime_clicks,
+        lifetime_impressions = EXCLUDED.lifetime_impressions,
+        avg_position = EXCLUDED.avg_position,
+        avg_ctr = EXCLUDED.avg_ctr,
+        first_seen_date = EXCLUDED.first_seen_date,
+        last_seen_date = EXCLUDED.last_seen_date,
+        days_with_data = EXCLUDED.days_with_data,
+        refreshed_at = EXCLUDED.refreshed_at
+      """,
+      [account_id, property_url, urls]
+    )
   end
 
   # ============================================================================

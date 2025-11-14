@@ -8,6 +8,17 @@ import Config
 config :gsc_analytics, GscAnalyticsWeb.Endpoint,
   cache_static_manifest: "priv/static/cache_manifest.json"
 
+# Configure esbuild for production builds - adds minification and production mode
+# Base config (splitting, format, loaders) is shared in config.exs
+config :esbuild,
+  version: "0.25.4",
+  gsc_analytics: [
+    args:
+      ~w(js/app.jsx --bundle --target=es2022 --outdir=../priv/static/assets/js --external:/fonts/* --external:/images/* --loader:.js=jsx --loader:.jsx=jsx --alias:@=. --alias:phoenix-colocated=../_build/prod/phoenix-colocated --splitting --format=esm --define:process.env.NODE_ENV="production" --minify),
+    cd: Path.expand("../assets", __DIR__),
+    env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
+  ]
+
 # Do not print debug messages in production
 config :logger, level: :info
 
