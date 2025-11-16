@@ -168,9 +168,13 @@ defmodule GscAnalytics.DataSources.GSC.Core.Config do
 
   @doc """
   Maximum number of in-flight batches pending result processing.
+
+  IMPORTANT: Must be >= batch_size * max_concurrency to avoid backpressure.
+  With batch_size=50 and max_concurrency=3, this needs to be at least 150.
+  Setting to 200 for buffer.
   """
   def max_in_flight do
-    get_config(:max_in_flight, 10)
+    get_config(:max_in_flight, 200)
   end
 
   # ============================================================================

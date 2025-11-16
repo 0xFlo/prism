@@ -3,9 +3,6 @@ defmodule GscAnalytics.DataSources.SERP.Core.Config do
   Centralized configuration for SERP data source.
   """
 
-  # Compile-time environment detection to avoid runtime Mix dependency
-  @is_test Application.compile_env(:gsc_analytics, :env) == :test
-
   @doc """
   Returns the ScrapFly API key.
   Raises if not configured (except in test environment where a placeholder is acceptable).
@@ -17,7 +14,7 @@ defmodule GscAnalytics.DataSources.SERP.Core.Config do
       is_binary(api_key) && String.length(api_key) > 0 ->
         api_key
 
-      @is_test ->
+      test_env?() ->
         "test_api_key_placeholder"
 
       true ->
@@ -62,5 +59,16 @@ defmodule GscAnalytics.DataSources.SERP.Core.Config do
       :serp_http_client,
       GscAnalytics.DataSources.SERP.Adapters.ReqClient
     )
+  end
+
+  defp test_env? do
+    case Application.get_env(:gsc_analytics, :env) do
+      nil -> runtime_env() == :test
+      env -> env == :test
+    end
+  end
+
+  defp runtime_env do
+    if function_exported?(Mix, :env, 0), do: Mix.env(), else: :prod
   end
 end

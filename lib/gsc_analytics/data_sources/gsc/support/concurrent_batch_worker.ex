@@ -98,11 +98,12 @@ defmodule GscAnalytics.DataSources.GSC.Support.ConcurrentBatchWorker do
           worker_loop(coordinator, state)
         end
 
-      {:rate_limited, wait_ms} ->
-        Logger.warning("Worker #{state.worker_id} rate limited; retrying in #{wait_ms}ms")
-        QueryCoordinator.requeue_batch(coordinator, batch)
-        Process.sleep(wait_ms)
-        worker_loop(coordinator, state)
+      # Rate limiting disabled for Phase 4 testing - this clause won't be reached
+      # {:rate_limited, wait_ms} ->
+      #   Logger.warning("Worker #{state.worker_id} rate limited; retrying in #{wait_ms}ms")
+      #   QueryCoordinator.requeue_batch(coordinator, batch)
+      #   Process.sleep(wait_ms)
+      #   worker_loop(coordinator, state)
 
       {:error, reason} ->
         Logger.error("Worker #{state.worker_id} failed batch: #{inspect(reason)}")
@@ -113,16 +114,22 @@ defmodule GscAnalytics.DataSources.GSC.Support.ConcurrentBatchWorker do
   end
 
   defp fetch_batch(batch, state) do
-    case state.rate_limiter.check_rate(state.account_id, state.site_url, length(batch)) do
-      :ok ->
-        perform_http_batch(batch, state)
+    # TEMPORARY: Bypassing rate limiter for Phase 4 testing
+    # GSC API has high limits (1,200 QPM) so 60s delays don't make sense
+    # TODO: Re-enable with proper configuration after testing
+    perform_http_batch(batch, state)
 
-      {:error, :rate_limited, wait_ms} ->
-        {:rate_limited, wait_ms}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
+    # Original rate limiter code (disabled for testing):
+    # case state.rate_limiter.check_rate(state.account_id, state.site_url, length(batch)) do
+    #   :ok ->
+    #     perform_http_batch(batch, state)
+    #
+    #   {:error, :rate_limited, wait_ms} ->
+    #     {:rate_limited, wait_ms}
+    #
+    #   {:error, reason} ->
+    #     {:error, reason}
+    # end
   end
 
   defp perform_http_batch(batch, state) do

@@ -37,6 +37,7 @@ Metrics are exposed in `lib/gsc_analytics_web/telemetry.ex` so they land in whic
    - Ensure `max_concurrency: 1` in staging; migrate DB to latest.
    - Seed telemetry dashboards; confirm reporters running.
    - Run `mix test` (already green) and smoke `Sync.sync_yesterday/0`.
+   - For automation, run `mix phase4.rollout --site-url "sc-domain:rula.com" --account-id 4 --days 150 --concurrency 3 --queue-size 1000 --in-flight 10` (adjust identifiers). The task disables auto-sync, forces reprocessing (even if data already synced), and emits `output/phase4_rollout_<timestamp>.md` ready for copy/paste. Pass `--keep-auto-sync` only if you explicitly want background jobs running.
 2. **Warm-up (Sequential Baseline)**
    - Capture QPM, queue depth (should be near zero), memory footprint.
    - Snapshot baseline duration for 150-day range.

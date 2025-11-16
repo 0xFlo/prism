@@ -111,6 +111,8 @@ Common commands:
 mix test                                  # Run suite
 mix precommit                             # Warnings-as-errors + format + tests
 iex -S mix phx.server                     # Interactive dev server
+mix phase4.rollout --site-url "sc-domain:rula.com" --account-id 4 --days 150 \
+  --concurrency 3 --queue-size 1000 --in-flight 10  # Auto baseline+concurrent run (auto-sync disabled; add --keep-auto-sync to opt out)
 GscAnalytics.DataSources.GSC.Core.Sync.sync_yesterday()
 GscAnalytics.DataSources.GSC.Core.Sync.sync_full_history("sc-domain:example.com")
 ```
