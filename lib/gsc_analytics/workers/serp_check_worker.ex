@@ -39,13 +39,14 @@ defmodule GscAnalytics.Workers.SerpCheckWorker do
     max_attempts: 3,
     unique: [
       period: 3600,
-      keys: [:account_id, :property_url, :url, :keyword, :geo],
+      keys: [:account_id, :property_url, :url, :keyword, :geo, :run_keyword_id],
       states: [:available, :scheduled, :executing]
     ]
 
   import Ecto.Changeset
   alias GscAnalytics.DataSources.SERP.Core.{Client, HTMLParser, Persistence}
   alias GscAnalytics.DataSources.SERP.Support.RateLimiter
+  alias GscAnalytics.SerpChecks
 
   require Logger
 
@@ -57,7 +58,7 @@ defmodule GscAnalytics.Workers.SerpCheckWorker do
   """
   def changeset(job, params) do
     job
-    |> cast(params, [:account_id, :property_url, :url, :keyword, :geo])
+    |> cast(params, [:account_id, :property_url, :url, :keyword, :geo, :run_id, :run_keyword_id])
     |> validate_required([:account_id, :property_url, :url, :keyword])
     |> validate_number(:account_id, greater_than: 0)
     |> validate_format(:property_url, ~r/^(sc-domain:|https?:\/\/)/)
@@ -74,12 +75,15 @@ defmodule GscAnalytics.Workers.SerpCheckWorker do
   end
 
   @impl Oban.Worker
-  def perform(%Oban.Job{args: args}) do
+  def perform(%Oban.Job{args: args} = job) do
     account_id = args["account_id"]
     _property_url = args["property_url"]
     url = args["url"]
     keyword = args["keyword"]
     geo = args["geo"] || "us"
+    run_keyword_id = args["run_keyword_id"]
+
+    maybe_mark_running(run_keyword_id)
 
     Logger.info("Starting SERP check",
       account_id: account_id,
@@ -104,6 +108,8 @@ defmodule GscAnalytics.Workers.SerpCheckWorker do
         api_cost: 31
       )
 
+      maybe_mark_success(run_keyword_id, snapshot)
+
       :ok
     else
       {:error, :rate_limited} ->
@@ -116,6 +122,8 @@ defmodule GscAnalytics.Workers.SerpCheckWorker do
           url: url,
           reason: inspect(reason)
         )
+
+        maybe_mark_failure(job, run_keyword_id, reason)
 
         error
     end
@@ -139,6 +147,7 @@ defmodule GscAnalytics.Workers.SerpCheckWorker do
       ai_overview_present: parsed[:ai_overview_present] || false,
       ai_overview_text: parsed[:ai_overview_text],
       ai_overview_citations: parsed[:ai_overview_citations] || [],
+       serp_check_run_id: args["run_id"],
       raw_response: raw_response,
       geo: args["geo"] || "us",
       checked_at: DateTime.utc_now(),
@@ -146,5 +155,25 @@ defmodule GscAnalytics.Workers.SerpCheckWorker do
       api_cost: Decimal.new("36"),
       error_message: parsed[:error]
     }
+  end
+
+  defp maybe_mark_running(nil), do: :ok
+  defp maybe_mark_running(run_keyword_id), do: SerpChecks.mark_keyword_running(run_keyword_id)
+
+  defp maybe_mark_success(nil, _snapshot), do: :ok
+
+  defp maybe_mark_success(run_keyword_id, snapshot) do
+    SerpChecks.mark_keyword_success(run_keyword_id, %{position: snapshot.position})
+    :ok
+  end
+
+  defp maybe_mark_failure(_job, nil, _reason), do: :ok
+
+  defp maybe_mark_failure(%Oban.Job{attempt: attempt, max_attempts: max_attempts}, run_keyword_id, reason) do
+    if attempt >= max_attempts do
+      SerpChecks.mark_keyword_failed(run_keyword_id, inspect(reason))
+    end
+
+    :ok
   end
 end

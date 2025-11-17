@@ -37,17 +37,22 @@ defmodule GscAnalytics.Schemas.SerpSnapshot do
     # URL being checked
     field :url, :string
 
+    belongs_to :serp_check_run, GscAnalytics.Schemas.SerpCheckRun, type: :binary_id
+
     # SERP Data
     field :keyword, :string
     field :position, :integer
     field :serp_features, {:array, :string}, default: []
     field :competitors, {:array, :map}, default: []
+    field :content_types_present, {:array, :string}, default: []
     field :raw_response, :map
 
     # AI Overview data
     field :ai_overview_present, :boolean, default: false
     field :ai_overview_text, :string
     field :ai_overview_citations, {:array, :map}, default: []
+    field :scrapfly_mentioned_in_ao, :boolean, default: false
+    field :scrapfly_citation_position, :integer
 
     # Metadata
     field :geo, :string, default: "us"
@@ -69,7 +74,11 @@ defmodule GscAnalytics.Schemas.SerpSnapshot do
     :error_message,
     :ai_overview_present,
     :ai_overview_text,
-    :ai_overview_citations
+    :ai_overview_citations,
+    :content_types_present,
+    :scrapfly_mentioned_in_ao,
+    :scrapfly_citation_position,
+    :serp_check_run_id
   ]
 
   @doc """

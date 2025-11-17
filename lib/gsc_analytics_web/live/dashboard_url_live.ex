@@ -3,6 +3,7 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
 
   alias GscAnalytics.ContentInsights
   alias GscAnalytics.DataSources.SERP.Core.Persistence, as: SerpPersistence
+  alias GscAnalytics.SerpChecks
   alias GscAnalytics.Workers.SerpCheckWorker
   alias GscAnalyticsWeb.Live.AccountHelpers
   alias GscAnalyticsWeb.Live.ChartHelpers
@@ -10,6 +11,7 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
   alias GscAnalyticsWeb.Presenters.ChartDataPresenter
   alias GscAnalyticsWeb.Presenters.DashboardUrlHelpers, as: UrlHelpers
   alias GscAnalyticsWeb.PropertyRoutes
+  alias Phoenix.PubSub
 
   import GscAnalyticsWeb.Dashboard.HTMLHelpers
   import GscAnalyticsWeb.Components.DashboardControls
@@ -114,6 +116,13 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
     # Load latest SERP snapshot for this URL
     serp_snapshot = SerpPersistence.latest_for_url(account_id, property_url, url)
 
+    latest_run =
+      if account_id && property_url && url do
+        SerpChecks.latest_run(account_id, property_url, url)
+      else
+        nil
+      end
+
     {:noreply,
      socket
      |> assign(:current_path, current_path)
@@ -132,7 +141,8 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
      |> assign(:property_favicon_url, property_favicon_url)
      |> assign(:dashboard_return_path, links.return_path)
      |> assign(:dashboard_export_path, links.export_path)
-     |> assign(:serp_snapshot, serp_snapshot)}
+     |> assign(:serp_snapshot, serp_snapshot)
+     |> assign_serp_run(latest_run)}
   end
 
   def handle_params(_params, uri, socket) do
@@ -217,47 +227,85 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
   end
 
   @impl true
-  def handle_event("check_serp_position", _params, socket) do
-    url = socket.assigns.insights.url
-    property_url = socket.assigns.current_property.property_url
-    account_id = socket.assigns.current_account_id
+  def handle_info({:serp_check_progress, %{run: run}}, socket) do
+    topic = SerpChecks.topic(run.id)
 
-    # Infer keyword from top query
-    keyword =
-      socket.assigns.insights
-      |> Map.get(:queries, [])
-      |> Enum.sort_by(& &1.clicks, :desc)
-      |> List.first()
-      |> case do
-        nil -> "generic keyword"
-        query -> query.query
+    socket =
+      if socket.assigns.serp_run_topic == topic do
+        socket
+        |> assign(:serp_run, run)
+        |> assign(:serp_modal_open?, socket.assigns.serp_modal_open? || run.status == :running)
+        |> maybe_reset_timeout(run)
+      else
+        socket
       end
 
-    # Queue Oban job with error handling
-    job_params = %{
-      "account_id" => account_id,
-      "property_url" => property_url,
-      "url" => url,
-      "keyword" => keyword,
-      "geo" => "us"
-    }
+    {:noreply, socket}
+  end
 
-    case SerpCheckWorker.new(job_params) |> Oban.insert() do
-      {:ok, _job} ->
-        {:noreply, put_flash(socket, :info, "SERP check queued for '#{keyword}'")}
+  @impl true
+  def handle_info(:serp_run_timeout, socket) do
+    {:noreply, assign(socket, :serp_timeout_reached?, true)}
+  end
 
-      {:error, %Ecto.Changeset{} = changeset} ->
-        errors =
-          changeset
-          |> Ecto.Changeset.traverse_errors(fn {msg, _opts} -> msg end)
-          |> Enum.map(fn {field, msgs} -> "#{field}: #{Enum.join(msgs, ", ")}" end)
-          |> Enum.join("; ")
+  @impl true
+  def handle_event("check_top_keywords", _params, socket) do
+    cond do
+      serp_run_active?(socket.assigns.serp_run) ->
+        {:noreply, socket}
 
-        {:noreply, put_flash(socket, :error, "Failed to queue SERP check: #{errors}")}
+      is_nil(socket.assigns.current_property) ->
+        {:noreply, put_flash(socket, :error, "Select a property before running SERP checks.")}
 
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Failed to queue SERP check: #{inspect(reason)}")}
+      true ->
+        url = socket.assigns.insights.url
+        property_url = socket.assigns.current_property.property_url
+
+        case SerpChecks.start_bulk_check(
+               socket.assigns.current_scope,
+               socket.assigns.current_account_id,
+               property_url,
+               url,
+               %{keyword_limit: @serp_keyword_limit}
+             ) do
+          {:ok, run} ->
+            socket =
+              socket
+              |> assign(:serp_modal_open?, true)
+              |> assign(:serp_timeout_reached?, false)
+              |> assign(:serp_run, run)
+              |> subscribe_to_run(run)
+              |> schedule_serp_timeout(run)
+
+            message =
+              "Checking #{run.keyword_count} keywords (~#{run.estimated_cost} credits). We'll keep you updated."
+
+            {:noreply, put_flash(socket, :info, message)}
+
+          {:error, :no_keywords} ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "Could not find recent top queries for this URL. Try expanding the date range."
+             )}
+
+          {:error, :invalid_url} ->
+            {:noreply, put_flash(socket, :error, "Invalid URL – please refresh and try again.")}
+
+          {:error, :unauthorized_account} ->
+            {:noreply, put_flash(socket, :error, "You are not authorized to run checks for this workspace.")}
+
+          {:error, reason} ->
+            {:noreply,
+             put_flash(socket, :error, "Failed to start bulk SERP checks: #{inspect(reason)}")}
+        end
     end
+  end
+
+  @impl true
+  def handle_event("dismiss_serp_modal", _params, socket) do
+    {:noreply, assign(socket, :serp_modal_open?, false)}
   end
 
   defp build_url_params(socket, overrides, assign_overrides) do
@@ -291,6 +339,109 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
       to: PropertyRoutes.url_path(property_id, params)
     )
   end
+
+  defp assign_serp_run(socket, nil) do
+    socket
+    |> cancel_serp_timeout()
+    |> maybe_unsubscribe_run()
+    |> assign(:serp_run, nil)
+    |> assign(:serp_run_topic, nil)
+    |> assign(:serp_modal_open?, false)
+    |> assign(:serp_timeout_reached?, false)
+  end
+
+  defp assign_serp_run(socket, run) do
+    socket
+    |> subscribe_to_run(run)
+    |> assign(:serp_run, run)
+    |> assign(:serp_modal_open?, socket.assigns.serp_modal_open? || run.status == :running)
+    |> assign(:serp_timeout_reached?, false)
+    |> schedule_serp_timeout(run)
+  end
+
+  defp subscribe_to_run(socket, nil), do: socket
+
+  defp subscribe_to_run(socket, %{id: run_id}) do
+    topic = SerpChecks.topic(run_id)
+
+    socket =
+      if socket.assigns[:serp_run_topic] && socket.assigns.serp_run_topic != topic do
+        maybe_unsubscribe_run(socket)
+      else
+        socket
+      end
+
+    if connected?(socket) && socket.assigns[:serp_run_topic] != topic do
+      SerpChecks.subscribe(run_id)
+    end
+
+    assign(socket, :serp_run_topic, topic)
+  end
+
+  defp maybe_unsubscribe_run(%{assigns: %{serp_run_topic: topic}} = socket) when is_binary(topic) do
+    PubSub.unsubscribe(GscAnalytics.PubSub, topic)
+    assign(socket, :serp_run_topic, nil)
+  end
+
+  defp maybe_unsubscribe_run(socket), do: socket
+
+  defp schedule_serp_timeout(socket, %{status: status}) when status in [:running] do
+    socket = cancel_serp_timeout(socket)
+    ref = Process.send_after(self(), :serp_run_timeout, @serp_timeout_ms)
+    assign(socket, :serp_timeout_ref, ref)
+  end
+
+  defp schedule_serp_timeout(socket, _run), do: cancel_serp_timeout(socket)
+
+  defp maybe_reset_timeout(socket, %{status: status} = run) do
+    if status == :running do
+      schedule_serp_timeout(socket, run)
+    else
+      cancel_serp_timeout(socket)
+      |> assign(:serp_timeout_reached?, false)
+    end
+  end
+
+  defp cancel_serp_timeout(socket) do
+    if ref = socket.assigns[:serp_timeout_ref] do
+      Process.cancel_timer(ref)
+    end
+
+    assign(socket, :serp_timeout_ref, nil)
+  end
+
+  defp serp_run_active?(nil), do: false
+  defp serp_run_active?(%{status: status}) when status in [:pending, :running], do: true
+  defp serp_run_active?(_), do: false
+
+  defp serp_keyword_limit, do: @serp_keyword_limit
+  defp serp_credit_cost, do: @serp_credit_cost
+  defp serp_cost_estimate, do: @serp_keyword_limit * @serp_credit_cost
+
+  defp serp_run_status_label(nil), do: "Not run yet"
+  defp serp_run_status_label(%{status: :running}), do: "Running"
+  defp serp_run_status_label(%{status: :complete}), do: "Complete"
+  defp serp_run_status_label(%{status: :partial}), do: "Partial"
+  defp serp_run_status_label(%{status: :failed}), do: "Failed"
+  defp serp_run_status_label(_), do: "Queued"
+
+  defp serp_run_status_class(%{status: :running}), do: "bg-amber-100 text-amber-800"
+  defp serp_run_status_class(%{status: :complete}), do: "bg-emerald-100 text-emerald-700"
+  defp serp_run_status_class(%{status: :partial}), do: "bg-amber-100 text-amber-800"
+  defp serp_run_status_class(%{status: :failed}), do: "bg-rose-100 text-rose-700"
+  defp serp_run_status_class(_), do: "bg-slate-100 text-slate-600"
+
+  defp keyword_status_label(%{status: :pending}), do: "Pending"
+  defp keyword_status_label(%{status: :running}), do: "Running"
+  defp keyword_status_label(%{status: :success}), do: "Done"
+  defp keyword_status_label(%{status: :failed}), do: "Failed"
+  defp keyword_status_label(_), do: "Unknown"
+
+  defp keyword_status_badge(%{status: :pending}), do: "bg-slate-100 text-slate-700"
+  defp keyword_status_badge(%{status: :running}), do: "bg-amber-100 text-amber-700"
+  defp keyword_status_badge(%{status: :success}), do: "bg-emerald-100 text-emerald-700"
+  defp keyword_status_badge(%{status: :failed}), do: "bg-rose-100 text-rose-700"
+  defp keyword_status_badge(_), do: "bg-slate-100 text-slate-700"
 
   defp normalize_chart_view("weekly"), do: "weekly"
   defp normalize_chart_view("monthly"), do: "monthly"
@@ -333,5 +484,13 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
     |> assign_new(:dashboard_return_path, fn -> ~p"/dashboard" end)
     |> assign_new(:dashboard_export_path, fn -> ~p"/dashboard/export" end)
     |> assign_new(:serp_snapshot, fn -> nil end)
+    |> assign_new(:serp_run, fn -> nil end)
+    |> assign_new(:serp_run_topic, fn -> nil end)
+    |> assign_new(:serp_modal_open?, fn -> false end)
+    |> assign_new(:serp_timeout_ref, fn -> nil end)
+    |> assign_new(:serp_timeout_reached?, fn -> false end)
   end
 end
+  @serp_keyword_limit Application.compile_env(:gsc_analytics, :serp_bulk_keyword_limit, 7)
+  @serp_credit_cost Application.compile_env(:gsc_analytics, :serp_scrapfly_credit_cost, 36)
+  @serp_timeout_ms 120_000

@@ -213,105 +213,152 @@
 
             <div class="mt-6 border-t border-slate-100 pt-4">
               <button
-                phx-click="check_serp_position"
+                phx-click="check_top_keywords"
                 phx-throttle="2000"
-                class="btn btn-outline btn-sm w-full gap-2"
+                class={[
+                  "btn btn-outline btn-sm w-full gap-2",
+                  serp_run_active?(@serp_run) && "btn-disabled opacity-60"
+                ]}
+                disabled={serp_run_active?(@serp_run)}
               >
-                <.icon name="hero-magnifying-glass" class="h-4 w-4" /> Check SERP Position
+                <.icon
+                  :if={serp_run_active?(@serp_run)}
+                  name="hero-arrow-path"
+                  class="h-4 w-4 animate-spin"
+                />
+                <.icon :if={!serp_run_active?(@serp_run)} name="hero-sparkles" class="h-4 w-4" />
+                <span>
+                  <%= if serp_run_active?(@serp_run) do %>
+                    Checking top {serp_keyword_limit()} keywords…
+                  <% else %>
+                    Check Top {serp_keyword_limit()} Keywords (~{serp_cost_estimate()} credits)
+                  <% end %>
+                </span>
               </button>
+              <p class="mt-2 text-center text-[11px] text-slate-500">
+                Uses ScrapFly SERP API ({serp_credit_cost()} credits/keyword). On-demand only.
+              </p>
+
+              <%= if @serp_run do %>
+                <div class="mt-4 space-y-4 rounded-lg border border-slate-100 bg-slate-50/60 p-4">
+                  <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p class="text-sm font-semibold text-slate-900">Bulk SERP history</p>
+                      <p class="text-xs text-slate-500">
+                        Last run {format_datetime(@serp_run.started_at)}
+                      </p>
+                    </div>
+                    <span class={"badge badge-sm #{serp_run_status_class(@serp_run)}"}>
+                      {serp_run_status_label(@serp_run)}
+                    </span>
+                  </div>
+
+                  <dl class="grid gap-3 text-xs text-slate-600 sm:grid-cols-2">
+                    <div>
+                      <dt class="text-slate-500">Keywords queued</dt>
+                      <dd class="font-semibold text-slate-900">{@serp_run.keyword_count}</dd>
+                    </div>
+                    <div>
+                      <dt class="text-slate-500">Estimated credits</dt>
+                      <dd class="font-semibold text-slate-900">{@serp_run.estimated_cost}</dd>
+                    </div>
+                    <div>
+                      <dt class="text-slate-500">Succeeded</dt>
+                      <dd class="font-semibold text-emerald-600">{@serp_run.succeeded_count}</dd>
+                    </div>
+                    <div>
+                      <dt class="text-slate-500">Failed</dt>
+                      <dd class={"font-semibold #{if @serp_run.failed_count > 0, do: "text-amber-600", else: "text-slate-900"}"}>
+                        {@serp_run.failed_count}
+                      </dd>
+                    </div>
+                  </dl>
+
+                  <div class="space-y-2">
+                    <%= for keyword <- Enum.take(@serp_run.keywords || [], 5) do %>
+                      <div class="flex items-center justify-between rounded-md border border-slate-100 bg-white px-3 py-2 text-xs">
+                        <div>
+                          <p class="font-medium text-slate-900">{keyword.keyword}</p>
+                          <p class="text-[11px] uppercase text-slate-500">
+                            Geo {String.upcase(keyword.geo || "us")}
+                          </p>
+                        </div>
+                        <span class={"badge badge-xs #{keyword_status_badge(keyword)}"}>
+                          {keyword_status_label(keyword)}
+                        </span>
+                      </div>
+                    <% end %>
+                    <%= if @serp_run.keywords && length(@serp_run.keywords) > 5 do %>
+                      <p class="text-center text-[11px] text-slate-500">
+                        +{length(@serp_run.keywords) - 5} more keywords tracked
+                      </p>
+                    <% end %>
+                  </div>
+
+                  <%= if @serp_run.last_error do %>
+                    <p class="text-[11px] text-amber-600">
+                      Last error: {@serp_run.last_error}
+                    </p>
+                  <% end %>
+                </div>
+              <% end %>
 
               <%= if @serp_snapshot do %>
-                <div class="mt-4 rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                <div class="mt-4 rounded-lg border border-slate-100 bg-white p-3 shadow-sm">
                   <div class="flex items-center justify-between gap-2">
-                    <span class="text-sm font-semibold text-slate-900">
-                      SERP Position:
-                      <%= if @serp_snapshot.position do %>
-                        <span class="text-emerald-600">#{@serp_snapshot.position}</span>
-                      <% else %>
-                        <span class="text-slate-400">Not ranked</span>
-                      <% end %>
+                    <span class="text-sm font-semibold text-slate-900">Latest SERP snapshot</span>
+                    <span class="badge badge-xs bg-slate-100 text-slate-600">
+                      {format_datetime(@serp_snapshot.checked_at)}
                     </span>
                   </div>
                   <div class="mt-2 space-y-1 text-xs text-slate-600">
                     <p>
-                      Keyword: <span class="font-medium">{@serp_snapshot.keyword}</span>
+                      Position:
+                      <%= if @serp_snapshot.position do %>
+                        <span class="font-semibold text-emerald-600">#{@serp_snapshot.position}</span>
+                      <% else %>
+                        <span class="text-slate-400">Not ranked</span>
+                      <% end %>
                     </p>
-                    <p>
-                      Checked {format_datetime(@serp_snapshot.checked_at)}
-                    </p>
-                    <p>
-                      Location: <span class="uppercase">{@serp_snapshot.geo}</span>
-                    </p>
+                    <p>Keyword: <span class="font-medium">{@serp_snapshot.keyword}</span></p>
+                    <p>Location: <span class="uppercase">{@serp_snapshot.geo}</span></p>
                   </div>
 
                   <%= if @serp_snapshot.ai_overview_present do %>
-                    <div class="mt-3 border-t border-slate-100 pt-2">
-                      <div class="flex items-center justify-between gap-2">
-                        <p class="text-xs font-semibold text-slate-700">AI Overview</p>
-                        <span class="badge badge-xs bg-purple-100 text-purple-700">
-                          Present
-                        </span>
+                    <div class="mt-3 rounded-lg bg-purple-50/80 p-3 text-xs text-purple-900">
+                      <div class="flex items-center justify-between">
+                        <p class="font-semibold">AI Overview</p>
+                        <span class="badge badge-ghost badge-xs text-purple-700">Present</span>
                       </div>
                       <%= if @serp_snapshot.ai_overview_text do %>
-                        <p class="mt-1.5 text-xs text-slate-600 leading-relaxed">
+                        <p class="mt-2 text-[11px] leading-relaxed">
                           {@serp_snapshot.ai_overview_text}
                         </p>
                       <% end %>
                       <%= if @serp_snapshot.ai_overview_citations && length(@serp_snapshot.ai_overview_citations) > 0 do %>
-                        <div class="mt-2">
-                          <p class="text-xs font-medium text-slate-700">Citations:</p>
-                          <ul class="mt-1 space-y-1">
-                            <%= for citation <- Enum.take(@serp_snapshot.ai_overview_citations, 5) do %>
-                              <li class="flex items-center gap-2 text-xs">
-                                <span class="font-medium text-slate-900">
-                                  {citation["position"]}.
-                                </span>
-                                <a
-                                  href={citation["url"]}
-                                  target="_blank"
-                                  class="truncate text-blue-600 hover:underline"
-                                  title={citation["url"]}
-                                >
-                                  {citation["domain"]}
-                                </a>
-                              </li>
-                            <% end %>
-                          </ul>
+                        <div class="mt-2 space-x-1 text-[11px]">
+                          <%= for citation <- Enum.take(@serp_snapshot.ai_overview_citations, 4) do %>
+                            <span class="rounded bg-white px-2 py-0.5 font-medium text-purple-700">
+                              {citation["domain"] || citation[:domain]}
+                            </span>
+                          <% end %>
                         </div>
                       <% end %>
                     </div>
                   <% end %>
 
-                  <%= if @serp_snapshot.serp_features && length(@serp_snapshot.serp_features) > 0 do %>
-                    <div class="mt-3 border-t border-slate-100 pt-2">
-                      <p class="text-xs font-semibold text-slate-700">SERP Features</p>
-                      <div class="mt-1 flex flex-wrap gap-1">
-                        <%= for feature <- @serp_snapshot.serp_features do %>
-                          <span class="badge badge-xs bg-indigo-100 text-indigo-700">
-                            {String.replace(feature, "_", " ")}
-                          </span>
-                        <% end %>
-                      </div>
-                    </div>
-                  <% end %>
-
                   <%= if @serp_snapshot.competitors && length(@serp_snapshot.competitors) > 0 do %>
                     <div class="mt-3 border-t border-slate-100 pt-2">
-                      <p class="text-xs font-semibold text-slate-700">Top Competitors</p>
-                      <ul class="mt-1 space-y-1 text-xs">
+                      <p class="text-xs font-semibold text-slate-700">Top competitors</p>
+                      <ul class="mt-1 space-y-1 text-xs text-slate-600">
                         <%= for competitor <- Enum.take(@serp_snapshot.competitors, 3) do %>
-                          <li class="flex items-center gap-2">
-                            <span class="font-medium text-slate-900">
-                              #{competitor["position"]}
+                          <li class="flex items-center justify-between gap-2">
+                            <span class="truncate font-medium text-slate-800">
+                              {truncate_url(competitor["url"] || competitor[:url], 40)}
                             </span>
-                            <a
-                              href={competitor["url"]}
-                              target="_blank"
-                              class="truncate text-blue-600 hover:underline"
-                              title={competitor["title"]}
-                            >
-                              {truncate_url(competitor["url"], 35)}
-                            </a>
+                            <span class="font-mono text-xs text-slate-500">
+                              #{competitor["position"] || competitor[:position]}
+                            </span>
                           </li>
                         <% end %>
                       </ul>
