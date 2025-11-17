@@ -63,7 +63,7 @@ runtime_redirect_uri =
   System.get_env("GOOGLE_OAUTH_REDIRECT_URI") ||
     (oauth_from_file && oauth_from_file.redirect_uri)
 
-if config_env() == :prod do
+if config_env() in [:dev, :prod] do
   runtime_client_id ||
     raise """
     environment variable GOOGLE_OAUTH_CLIENT_ID is missing.
@@ -118,26 +118,36 @@ if System.get_env("PHX_SERVER") do
   config :gsc_analytics, GscAnalyticsWeb.Endpoint, server: true
 end
 
-if config_env() == :prod do
-  database_url =
-    System.get_env("DATABASE_URL") ||
-      raise """
-      environment variable DATABASE_URL is missing.
-      For example: ecto://USER:PASS@HOST/DATABASE
-      """
+if config_env() in [:dev, :prod] do
+  repo_opts =
+    if config_env() == :prod do
+      database_url =
+        System.get_env("DATABASE_URL") ||
+          raise """
+          environment variable DATABASE_URL is missing.
+          For example: ecto://USER:PASS@HOST/DATABASE
+          """
 
-  maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
+      maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
 
-  config :gsc_analytics, GscAnalytics.Repo,
-    # ssl: true,
-    url: database_url,
+      [
+        url: database_url,
+        socket_options: maybe_ipv6
+      ]
+    else
+      []
+    end
+
+  repo_common_opts = [
     pool_size: String.to_integer(System.get_env("POOL_SIZE") || "40"),
     queue_target: String.to_integer(System.get_env("DB_QUEUE_TARGET") || "50"),
-    queue_interval: String.to_integer(System.get_env("DB_QUEUE_INTERVAL") || "500"),
-    # For machines with several cores, consider starting multiple pools of `pool_size`
-    # pool_count: 4,
-    socket_options: maybe_ipv6
+    queue_interval: String.to_integer(System.get_env("DB_QUEUE_INTERVAL") || "500")
+  ]
 
+  config :gsc_analytics, GscAnalytics.Repo, repo_common_opts ++ repo_opts
+end
+
+if config_env() == :prod do
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you
   # want to use a different value for prod and you most likely don't want
@@ -268,7 +278,7 @@ config :hammer, backend: hammer_backend
 if config_env() != :test do
   max_concurrency =
     case System.get_env("GSC_MAX_CONCURRENCY") do
-      nil -> 1
+      nil -> 3
       value -> String.to_integer(value)
     end
 
@@ -280,12 +290,40 @@ if config_env() != :test do
 
   max_in_flight =
     case System.get_env("GSC_MAX_IN_FLIGHT") do
-      nil -> 10
+      nil -> 300
+      value -> String.to_integer(value)
+    end
+
+  query_chunk_size =
+    case System.get_env("GSC_QUERY_SCHEDULER_CHUNK_SIZE") do
+      nil -> 64
+      value -> String.to_integer(value)
+    end
+
+  query_writer_pending_limit =
+    case System.get_env("GSC_QUERY_WRITER_PENDING_LIMIT") do
+      nil -> 96
+      value -> String.to_integer(value)
+    end
+
+  query_writer_max_concurrency =
+    case System.get_env("GSC_QUERY_WRITER_MAX_CONCURRENCY") do
+      nil -> 12
+      value -> String.to_integer(value)
+    end
+
+  url_phase_max_concurrency =
+    case System.get_env("GSC_URL_PHASE_MAX_CONCURRENCY") do
+      nil -> 2
       value -> String.to_integer(value)
     end
 
   config :gsc_analytics, GscAnalytics.DataSources.GSC.Core.Config,
     max_concurrency: max_concurrency,
     max_queue_size: max_queue_size,
-    max_in_flight: max_in_flight
+    max_in_flight: max_in_flight,
+    query_scheduler_chunk_size: query_chunk_size,
+    query_writer_pending_limit: query_writer_pending_limit,
+    query_writer_max_concurrency: query_writer_max_concurrency,
+    url_phase_max_concurrency: url_phase_max_concurrency
 end

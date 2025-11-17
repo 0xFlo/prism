@@ -563,37 +563,61 @@ defmodule GscAnalyticsWeb.Components.DashboardTables do
       <table class="min-w-full divide-y divide-slate-200 text-sm">
         <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
           <tr>
-            <th class={sort_header_class("source_domain", @sort_by) <> " px-4 py-3"} phx-click="sort_backlinks" phx-value-column="source_domain">
+            <th
+              class={sort_header_class("source_domain", @sort_by) <> " px-4 py-3"}
+              phx-click="sort_backlinks"
+              phx-value-column="source_domain"
+            >
               <div class="flex items-center gap-1">
                 <span>Source Domain</span>
                 <.icon name={sort_icon("source_domain", @sort_by, @sort_direction)} class="h-4 w-4" />
               </div>
             </th>
-            <th class={sort_header_class("anchor_text", @sort_by) <> " px-4 py-3"} phx-click="sort_backlinks" phx-value-column="anchor_text">
+            <th
+              class={sort_header_class("anchor_text", @sort_by) <> " px-4 py-3"}
+              phx-click="sort_backlinks"
+              phx-value-column="anchor_text"
+            >
               <div class="flex items-center gap-1">
                 <span>Anchor Text</span>
                 <.icon name={sort_icon("anchor_text", @sort_by, @sort_direction)} class="h-4 w-4" />
               </div>
             </th>
-            <th class={sort_header_class("domain_rating", @sort_by) <> " px-4 py-3 text-center"} phx-click="sort_backlinks" phx-value-column="domain_rating">
+            <th
+              class={sort_header_class("domain_rating", @sort_by) <> " px-4 py-3 text-center"}
+              phx-click="sort_backlinks"
+              phx-value-column="domain_rating"
+            >
               <div class="flex items-center justify-center gap-1">
                 <span>DR</span>
                 <.icon name={sort_icon("domain_rating", @sort_by, @sort_direction)} class="h-4 w-4" />
               </div>
             </th>
-            <th class={sort_header_class("domain_traffic", @sort_by) <> " px-4 py-3 text-right"} phx-click="sort_backlinks" phx-value-column="domain_traffic">
+            <th
+              class={sort_header_class("domain_traffic", @sort_by) <> " px-4 py-3 text-right"}
+              phx-click="sort_backlinks"
+              phx-value-column="domain_traffic"
+            >
               <div class="flex items-center justify-end gap-1">
                 <span>Traffic</span>
                 <.icon name={sort_icon("domain_traffic", @sort_by, @sort_direction)} class="h-4 w-4" />
               </div>
             </th>
-            <th class={sort_header_class("first_seen_at", @sort_by) <> " px-4 py-3 text-center"} phx-click="sort_backlinks" phx-value-column="first_seen_at">
+            <th
+              class={sort_header_class("first_seen_at", @sort_by) <> " px-4 py-3 text-center"}
+              phx-click="sort_backlinks"
+              phx-value-column="first_seen_at"
+            >
               <div class="flex items-center justify-center gap-1">
                 <span>First Seen</span>
                 <.icon name={sort_icon("first_seen_at", @sort_by, @sort_direction)} class="h-4 w-4" />
               </div>
             </th>
-            <th class={sort_header_class("data_source", @sort_by) <> " px-4 py-3 text-center"} phx-click="sort_backlinks" phx-value-column="data_source">
+            <th
+              class={sort_header_class("data_source", @sort_by) <> " px-4 py-3 text-center"}
+              phx-click="sort_backlinks"
+              phx-value-column="data_source"
+            >
               <div class="flex items-center justify-center gap-1">
                 <span>Source</span>
                 <.icon name={sort_icon("data_source", @sort_by, @sort_direction)} class="h-4 w-4" />
@@ -604,7 +628,12 @@ defmodule GscAnalyticsWeb.Components.DashboardTables do
         <tbody class="divide-y divide-slate-100">
           <tr :for={backlink <- @backlinks} :key={"#{backlink.source_url}-#{backlink.first_seen_at}"}>
             <td class="px-4 py-3">
-              <a href={backlink.source_url} target="_blank" rel="noopener noreferrer" class="link link-primary font-medium hover:underline">
+              <a
+                href={backlink.source_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="link link-primary font-medium hover:underline"
+              >
                 {backlink.source_domain || URI.parse(backlink.source_url).host || backlink.source_url}
               </a>
             </td>

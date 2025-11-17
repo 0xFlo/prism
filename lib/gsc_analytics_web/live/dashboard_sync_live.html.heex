@@ -121,7 +121,7 @@
           </div>
           <div class="space-y-3 text-right">
             <div class="text-4xl font-semibold text-slate-900 dark:text-slate-100">
-              {Float.round(@progress.percent, 1)}%
+              {Float.round((@progress.percent || 0.0) * 1.0, 1)}%
             </div>
             <p class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">
               Completion
@@ -235,6 +235,122 @@
           </div>
         </dl>
 
+        <section class="mt-8 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4 dark:border-indigo-700/60 dark:bg-indigo-900/30">
+          <h3 class="text-sm font-semibold uppercase tracking-wide text-indigo-900 dark:text-indigo-100">
+            Live pipeline telemetry
+          </h3>
+          <p class="mt-1 text-xs text-indigo-900/70 dark:text-indigo-100/70">
+            Updates whenever Broadway stages finish a batch.
+          </p>
+          <div class="mt-3 grid grid-cols-2 gap-3 text-xs text-indigo-900/80 dark:text-indigo-100/70">
+            <div
+              :for={{key, stats} <- @telemetry_counters}
+              class="rounded-xl border border-indigo-100/60 bg-white/80 p-3 dark:border-indigo-600/40 dark:bg-indigo-900/40"
+            >
+              <p class="font-semibold text-indigo-900 dark:text-indigo-100">
+                {telemetry_counter_label(key)}
+              </p>
+              <dl class="mt-2 grid grid-cols-3 gap-2 text-[0.7rem]">
+                <div>
+                  <dt class="uppercase tracking-wide">OK</dt>
+                  <dd>{stats.ok}</dd>
+                </div>
+                <div>
+                  <dt class="uppercase tracking-wide">Skipped</dt>
+                  <dd>{stats.skipped}</dd>
+                </div>
+                <div>
+                  <dt class="uppercase tracking-wide">Errors</dt>
+                  <dd>{stats.error}</dd>
+                </div>
+              </dl>
+            </div>
+          </div>
+          <div class="mt-3 space-y-3">
+            <div class="rounded-xl border border-indigo-100/60 bg-white/70 p-3 text-xs text-indigo-900 dark:border-indigo-600/40 dark:bg-indigo-900/40 dark:text-indigo-100">
+              <% status = @pipeline_stats.query %>
+              <% {badge_label, badge_class} = pipeline_status_badge(status) %>
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="font-semibold text-indigo-900 dark:text-indigo-100">
+                    Query pipeline status
+                  </p>
+                  <p class="text-[0.7rem] text-indigo-900/70 dark:text-indigo-100/60">
+                    {pipeline_status_label(status)}
+                  </p>
+                </div>
+                <span class={badge_class}>{badge_label}</span>
+              </div>
+              <dl class="mt-2 grid grid-cols-2 gap-2 text-[0.7rem] text-indigo-900/70 dark:text-indigo-100/70">
+                <div>
+                  <dt class="font-semibold uppercase tracking-wide">Queue depth</dt>
+                  <dd>{status.queue_depth}</dd>
+                </div>
+                <div>
+                  <dt class="font-semibold uppercase tracking-wide">In flight</dt>
+                  <dd>{status.in_flight}</dd>
+                </div>
+                <div>
+                  <dt class="font-semibold uppercase tracking-wide">Writer backlog</dt>
+                  <dd>{pipeline_writer_backlog_label(status)}</dd>
+                </div>
+                <div>
+                  <dt class="font-semibold uppercase tracking-wide">Last update</dt>
+                  <dd>{(status.updated_at && format_timestamp(status.updated_at)) || "—"}</dd>
+                </div>
+              </dl>
+              <p class="mt-1 text-[0.7rem] text-indigo-900/70 dark:text-indigo-100/70">
+                {pipeline_status_detail(status)}
+              </p>
+            </div>
+            <div
+              :if={@telemetry_events == []}
+              class="rounded-xl border border-indigo-100/60 bg-white/70 p-3 text-xs text-indigo-900 dark:border-indigo-600/40 dark:bg-indigo-900/40 dark:text-indigo-100"
+            >
+              Waiting for the next event…
+            </div>
+            <div
+              :for={entry <- @telemetry_events}
+              class="rounded-xl border border-indigo-100/60 bg-white/80 p-3 text-xs dark:border-indigo-600/40 dark:bg-indigo-900/40"
+            >
+              <% {label, badge_class} = telemetry_badge(entry.status) %>
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="font-semibold text-indigo-900 dark:text-indigo-100">
+                    {telemetry_label(entry.event)}
+                  </p>
+                  <p class="text-[0.7rem] text-indigo-900/70 dark:text-indigo-100/60">
+                    {entry.site_url || "—"}
+                  </p>
+                </div>
+                <span class={badge_class}>{label}</span>
+              </div>
+              <dl class="mt-2 grid grid-cols-3 gap-2 text-[0.7rem] text-indigo-900/70 dark:text-indigo-100/70">
+                <div>
+                  <dt class="font-semibold uppercase tracking-wide">Duration</dt>
+                  <dd>
+                    {format_pipeline_duration_ms(entry.duration_ms)}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="font-semibold uppercase tracking-wide">Batch size</dt>
+                  <dd>{entry.batch_size || "—"}</dd>
+                </div>
+                <div>
+                  <dt class="font-semibold uppercase tracking-wide">Recorded</dt>
+                  <dd>{format_timestamp(entry.recorded_at)}</dd>
+                </div>
+              </dl>
+              <p class="mt-1 text-[0.7rem] text-indigo-900/70 dark:text-indigo-100/70">
+                {telemetry_status_text(entry.status)}
+                <span :if={entry.date} class="ml-1">
+                  &middot; {format_date_safe(entry.date)}
+                </span>
+              </p>
+            </div>
+          </div>
+        </section>
+
         <div
           :if={@progress.summary && @progress.status in [:completed, :completed_with_warnings]}
           class="mt-6 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 text-sm text-emerald-700"
@@ -286,7 +402,7 @@
                 {failure_message}
               </p>
               <p :if={!failure_message} class="text-sm leading-relaxed">
-                Check the recent activity log below for details about the failure.
+                Review the live pipeline telemetry for more detail on the failure.
               </p>
               <div
                 :if={failure_date && is_struct(failure_date, Date)}
@@ -309,98 +425,53 @@
           </div>
         </div>
 
-        <div class="mt-8 space-y-4">
-          <h3 class="text-sm font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
-            Recent activity
-          </h3>
-          <div class="space-y-3">
-            <div
-              :if={Enum.empty?(@progress.events)}
-              class="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400"
-            >
-              Waiting for sync updates
-            </div>
-            <div
-              :for={event <- @progress.events}
-              :key={event.key}
-              id={"event-#{event.key}"}
-              class="flex gap-4 rounded-2xl border border-slate-100 bg-white/60 p-5 backdrop-blur transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-700 dark:bg-slate-800/60"
-            >
-              <div class={["mt-1 h-3 w-3 rounded-full", event_marker_class(event.tone)]}></div>
-              <div class="flex-1 space-y-1">
-                <div class="flex flex-wrap items-center justify-between gap-2">
-                  <p class="text-sm font-medium text-slate-900 dark:text-slate-100">
-                    {event.label}
-                  </p>
-                  <span class="text-xs text-slate-400 dark:text-slate-500">
-                    {format_timestamp(event.timestamp)}
-                  </span>
-                </div>
-                <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
-                  <% badge_label = event_badge_label(event) %>
-                  <span :if={badge_label} class={event_tag_class(event.tone)}>{badge_label}</span>
-                  <span :if={rows_phrase(event.rows)}>
-                    {rows_phrase(event.rows)}
-                  </span>
-                  <span :if={query_batch_phrase(event.query_batches)}>
-                    {query_batch_phrase(event.query_batches)}
-                  </span>
-                  <span :if={url_request_phrase(event.url_requests)}>
-                    {url_request_phrase(event.url_requests)}
-                  </span>
-                  <span :if={url_phrase(event.urls)}>
-                    {url_phrase(event.urls)}
-                  </span>
-                  <span :if={api_call_phrase(event.api_calls)}>
-                    {api_call_phrase(event.api_calls)}
-                  </span>
-                  <span :if={event.duration_ms}>
-                    Took {format_duration(event.duration_ms)}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
       </section>
 
       <aside class="space-y-8">
-        <section class="rounded-3xl border border-slate-200 bg-white/80 p-8 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-800/80">
-          <h2 class="text-xl font-semibold text-slate-900 dark:text-slate-100">Latest dataset</h2>
-          <dl class="mt-4 space-y-4 text-sm">
-            <div class="flex items-center justify-between">
-              <dt class="text-slate-500 dark:text-slate-400">Last sync completed</dt>
-              <dd class="font-medium text-slate-900 dark:text-slate-100">
-                {format_date(@sync_info.last_sync)}
-              </dd>
+        <section class="rounded-3xl border border-amber-100 bg-amber-50/70 p-8 shadow-sm backdrop-blur dark:border-amber-400/40 dark:bg-amber-900/30">
+          <h2 class="text-xl font-semibold text-amber-900 dark:text-amber-100">Retry queue</h2>
+          <p class="mt-2 text-sm text-amber-900/70 dark:text-amber-100/70">
+            Entries that exhausted retries are kept for manual follow-up.
+          </p>
+          <div class="mt-4 flex items-center justify-between text-xs text-amber-900/80 dark:text-amber-100/70">
+            <p>{length(@dead_letters)} pending</p>
+            <button
+              type="button"
+              class="rounded-full border border-amber-200 px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-wide text-amber-900 transition hover:bg-amber-100 focus:outline-none dark:border-amber-400/60 dark:text-amber-100 dark:hover:bg-amber-900/40"
+              phx-click="clear_dead_letters"
+              disabled={@dead_letters == []}
+            >
+              Clear queue
+            </button>
+          </div>
+          <div class="mt-4 space-y-3">
+            <div
+              :if={@dead_letters == []}
+              class="rounded-2xl border border-amber-100/70 bg-white/80 p-4 text-sm text-amber-900 dark:border-amber-400/40 dark:bg-amber-900/40 dark:text-amber-50"
+            >
+              No pending retries.
             </div>
-            <div class="flex items-center justify-between">
-              <dt class="text-slate-500 dark:text-slate-400">Recency</dt>
-              <dd class="font-medium text-slate-900 dark:text-slate-100">
-                {days_ago(@sync_info.last_sync)}
-              </dd>
+            <div
+              :for={entry <- Enum.take(Enum.reverse(@dead_letters), 5)}
+              class="rounded-2xl border border-amber-100/70 bg-white/80 p-4 text-sm dark:border-amber-400/40 dark:bg-amber-900/40"
+            >
+              <p class="font-semibold text-amber-900 dark:text-amber-100">
+                {telemetry_label(entry.pipeline)}
+              </p>
+              <p class="mt-1 text-xs text-amber-900/70 dark:text-amber-100/80">
+                {entry.payload[:site_url] || "—"}
+                <span :if={entry.payload[:date]} class="ml-1">
+                  &middot; {format_date_safe(entry.payload[:date])}
+                </span>
+              </p>
+              <p class="mt-2 text-xs leading-relaxed text-amber-900/80 dark:text-amber-100/80">
+                {truncate_error(entry.payload[:reason], 200)}
+              </p>
+              <p class="mt-1 text-xxs text-amber-900/70 dark:text-amber-100/70">
+                Recorded {format_timestamp(entry.inserted_at)}
+              </p>
             </div>
-            <div class="flex items-center justify-between">
-              <dt class="text-slate-500 dark:text-slate-400">Range covered</dt>
-              <dd class="font-medium text-slate-900 dark:text-slate-100">
-                {format_date(@sync_info.earliest_date)}
-                <span class="mx-1 text-slate-400 dark:text-slate-500">&mdash;</span>
-                {format_date(@sync_info.latest_date)}
-              </dd>
-            </div>
-            <div class="flex items-center justify-between">
-              <dt class="text-slate-500 dark:text-slate-400">Days available</dt>
-              <dd class="font-medium text-slate-900 dark:text-slate-100">
-                {@sync_info.days_available}
-              </dd>
-            </div>
-            <div class="flex items-center justify-between">
-              <dt class="text-slate-500 dark:text-slate-400">Time series rows</dt>
-              <dd class="font-medium text-slate-900 dark:text-slate-100">
-                {format_number(@sync_info.total_records)}
-              </dd>
-            </div>
-          </dl>
+          </div>
         </section>
 
         <section

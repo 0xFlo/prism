@@ -84,9 +84,7 @@ config :phoenix, :json_library, JSON
 # Users can add/remove workspaces through the Settings UI
 
 # Configure sync behaviour
-config :gsc_analytics, GscAnalytics.GSC.Sync,
-  query_batch_pages: 32,
-  query_scheduler_chunk_size: 32
+config :gsc_analytics, GscAnalytics.DataSources.GSC.Core.Config, query_scheduler_chunk_size: 32
 
 # Note: Hammer rate limiter backend is configured at runtime in config/runtime.exs
 # This allows switching between ETS (single-node) and Postgres/Redis (multi-node) via HAMMER_BACKEND env var

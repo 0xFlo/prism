@@ -184,16 +184,16 @@ defmodule GscAnalytics.DataSources.GSC.Core.Config do
   Prevents pagination workers from filling memory while waiting for DB slots.
   """
   def query_writer_pending_limit do
-    get_config(:query_writer_pending_limit, 12)
+    get_config(:query_writer_pending_limit, 96)
   end
 
   @doc """
   Maximum number of concurrent query writer tasks.
   Limits DB connection pool usage during concurrent sync operations.
-  With a pool of 40 connections, 3 writers leaves headroom for other operations.
+  With a pool of 40 connections, 12 writers still leaves headroom for other operations.
   """
   def query_writer_max_concurrency do
-    get_config(:query_writer_max_concurrency, 3)
+    get_config(:query_writer_max_concurrency, 12)
   end
 
   @doc """
@@ -202,6 +202,14 @@ defmodule GscAnalytics.DataSources.GSC.Core.Config do
   """
   def max_concurrency do
     get_config(:max_concurrency, 10)
+  end
+
+  @doc """
+  Maximum number of concurrent URL fetch workers.
+  Defaults lower than `max_concurrency` to avoid saturating DB inserts.
+  """
+  def url_phase_max_concurrency do
+    get_config(:url_phase_max_concurrency, 2)
   end
 
   @doc """

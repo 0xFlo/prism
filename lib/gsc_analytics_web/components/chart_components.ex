@@ -56,6 +56,7 @@ defmodule GscAnalyticsWeb.ChartComponents do
   attr :events_json, :string, default: nil
   attr :visible_series, :list, default: [:clicks, :impressions]
   attr :wrapper_class, :string, default: "relative h-96"
+  attr :show_date_range, :boolean, default: true
 
   def performance_chart(assigns) do
     ~H"""
@@ -72,6 +73,11 @@ defmodule GscAnalyticsWeb.ChartComponents do
       >
         <canvas id={@id} class="absolute inset-0 w-full h-full"></canvas>
       </div>
+      <%= if @show_date_range and length(@time_series) > 0 do %>
+        <div class="mt-3 text-center text-sm text-slate-500 dark:text-slate-400">
+          {format_chart_date_range(@time_series)}
+        </div>
+      <% end %>
     <% else %>
       <div class="flex items-center justify-center h-48 text-gray-500">
         <div class="text-center">
@@ -137,5 +143,24 @@ defmodule GscAnalyticsWeb.ChartComponents do
     series
     |> Enum.map(&Atom.to_string/1)
     |> JSON.encode!()
+  end
+
+  # Format the date range for display below the chart
+  defp format_chart_date_range([]), do: "No data available"
+
+  defp format_chart_date_range([single]) do
+    Calendar.strftime(single.date, "%b %d, %Y")
+  end
+
+  defp format_chart_date_range(trends) do
+    first_date = List.first(trends).date
+    last_item = List.last(trends)
+    # Use period_end if available (for weekly/monthly views), otherwise use date
+    end_date = Map.get(last_item, :period_end) || last_item.date
+
+    days = Date.diff(end_date, first_date) + 1
+    start_str = Calendar.strftime(first_date, "%b %d, %Y")
+    end_str = Calendar.strftime(end_date, "%b %d, %Y")
+    "#{start_str} – #{end_str} (#{days} days)"
   end
 end

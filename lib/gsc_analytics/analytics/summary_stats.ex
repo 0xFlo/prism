@@ -81,12 +81,13 @@ defmodule GscAnalytics.Analytics.SummaryStats do
       |> Repo.one()
 
     result =
-      (totals || %{
-         total_clicks: 0,
-         total_impressions: 0,
-         avg_position: 0.0,
-         avg_ctr: 0.0
-       })
+      (totals ||
+         %{
+           total_clicks: 0,
+           total_impressions: 0,
+           avg_position: 0.0,
+           avg_ctr: 0.0
+         })
       |> Map.put(:total_urls, total_urls || 0)
       |> format_stats()
 

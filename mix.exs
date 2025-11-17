@@ -81,6 +81,7 @@ defmodule GscAnalytics.MixProject do
 
       # CSV parsing for backlink imports
       {:nimble_csv, "~> 1.2"},
+      {:broadway, "~> 1.0"},
 
       # Test coverage reporting
       {:excoveralls, "~> 0.18", only: :test},

@@ -26,7 +26,10 @@ defmodule GscAnalytics.UserSettings.WorkspaceManagerTest do
   describe "changeset_error_message/1" do
     test "flattens Ecto errors" do
       changeset =
-        GscAnalytics.Schemas.WorkspaceProperty.changeset(%GscAnalytics.Schemas.WorkspaceProperty{}, %{property_url: nil})
+        GscAnalytics.Schemas.WorkspaceProperty.changeset(
+          %GscAnalytics.Schemas.WorkspaceProperty{},
+          %{property_url: nil}
+        )
 
       assert WorkspaceManager.changeset_error_message(changeset) =~ "can't be blank"
     end
@@ -38,10 +41,18 @@ defmodule GscAnalytics.UserSettings.WorkspaceManagerTest do
       scope = Auth.Scope.for_user(user)
 
       {:ok, workspace} =
-        Workspaces.create_workspace(user.id, %{google_account_email: "test@example.com", name: "main", enabled: true})
+        Workspaces.create_workspace(user.id, %{
+          google_account_email: "test@example.com",
+          name: "main",
+          enabled: true
+        })
 
       {:ok, _property} =
-        Accounts.add_property(workspace.id, %{property_url: "sc-domain:example.com", is_active: true, display_name: "Example"})
+        Accounts.add_property(workspace.id, %{
+          property_url: "sc-domain:example.com",
+          is_active: true,
+          display_name: "Example"
+        })
 
       %{scope: scope}
     end

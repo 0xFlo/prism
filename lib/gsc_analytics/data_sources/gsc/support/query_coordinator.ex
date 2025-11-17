@@ -12,10 +12,12 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
   require Logger
 
   alias GscAnalytics.DataSources.GSC.Core.Config
+
   alias GscAnalytics.DataSources.GSC.Support.{
     DataHelpers,
     QueryAccumulator,
     QueryPaginator,
+    QueryWriterBroadway,
     StreamingCallbacks
   }
 
@@ -38,7 +40,6 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
     :total_api_calls,
     :http_batch_calls,
     :callbacks,
-    :writer_supervisor,
     :writer_refs,
     :pending_writes,
     :writer_pending_limit,
@@ -169,6 +170,7 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
     account_id = Keyword.fetch!(opts, :account_id)
     site_url = Keyword.fetch!(opts, :site_url)
     dates = Keyword.get(opts, :dates, [])
+
     callbacks =
       opts
       |> Keyword.get(:on_complete)
@@ -190,7 +192,6 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
         opts
         |> Keyword.get_lazy(:results, fn -> build_initial_results(dates, mode) end)
 
-      {writer_supervisor, writer_refs, pending_writes} = start_writer_supervisor(callbacks)
       writer_pending_limit = writer_pending_limit(callbacks.mode)
       writer_max_concurrency = writer_max_concurrency(callbacks.mode)
 
@@ -205,9 +206,8 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
          http_batch_calls: :atomics.new(1, []),
          mode: mode,
          callbacks: callbacks,
-         writer_supervisor: writer_supervisor,
-         writer_refs: writer_refs,
-         pending_writes: pending_writes,
+         writer_refs: %{},
+         pending_writes: :queue.new(),
          writer_pending_limit: writer_pending_limit,
          writer_max_concurrency: writer_max_concurrency,
          finalize_from: nil,
@@ -306,7 +306,7 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
       {:noreply, %{state | finalize_from: from}}
     else
       reply = finalize_reply_payload(state)
-      emit_metrics(state)
+      emit_metrics(state, :finalize)
       {:reply, reply, state}
     end
   end
@@ -328,16 +328,13 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
         |> clear_in_flight(entries)
       end
 
+    emit_metrics(updated_state, :update)
     {:noreply, updated_state}
   end
 
   @impl true
-  def handle_info({:writer_complete, pid, _date, result}, state) do
-    {meta, writer_refs} = Map.pop(state.writer_refs, pid)
-
-    if meta do
-      Process.demonitor(meta.monitor_ref, [:flush])
-    end
+  def handle_info({:writer_complete, ref, _date, result}, state) do
+    {_meta, writer_refs} = Map.pop(state.writer_refs, ref)
 
     updated_state =
       state
@@ -346,25 +343,15 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
       |> maybe_start_pending_writer()
       |> maybe_reply_finalize()
 
+    emit_metrics(updated_state, :update)
     {:noreply, updated_state}
   end
 
   @impl true
-  def handle_info({:DOWN, ref, :process, pid, reason}, state) do
-    case Map.pop(state.writer_refs, pid) do
-      {nil, writer_refs} ->
-        {:noreply, %{state | writer_refs: writer_refs}}
-
-      {%{monitor_ref: ^ref} = _meta, writer_refs} ->
-        new_state =
-          state
-          |> Map.put(:writer_refs, writer_refs)
-          |> handle_writer_down(reason)
-          |> maybe_start_pending_writer()
-          |> maybe_reply_finalize()
-
-        {:noreply, new_state}
-    end
+  def handle_info({:retry_writer, payload, attempt}, state) do
+    new_state = enqueue_writer(state, payload, attempt)
+    emit_metrics(new_state, :update)
+    {:noreply, new_state}
   end
 
   # ===========================================================================
@@ -376,13 +363,6 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
     |> Enum.map(&{&1, 0})
     |> :queue.from_list()
   end
-
-  defp start_writer_supervisor(%StreamingCallbacks{mode: :streaming}) do
-    {:ok, supervisor} = Task.Supervisor.start_link()
-    {supervisor, %{}, :queue.new()}
-  end
-
-  defp start_writer_supervisor(_callbacks), do: {nil, %{}, :queue.new()}
 
   defp writer_pending_limit(:streaming), do: Config.query_writer_pending_limit()
   defp writer_pending_limit(_mode), do: 0
@@ -656,34 +636,58 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
          %{callbacks: %StreamingCallbacks{mode: :streaming, writer: writer}} = state,
          payload
        )
-       when is_function(writer, 1) and not is_nil(state.writer_supervisor) do
+       when is_function(writer, 1) do
     if state.writer_max_concurrency > 0 and
          map_size(state.writer_refs) >= state.writer_max_concurrency do
-      # Queue the payload for later processing when a writer slot frees up
       %{state | pending_writes: :queue.in(payload, state.pending_writes)}
     else
-      spawn_writer(state, payload)
+      enqueue_writer(state, payload)
     end
   end
 
   defp maybe_start_writer(state, _payload), do: state
 
-  defp spawn_writer(state, payload) do
-    parent = self()
-    writer = state.callbacks.writer
+  @writer_retry_delay 50
+  @writer_retry_attempts 5
 
-    {:ok, pid} =
-      Task.Supervisor.start_child(state.writer_supervisor, fn ->
-        result = safe_run_writer(writer, payload)
-        send(parent, {:writer_complete, self(), payload.date, result})
-      end)
+  defp enqueue_writer(state, payload, attempt \\ 0)
 
-    ref = Process.monitor(pid)
+  defp enqueue_writer(
+         %{callbacks: %StreamingCallbacks{writer: writer}} = state,
+         payload,
+         attempt
+       )
+       when is_function(writer, 1) do
+    ref = make_ref()
 
-    %{
-      state
-      | writer_refs: Map.put(state.writer_refs, pid, %{monitor_ref: ref, date: payload.date})
-    }
+    case QueryWriterBroadway.enqueue(ref, writer, payload, self()) do
+      :ok ->
+        %{
+          state
+          | writer_refs: Map.put(state.writer_refs, ref, %{date: payload.date})
+        }
+
+      {:error, reason} ->
+        handle_writer_enqueue_failure(state, payload, attempt, reason)
+    end
+  end
+
+  defp enqueue_writer(state, _payload, _attempt), do: state
+
+  defp handle_writer_enqueue_failure(state, payload, attempt, reason)
+       when reason in [:not_started, :producer_down] and attempt < @writer_retry_attempts do
+    Process.send_after(
+      self(),
+      {:retry_writer, payload, attempt + 1},
+      @writer_retry_delay * (attempt + 1)
+    )
+
+    state
+  end
+
+  defp handle_writer_enqueue_failure(state, payload, _attempt, reason) do
+    Logger.error("Failed to enqueue query writer for #{payload.date}: #{inspect(reason)}")
+    %{state | halt_reason: state.halt_reason || {:error, reason}}
   end
 
   defp maybe_start_pending_writer(state) do
@@ -694,29 +698,9 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
       {{:value, payload}, remaining} ->
         state
         |> Map.put(:pending_writes, remaining)
-        |> spawn_writer(payload)
+        |> enqueue_writer(payload)
     end
   end
-
-  defp safe_run_writer(writer, payload) when is_function(writer, 1) do
-    try do
-      case writer.(payload) do
-        {:halt, reason} -> {:halt, reason}
-        {:error, reason} -> {:error, reason}
-        {:ok, meta} -> {:ok, meta}
-        other -> {:ok, other}
-      end
-    rescue
-      exception ->
-        Logger.error(
-          "Query writer crashed for #{payload.date}: #{Exception.message(exception)}"
-        )
-
-        {:error, {:writer_error, Exception.message(exception)}}
-    end
-  end
-
-  defp safe_run_writer(_, _payload), do: :ok
 
   defp finalize_results(results) do
     Enum.into(results, %{}, fn {date, entry} ->
@@ -754,17 +738,42 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
   end
 
   defp reply_with_metrics(reply, state) do
-    emit_metrics(state)
+    emit_metrics(state, reply)
     {:reply, reply, state}
   end
 
-  defp emit_metrics(state) do
+  defp emit_metrics(state, context) do
     metadata = %{account_id: state.account_id, site_url: state.site_url}
     prefix = state.telemetry_prefix
+    queue_depth = :queue.len(state.queue)
+    in_flight = MapSet.size(state.in_flight)
 
-    :telemetry.execute(prefix ++ [:queue_size], %{size: :queue.len(state.queue)}, metadata)
-    :telemetry.execute(prefix ++ [:in_flight], %{count: MapSet.size(state.in_flight)}, metadata)
+    :telemetry.execute(prefix ++ [:queue_size], %{size: queue_depth}, metadata)
+    :telemetry.execute(prefix ++ [:in_flight], %{count: in_flight}, metadata)
+
+    status_metadata =
+      metadata
+      |> Map.put(:queue_depth, queue_depth)
+      |> Map.put(:in_flight, in_flight)
+      |> Map.put(:writer_backlog, pending_writer_backlog?(state))
+      |> Map.merge(build_status_metadata(context))
+
+    :telemetry.execute(prefix ++ [:status], %{count: 1}, status_metadata)
   end
+
+  defp build_status_metadata({:ok, _batch}), do: %{status: :dispatch}
+
+  defp build_status_metadata({:backpressure, reason}),
+    do: %{status: :backpressure, reason: reason}
+
+  defp build_status_metadata(:pending), do: %{status: :pending}
+  defp build_status_metadata(:no_more_work), do: %{status: :idle}
+  defp build_status_metadata({:halted, reason}), do: %{status: :halted, reason: reason}
+  defp build_status_metadata({:error, reason}), do: %{status: :error, reason: reason}
+  defp build_status_metadata(:finalize), do: %{status: :finalizing}
+  defp build_status_metadata(:update), do: %{status: :update}
+  defp build_status_metadata(nil), do: %{status: :update}
+  defp build_status_metadata(_), do: %{status: :unknown}
 
   defp handle_writer_result(state, {:halt, reason}) do
     %{state | halt_reason: state.halt_reason || {:halt, reason}}
@@ -776,13 +785,6 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
 
   defp handle_writer_result(state, {:ok, _meta}), do: state
   defp handle_writer_result(state, _), do: state
-
-  defp handle_writer_down(state, reason) when reason in [:normal, :shutdown, {:shutdown, :normal}],
-    do: state
-
-  defp handle_writer_down(state, reason) do
-    %{state | halt_reason: state.halt_reason || {:writer_exit, reason}}
-  end
 
   defp pending_writers?(%{writer_refs: refs}) when is_map(refs) do
     map_size(refs) > 0
@@ -797,7 +799,7 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
       state
     else
       reply = finalize_reply_payload(state)
-      emit_metrics(state)
+      emit_metrics(state, :finalize)
       GenServer.reply(from, reply)
       %{state | finalize_from: nil}
     end

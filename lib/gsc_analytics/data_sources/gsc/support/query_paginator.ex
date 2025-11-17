@@ -15,7 +15,7 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryPaginator do
   alias GscAnalytics.DataSources.GSC.Core.Config
 
   alias GscAnalytics.DataSources.GSC.Support.{
-    ConcurrentBatchWorker,
+    QueryBatchPipeline,
     QueryCoordinator,
     RateLimiter
   }
@@ -68,7 +68,6 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryPaginator do
     batch_size = Keyword.fetch!(opts, :batch_size)
     client = Keyword.get(opts, :client, client_module())
     operation = Keyword.get(opts, :operation, "fetch_all_queries_batch")
-    dimensions = Keyword.get(opts, :dimensions, ["page", "query"])
     on_complete = Keyword.get(opts, :on_complete)
     rate_limiter = Keyword.get(opts, :rate_limiter, RateLimiter)
 
@@ -78,29 +77,24 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryPaginator do
       dates: dates,
       on_complete: on_complete,
       max_queue_size: Keyword.get(opts, :max_queue_size, Config.max_queue_size()),
-      max_in_flight: Keyword.get(opts, :max_in_flight, Config.max_in_flight())
+      max_in_flight: Keyword.get(opts, :max_in_flight, Config.max_in_flight()),
+      telemetry_prefix: [:gsc_analytics, :query_pipeline]
     ]
 
     with {:ok, coordinator} <- QueryCoordinator.start_link(coordinator_opts) do
-      worker_opts = [
+      pipeline_opts = [
+        coordinator: coordinator,
         account_id: account_id,
         site_url: site_url,
         operation: operation,
-        dimensions: dimensions,
         batch_size: batch_size,
         max_concurrency: max_concurrency,
         client: client,
         rate_limiter: rate_limiter
       ]
 
-      case await_worker_tasks(ConcurrentBatchWorker.start_workers(coordinator, worker_opts)) do
-        :ok ->
-          finalize_concurrent(coordinator)
-
-        {:error, reason} ->
-          QueryCoordinator.halt(coordinator, {:worker_exit, reason})
-          finalize_concurrent(coordinator)
-      end
+      _status = QueryBatchPipeline.run(pipeline_opts)
+      finalize_concurrent(coordinator)
     else
       {:error, reason} ->
         {:error, reason, %{}, 0, 0}
@@ -117,18 +111,6 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryPaginator do
     end
   end
 
-  defp await_worker_tasks(tasks) do
-    try do
-      Task.await_many(tasks, :infinity)
-      :ok
-    catch
-      :exit, reason ->
-        {:error, reason}
-    after
-      Enum.each(tasks, &Task.shutdown(&1, :brutal_kill))
-    end
-  end
-
   defp format_coordinator_result({:ok, _reason, results, total_calls, http_batches}) do
     {:ok, results, total_calls, http_batches}
   end
@@ -140,7 +122,6 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryPaginator do
   defp format_coordinator_result({:error, reason, results, total_calls, http_batches}) do
     {:error, reason, results, total_calls, http_batches}
   end
-
 
   @doc """
   Check if we need to fetch the next page of results.
@@ -162,7 +143,6 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryPaginator do
   """
   @spec page_size() :: pos_integer()
   def page_size, do: @page_size
-
 
   defp client_module do
     Application.get_env(:gsc_analytics, :gsc_client, GscAnalytics.DataSources.GSC.Core.Client)

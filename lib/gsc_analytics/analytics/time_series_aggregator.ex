@@ -621,22 +621,40 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregator do
       [%{date: ~D[2025-10-01], clicks: 5234, impressions: 123456, ...}, ...]
   """
   def fetch_site_aggregate(days \\ 30, opts \\ %{}) do
-    start_date = Date.add(Date.utc_today(), -days)
     account_id = Map.get(opts, :account_id)
     property_url = Map.get(opts, :property_url)
 
-    PropertyDailyMetric
-    |> where([metric], metric.date >= ^start_date and metric.data_available == true)
-    |> maybe_filter_account_and_property(account_id, property_url)
-    |> order_by([metric], asc: metric.date)
-    |> select([metric], %{
-      date: metric.date,
-      clicks: metric.clicks,
-      impressions: metric.impressions,
-      ctr: metric.ctr,
-      position: metric.position
-    })
-    |> Repo.all()
+    # Get the actual latest available date from the database
+    # (accounts for GSC's 2-3 day reporting delay)
+    latest_date =
+      PropertyDailyMetric
+      |> maybe_filter_account_and_property(account_id, property_url)
+      |> where([metric], metric.data_available == true)
+      |> select([metric], max(metric.date))
+      |> Repo.one()
+
+    # If no data, return empty list
+    case latest_date do
+      nil ->
+        []
+
+      latest ->
+        # Calculate start date backwards from actual latest date
+        start_date = Date.add(latest, -(days - 1))
+
+        PropertyDailyMetric
+        |> where([metric], metric.date >= ^start_date and metric.data_available == true)
+        |> maybe_filter_account_and_property(account_id, property_url)
+        |> order_by([metric], asc: metric.date)
+        |> select([metric], %{
+          date: metric.date,
+          clicks: metric.clicks,
+          impressions: metric.impressions,
+          ctr: metric.ctr,
+          position: metric.position
+        })
+        |> Repo.all()
+    end
   end
 
   @doc """
@@ -665,11 +683,27 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregator do
       [%TimeSeriesData{date: ~D[2025-09-30], period_end: ~D[2025-10-06], clicks: 45234, ...}, ...]
   """
   def fetch_site_aggregate_by_week(weeks \\ 12, opts \\ %{}) do
-    days = weeks * 7
-    start_date = Date.add(Date.utc_today(), -days)
-    opts_with_date = Map.put(opts, :start_date, start_date)
+    account_id = Map.get(opts, :account_id)
+    property_url = Map.get(opts, :property_url)
 
-    build_site_aggregation_query(:week, opts_with_date)
+    # Get the actual latest available date from the database
+    latest_date =
+      PropertyDailyMetric
+      |> maybe_filter_account_and_property(account_id, property_url)
+      |> where([metric], metric.data_available == true)
+      |> select([metric], max(metric.date))
+      |> Repo.one()
+
+    case latest_date do
+      nil ->
+        []
+
+      latest ->
+        days = weeks * 7
+        start_date = Date.add(latest, -days)
+        opts_with_date = Map.put(opts, :start_date, start_date)
+        build_site_aggregation_query(:week, opts_with_date)
+    end
   end
 
   @doc """
@@ -698,12 +732,28 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregator do
       [%TimeSeriesData{date: ~D[2025-08-01], period_end: ~D[2025-08-31], clicks: 145234, ...}, ...]
   """
   def fetch_site_aggregate_by_month(months \\ 6, opts \\ %{}) do
-    # Rough estimate: use 31 days per month for safety
-    days = months * 31
-    start_date = Date.add(Date.utc_today(), -days)
-    opts_with_date = Map.put(opts, :start_date, start_date)
+    account_id = Map.get(opts, :account_id)
+    property_url = Map.get(opts, :property_url)
 
-    build_site_aggregation_query(:month, opts_with_date)
+    # Get the actual latest available date from the database
+    latest_date =
+      PropertyDailyMetric
+      |> maybe_filter_account_and_property(account_id, property_url)
+      |> where([metric], metric.data_available == true)
+      |> select([metric], max(metric.date))
+      |> Repo.one()
+
+    case latest_date do
+      nil ->
+        []
+
+      latest ->
+        # Rough estimate: use 31 days per month for safety
+        days = months * 31
+        start_date = Date.add(latest, -days)
+        opts_with_date = Map.put(opts, :start_date, start_date)
+        build_site_aggregation_query(:month, opts_with_date)
+    end
   end
 
   # Private helpers

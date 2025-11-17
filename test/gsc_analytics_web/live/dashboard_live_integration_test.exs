@@ -282,31 +282,33 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
 
     urls_count = length(records)
 
-    Repo.insert_all(PropertyDailyMetric, [
-      %{
-        account_id: account_id,
-        property_url: @test_property_url,
-        date: date,
-        clicks: total_clicks,
-        impressions: total_impressions,
-        ctr:
-          if total_impressions > 0 do
-            total_clicks / total_impressions
-          else
-            0.0
-          end,
-        position:
-          if total_impressions > 0 do
-            weighted_position / total_impressions
-          else
-            0.0
-          end,
-        urls_count: urls_count,
-        data_available: urls_count > 0,
-        inserted_at: timestamp,
-        updated_at: timestamp
-      }
-    ],
+    Repo.insert_all(
+      PropertyDailyMetric,
+      [
+        %{
+          account_id: account_id,
+          property_url: @test_property_url,
+          date: date,
+          clicks: total_clicks,
+          impressions: total_impressions,
+          ctr:
+            if total_impressions > 0 do
+              total_clicks / total_impressions
+            else
+              0.0
+            end,
+          position:
+            if total_impressions > 0 do
+              weighted_position / total_impressions
+            else
+              0.0
+            end,
+          urls_count: urls_count,
+          data_available: urls_count > 0,
+          inserted_at: timestamp,
+          updated_at: timestamp
+        }
+      ],
       on_conflict:
         {:replace,
          [:clicks, :impressions, :ctr, :position, :urls_count, :data_available, :updated_at]},
@@ -405,5 +407,4 @@ defmodule GscAnalyticsWeb.DashboardLiveIntegrationTest do
     wait_for_table_loaded(view)
     render(view)
   end
-
 end

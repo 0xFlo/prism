@@ -4,7 +4,7 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
   import GscAnalyticsWeb.Components.DashboardControls, only: [property_selector: 1]
 
   import GscAnalyticsWeb.Dashboard.HTMLHelpers,
-    only: [format_date: 1, format_number: 1, days_ago: 1]
+    only: [format_date: 1, format_number: 1]
 
   import GscAnalyticsWeb.Live.DashboardSync,
     only: [
@@ -13,29 +13,28 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
       progress_failure_raw_message: 1,
       status_badge: 1,
       format_timestamp: 1,
-      event_marker_class: 1,
-      event_badge_label: 1,
-      event_tag_class: 1,
       sync_button_icon_class: 1,
       format_duration: 1,
       truncate_error: 2,
       rows_phrase: 1,
-      query_batch_phrase: 1,
       query_sub_request_phrase: 1,
       http_batch_phrase: 1,
       url_phrase: 1,
-      url_request_phrase: 1,
       api_call_phrase: 1,
       format_date_safe: 1
     ]
 
   alias GscAnalytics.DataSources.GSC.Core.Sync
-  alias GscAnalytics.DataSources.GSC.Support.SyncProgress
+  alias GscAnalytics.DataSources.GSC.Support.{DeadLetter, SyncProgress}
   alias GscAnalyticsWeb.Live.{AccountHelpers, DashboardSync, DashboardSyncHelpers}
   alias GscAnalyticsWeb.PropertyRoutes
 
   @max_days 540
   @default_days "30"
+  @telemetry_events [[:gsc_analytics, :url_pipeline, :message], [:gsc_analytics, :query_batch]]
+  @telemetry_status_event [:gsc_analytics, :query_pipeline, :status]
+  @telemetry_handler_events @telemetry_events ++ [@telemetry_status_event]
+  @telemetry_history_limit 10
   @day_options [
     {"Full history (auto)", "full"},
     {"Last 7 days", "7"},
@@ -48,9 +47,6 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
 
   @impl true
   def mount(params, _session, socket) do
-    # LiveView best practice: Subscribe to PubSub only on connected socket (not initial render)
-    if connected?(socket), do: SyncProgress.subscribe()
-
     progress_state = SyncProgress.current_state()
 
     {socket, account, _property} =
@@ -76,7 +72,21 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
         |> assign(:sync_info_requested_account_id, nil)
         |> assign(:sync_info_loaded_account_id, nil)
         |> assign(:sync_info_loaded_property_id, nil)
+        |> assign(:telemetry_events, [])
+        |> assign(:telemetry_counters, new_telemetry_counters())
+        |> assign(:pipeline_stats, new_pipeline_stats())
+        |> assign(:dead_letters, DeadLetter.all())
+        |> assign(:telemetry_handler_id, nil)
         |> DashboardSyncHelpers.assign_progress(progress_state)
+
+      socket =
+        if connected?(socket) do
+          SyncProgress.subscribe()
+          handler_id = attach_telemetry_handler()
+          assign(socket, :telemetry_handler_id, handler_id)
+        else
+          socket
+        end
 
       property = socket.assigns.current_property
       property_url = property && property.property_url
@@ -140,6 +150,12 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
       |> DashboardSyncHelpers.maybe_request_sync_info(account_id, property_url, force: force?)
 
     {:noreply, socket}
+  end
+
+  @impl true
+  def terminate(_reason, %{assigns: %{telemetry_handler_id: handler_id}}) do
+    if handler_id, do: :telemetry.detach(handler_id)
+    :ok
   end
 
   @impl true
@@ -219,6 +235,12 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
   @impl true
   def handle_event("switch_property", %{"property_id" => property_id}, socket) do
     {:noreply, push_patch(socket, to: PropertyRoutes.sync_path(property_id))}
+  end
+
+  @impl true
+  def handle_event("clear_dead_letters", _params, socket) do
+    DeadLetter.clear()
+    {:noreply, assign(socket, :dead_letters, [])}
   end
 
   @impl true
@@ -321,6 +343,199 @@ defmodule GscAnalyticsWeb.DashboardSyncLive do
     end
   end
 
+  def handle_info({:telemetry_event, event, measurements, metadata}, socket)
+      when event in @telemetry_events do
+    entry = build_telemetry_entry(event, measurements, metadata)
+
+    socket =
+      socket
+      |> update(:telemetry_events, fn events ->
+        [entry | events]
+        |> Enum.take(@telemetry_history_limit)
+      end)
+      |> assign(:telemetry_counters, update_counters(socket.assigns.telemetry_counters, entry))
+      |> assign(:dead_letters, DeadLetter.all())
+
+    {:noreply, socket}
+  end
+
+  def handle_info({:telemetry_event, event, measurements, metadata}, socket)
+      when event == @telemetry_status_event do
+    stats = update_pipeline_stats(socket.assigns.pipeline_stats, measurements, metadata)
+    {:noreply, assign(socket, :pipeline_stats, stats)}
+  end
+
   @impl true
   def handle_info(_message, socket), do: {:noreply, socket}
+
+  def handle_telemetry(event, measurements, metadata, pid) do
+    send(pid, {:telemetry_event, event, measurements, metadata})
+  end
+
+  defp attach_telemetry_handler do
+    handler_id = "dashboard-sync-#{System.unique_integer([:positive])}"
+
+    :telemetry.attach_many(
+      handler_id,
+      @telemetry_handler_events,
+      &__MODULE__.handle_telemetry/4,
+      self()
+    )
+
+    handler_id
+  end
+
+  defp build_telemetry_entry(event, measurements, metadata) do
+    %{
+      event: event,
+      status: metadata[:status] || :ok,
+      date: metadata[:date],
+      site_url: metadata[:site_url],
+      duration_ms: measurements[:duration_ms],
+      batch_size: measurements[:batch_size],
+      recorded_at: DateTime.utc_now()
+    }
+  end
+
+  defp telemetry_badge(:ok), do: {"Completed", "badge badge-success badge-sm"}
+  defp telemetry_badge(:skipped), do: {"Skipped", "badge badge-neutral badge-sm"}
+
+  defp telemetry_badge({:error, _reason}),
+    do: {"Error", "badge badge-error badge-sm"}
+
+  defp telemetry_badge(_status), do: {"Info", "badge badge-ghost badge-sm"}
+
+  defp telemetry_label([:gsc_analytics, :url_pipeline, :message]), do: "URL stage"
+  defp telemetry_label([:gsc_analytics, :query_batch]), do: "Query batch"
+  defp telemetry_label(_), do: "Pipeline"
+
+  defp telemetry_status_text({:error, reason}), do: "Error: #{inspect(reason)}"
+
+  defp telemetry_status_text(status) when is_atom(status),
+    do: Phoenix.Naming.humanize("#{status}")
+
+  defp telemetry_status_text(_), do: "Info"
+
+  defp new_pipeline_stats do
+    %{
+      query: %{
+        status: :idle,
+        queue_depth: 0,
+        in_flight: 0,
+        writer_backlog: false,
+        reason: nil,
+        site_url: nil,
+        updated_at: nil
+      }
+    }
+  end
+
+  defp update_pipeline_stats(stats, _measurements, metadata) do
+    query_stats =
+      stats.query
+      |> Map.merge(%{
+        status: metadata[:status] || stats.query.status,
+        queue_depth: metadata[:queue_depth] || stats.query.queue_depth,
+        in_flight: metadata[:in_flight] || stats.query.in_flight,
+        writer_backlog: metadata[:writer_backlog] || false,
+        reason: metadata[:reason],
+        site_url: metadata[:site_url] || stats.query.site_url,
+        updated_at: DateTime.utc_now()
+      })
+
+    Map.put(stats, :query, query_stats)
+  end
+
+  defp pipeline_status_badge(%{status: :dispatch}), do: {"Active", "badge badge-success badge-sm"}
+
+  defp pipeline_status_badge(%{status: :backpressure}),
+    do: {"Backpressure", "badge badge-warning badge-sm"}
+
+  defp pipeline_status_badge(%{status: :halted}), do: {"Halted", "badge badge-error badge-sm"}
+  defp pipeline_status_badge(%{status: :error}), do: {"Error", "badge badge-error badge-sm"}
+
+  defp pipeline_status_badge(%{status: :finalizing}),
+    do: {"Finalizing", "badge badge-info badge-sm"}
+
+  defp pipeline_status_badge(%{status: :idle}), do: {"Idle", "badge badge-ghost badge-sm"}
+  defp pipeline_status_badge(_), do: {"Updating", "badge badge-ghost badge-sm"}
+
+  defp pipeline_status_label(%{status: :dispatch}), do: "Dispatching query batches"
+  defp pipeline_status_label(%{status: :backpressure}), do: "Backpressure detected"
+  defp pipeline_status_label(%{status: :halted}), do: "Pipeline halted"
+  defp pipeline_status_label(%{status: :error}), do: "Pipeline error"
+  defp pipeline_status_label(%{status: :finalizing}), do: "Flushing pending writers"
+  defp pipeline_status_label(%{status: :pending}), do: "Waiting for results"
+  defp pipeline_status_label(%{status: :idle}), do: "Idle"
+  defp pipeline_status_label(_), do: "Updating"
+
+  defp pipeline_status_detail(%{status: :backpressure, reason: reason}) do
+    case reason do
+      :writer_backlog -> "Writer backlog detected. Waiting for database writes to finish."
+      :max_in_flight -> "All pagination slots are in use."
+      :max_queue_size -> "Coordinator queue is at capacity."
+      other -> "Backpressure reason: #{inspect(other)}"
+    end
+  end
+
+  defp pipeline_status_detail(%{status: :dispatch, queue_depth: depth, in_flight: in_flight}) do
+    "Dispatching work: #{depth} queued page(s), #{in_flight} in flight."
+  end
+
+  defp pipeline_status_detail(%{status: :finalizing}),
+    do: "Waiting for final query writers to complete."
+
+  defp pipeline_status_detail(%{status: :halted}),
+    do: "Pipeline halted. See retry queue for details."
+
+  defp pipeline_status_detail(%{status: :error, reason: reason}), do: "Error: #{inspect(reason)}"
+  defp pipeline_status_detail(_), do: "Monitoring pipeline health."
+
+  defp pipeline_writer_backlog_label(%{writer_backlog: true}), do: "Yes"
+  defp pipeline_writer_backlog_label(_), do: "No"
+
+  defp format_pipeline_duration_ms(value) when is_integer(value) or is_float(value) do
+    ms =
+      value
+      |> Kernel.*(1.0)
+      |> Float.round(2)
+
+    "#{ms} ms"
+  end
+
+  defp format_pipeline_duration_ms(_), do: "—"
+
+  defp new_telemetry_counters do
+    %{
+      url: %{ok: 0, error: 0, skipped: 0},
+      query: %{ok: 0, error: 0, skipped: 0}
+    }
+  end
+
+  defp update_counters(counters, entry) do
+    {key, status_key} = telemetry_counter_keys(entry)
+    update_in(counters, [key, status_key], fn value -> (value || 0) + 1 end)
+  end
+
+  defp telemetry_counter_keys(entry) do
+    key =
+      case entry.event do
+        [:gsc_analytics, :url_pipeline, :message] -> :url
+        [:gsc_analytics, :query_batch] -> :query
+        _ -> :url
+      end
+
+    status_key =
+      case entry.status do
+        {:error, _reason} -> :error
+        :skipped -> :skipped
+        _ -> :ok
+      end
+
+    {key, status_key}
+  end
+
+  defp telemetry_counter_label(:url), do: "URL pipeline"
+  defp telemetry_counter_label(:query), do: "Query pipeline"
+  defp telemetry_counter_label(_), do: "Pipeline"
 end

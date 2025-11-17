@@ -36,8 +36,10 @@ defmodule GscAnalytics.Application do
       ]
       |> Kernel.++(authenticator_children)
       |> Kernel.++([
+        GscAnalytics.DataSources.GSC.Support.QueryWriterBroadway,
         # Task Supervisor for background jobs (HTTP checks, etc.)
         {Task.Supervisor, name: GscAnalytics.TaskSupervisor},
+        GscAnalytics.DataSources.GSC.Support.DeadLetter,
         # Workflow execution infrastructure
         {Registry, keys: :unique, name: GscAnalytics.Workflows.EngineRegistry},
         {DynamicSupervisor,

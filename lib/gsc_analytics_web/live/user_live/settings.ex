@@ -384,6 +384,7 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
   def mount(params, _session, socket) do
     # Batch load properties ONCE at the top to avoid duplicate queries
     current_scope = socket.assigns.current_scope
+
     {socket, _account, _property} =
       AccountHelpers.init_account_and_property_assigns(socket, params)
 

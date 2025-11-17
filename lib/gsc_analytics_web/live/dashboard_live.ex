@@ -2,18 +2,12 @@ defmodule GscAnalyticsWeb.DashboardLive do
   use GscAnalyticsWeb, :live_view
   require Logger
 
-  alias GscAnalytics.ContentInsights
-  alias GscAnalytics.Analytics.{SiteTrends, SummaryStats}
-  alias GscAnalytics.Dashboard, as: DashboardUtils
-  alias GscAnalytics.Dashboard.Snapshot
   alias GscAnalytics.DataSources.GSC.Support.SyncProgress
-  alias GscAnalyticsWeb.Live.AccountHelpers
-  alias GscAnalyticsWeb.Live.ChartHelpers
-  alias GscAnalyticsWeb.Live.DashboardParams
-  alias GscAnalyticsWeb.Live.PaginationHelpers
+  alias GscAnalyticsWeb.Live.{AccountHelpers, DashboardParams, PaginationHelpers}
   alias GscAnalyticsWeb.Dashboard.Columns
-  alias GscAnalyticsWeb.Presenters.ChartDataPresenter
-  alias GscAnalyticsWeb.PropertyRoutes
+
+  # Import extracted modules
+  alias GscAnalyticsWeb.DashboardLive.{DisplayHelpers, EventHandlers, SnapshotLoader}
 
   # Import component functions for template
   import GscAnalyticsWeb.Components.DashboardControls
@@ -81,9 +75,9 @@ defmodule GscAnalyticsWeb.DashboardLive do
     limit = PaginationHelpers.parse_limit(params["limit"])
     page = PaginationHelpers.parse_page(params["page"])
     sort_by = DashboardParams.normalize_sort_column(params["sort_by"])
-    sort_direction = DashboardUtils.normalize_sort_direction(params["sort_direction"])
+    sort_direction = normalize_sort_direction(params["sort_direction"])
     view_mode = Columns.validate_view_mode(params["view_mode"] || "basic")
-    chart_view = chart_view(params["chart_view"])
+    chart_view = DisplayHelpers.chart_view(params["chart_view"])
     search = params["search"] || ""
     # Parse period parameter for v2 functions (default to 30 days)
     period_days = DashboardParams.parse_period(params["period"])
@@ -165,174 +159,123 @@ defmodule GscAnalyticsWeb.DashboardLive do
       |> assign(:filter_redirect, filter_redirect)
       |> assign(:filter_first_seen, filter_first_seen)
       |> assign(:filter_page_type, filter_page_type)
-      |> assign_display_labels()
+      |> DisplayHelpers.assign_display_labels()
 
     force_snapshot? = not connected?(socket)
 
     {:noreply,
-     load_snapshot(base_socket, account_id, property_url, snapshot_opts, force?: force_snapshot?)}
+     SnapshotLoader.load_snapshot(base_socket, account_id, property_url, snapshot_opts,
+       force?: force_snapshot?
+     )}
+  end
+
+  # ============================================================================
+  # Event Handlers - Delegated to EventHandlers module
+  # ============================================================================
+
+  @impl true
+  def handle_event("search", params, socket) do
+    EventHandlers.handle_search(params, socket)
   end
 
   @impl true
-  def handle_event("search", %{"search" => search_term}, socket) do
-    # Update search - reset to page 1 when searching
-    {:noreply, push_dashboard_patch(socket, %{search: search_term, page: 1})}
+  def handle_event("switch_property", params, socket) do
+    EventHandlers.handle_switch_property(params, socket)
   end
 
   @impl true
-  def handle_event("switch_property", %{"property_id" => property_id}, socket) do
-    # Switch property while preserving other params
-    {:noreply, push_dashboard_patch(socket, %{property_id: property_id})}
+  def handle_event("change_view_mode", params, socket) do
+    EventHandlers.handle_change_view_mode(params, socket)
   end
 
   @impl true
-  def handle_event("change_view_mode", %{"view_mode" => view_mode}, socket) do
-    # Update URL with new view mode - keep current page
-    validated_mode = Columns.validate_view_mode(view_mode)
-
-    {:noreply, push_dashboard_patch(socket, %{view_mode: validated_mode})}
+  def handle_event("change_period", params, socket) do
+    EventHandlers.handle_change_period(params, socket)
   end
 
   @impl true
-  def handle_event("change_period", %{"period" => period}, socket) do
-    # Update local assigns for immediate visual feedback, then sync URL for data refresh
-    new_period_days = DashboardParams.parse_period(period)
-
-    new_socket =
-      socket
-      |> assign(:period_days, new_period_days)
-      |> assign_display_labels()
-
-    {:noreply, push_dashboard_patch(new_socket, %{period: period, page: 1})}
+  def handle_event("change_chart_view", params, socket) do
+    EventHandlers.handle_change_chart_view(params, socket)
   end
 
   @impl true
-  def handle_event("change_chart_view", %{"chart_view" => chart_view}, socket) do
-    # Update local assigns for immediate visual feedback, then sync URL for data refresh
-    new_socket =
-      socket
-      |> assign(:chart_view, chart_view)
-      |> assign_display_labels()
-
-    {:noreply, push_dashboard_patch(new_socket, %{chart_view: chart_view})}
+  def handle_event("toggle_series", params, socket) do
+    EventHandlers.handle_toggle_series(params, socket)
   end
 
   @impl true
-  def handle_event("toggle_series", %{"metric" => metric_str}, socket) do
-    new_series = ChartHelpers.toggle_chart_series(metric_str, socket.assigns.visible_series)
-    {:noreply, push_dashboard_patch(socket, %{series: DashboardParams.encode_series(new_series)})}
+  def handle_event("sort_column", params, socket) do
+    EventHandlers.handle_sort_column(params, socket)
   end
 
   @impl true
-  def handle_event("sort_column", %{"column" => column}, socket) do
-    # Determine new sort direction - toggle if same column, default for new column
-    # Reset to page 1 since sort order changes results
-    normalized_column = DashboardParams.normalize_sort_column(column)
-
-    new_direction =
-      DashboardParams.toggle_sort_direction(
-        socket.assigns.sort_by,
-        normalized_column,
-        socket.assigns.sort_direction
-      )
-
-    {:noreply,
-     push_dashboard_patch(socket, %{
-       sort_by: normalized_column,
-       sort_direction: new_direction,
-       page: 1
-     })}
+  def handle_event("change_limit", params, socket) do
+    EventHandlers.handle_change_limit(params, socket)
   end
 
   @impl true
-  def handle_event("change_limit", %{"limit" => limit}, socket) do
-    normalized_limit = PaginationHelpers.parse_limit(limit)
-
-    {:noreply, push_dashboard_patch(socket, %{limit: normalized_limit, page: 1})}
+  def handle_event("filter_http_status", params, socket) do
+    EventHandlers.handle_filter_http_status(params, socket)
   end
 
   @impl true
-  def handle_event("filter_http_status", %{"http_status" => value}, socket) do
-    {:noreply, push_dashboard_patch(socket, %{http_status: value, page: 1})}
+  def handle_event("filter_position", params, socket) do
+    EventHandlers.handle_filter_position(params, socket)
   end
 
   @impl true
-  def handle_event("filter_position", %{"position" => value}, socket) do
-    {:noreply, push_dashboard_patch(socket, %{position: value, page: 1})}
+  def handle_event("filter_clicks", params, socket) do
+    EventHandlers.handle_filter_clicks(params, socket)
   end
 
   @impl true
-  def handle_event("filter_clicks", %{"clicks" => value}, socket) do
-    {:noreply, push_dashboard_patch(socket, %{clicks: value, page: 1})}
+  def handle_event("filter_ctr", params, socket) do
+    EventHandlers.handle_filter_ctr(params, socket)
   end
 
   @impl true
-  def handle_event("filter_ctr", %{"ctr" => value}, socket) do
-    {:noreply, push_dashboard_patch(socket, %{ctr: value, page: 1})}
+  def handle_event("filter_backlinks", params, socket) do
+    EventHandlers.handle_filter_backlinks(params, socket)
   end
 
   @impl true
-  def handle_event("filter_backlinks", %{"backlinks" => value}, socket) do
-    {:noreply, push_dashboard_patch(socket, %{backlinks: value, page: 1})}
+  def handle_event("filter_redirect", params, socket) do
+    EventHandlers.handle_filter_redirect(params, socket)
   end
 
   @impl true
-  def handle_event("filter_redirect", %{"redirect" => value}, socket) do
-    {:noreply, push_dashboard_patch(socket, %{redirect: value, page: 1})}
+  def handle_event("filter_first_seen", params, socket) do
+    EventHandlers.handle_filter_first_seen(params, socket)
   end
 
   @impl true
-  def handle_event("filter_first_seen", %{"first_seen" => value}, socket) do
-    {:noreply, push_dashboard_patch(socket, %{first_seen: value, page: 1})}
+  def handle_event("filter_page_type", params, socket) do
+    EventHandlers.handle_filter_page_type(params, socket)
   end
 
   @impl true
-  def handle_event("filter_page_type", %{"page_type" => value}, socket) do
-    {:noreply, push_dashboard_patch(socket, %{page_type: value, page: 1})}
+  def handle_event("clear_filters", params, socket) do
+    EventHandlers.handle_clear_filters(params, socket)
   end
 
   @impl true
-  def handle_event("clear_filters", _params, socket) do
-    {:noreply,
-     push_dashboard_patch(socket, %{
-       http_status: nil,
-       position: nil,
-       clicks: nil,
-       ctr: nil,
-       backlinks: nil,
-       redirect: nil,
-       first_seen: nil,
-       page_type: nil,
-       page: 1
-     })}
+  def handle_event("goto_page", params, socket) do
+    EventHandlers.handle_goto_page(params, socket)
   end
 
   @impl true
-  def handle_event("goto_page", %{"page" => page}, socket) do
-    # Navigate to specific page
-    page_num = PaginationHelpers.parse_page(page)
-
-    # Ensure page is within valid range
-    page_num = max(1, min(page_num, socket.assigns.total_pages))
-
-    {:noreply, push_dashboard_patch(socket, %{page: page_num})}
+  def handle_event("next_page", params, socket) do
+    EventHandlers.handle_next_page(params, socket)
   end
 
   @impl true
-  def handle_event("next_page", _params, socket) do
-    # Navigate to next page
-    next_page = min(socket.assigns.page + 1, socket.assigns.total_pages)
-
-    {:noreply, push_dashboard_patch(socket, %{page: next_page})}
+  def handle_event("prev_page", params, socket) do
+    EventHandlers.handle_prev_page(params, socket)
   end
 
-  @impl true
-  def handle_event("prev_page", _params, socket) do
-    # Navigate to previous page
-    prev_page = max(socket.assigns.page - 1, 1)
-
-    {:noreply, push_dashboard_patch(socket, %{page: prev_page})}
-  end
+  # ============================================================================
+  # PubSub Handlers - Sync Progress Updates
+  # ============================================================================
 
   @impl true
   def handle_info({:sync_progress, %{type: :started, job: job}}, socket) do
@@ -346,14 +289,15 @@ defmodule GscAnalyticsWeb.DashboardLive do
   @impl true
   def handle_info({:sync_progress, %{type: :step_completed, job: job}}, socket) do
     if job_matches_socket?(socket, job) do
-      property_url = socket.assigns.current_property && socket.assigns.current_property.property_url
+      property_url =
+        socket.assigns.current_property && socket.assigns.current_property.property_url
 
       {:noreply,
-       load_snapshot(
+       SnapshotLoader.load_snapshot(
          socket,
          socket.assigns.current_account_id,
          property_url,
-         current_snapshot_opts(socket),
+         SnapshotLoader.current_snapshot_opts(socket),
          force?: false
        )}
     else
@@ -366,15 +310,16 @@ defmodule GscAnalyticsWeb.DashboardLive do
     socket = assign(socket, :sync_running, false)
 
     if job_matches_socket?(socket, job) do
-      property_url = socket.assigns.current_property && socket.assigns.current_property.property_url
+      property_url =
+        socket.assigns.current_property && socket.assigns.current_property.property_url
 
       socket =
         socket
-        |> put_flash(:info, "Dashboard updated with latest sync data ✨")
-        |> load_snapshot(
+        |> put_flash(:info, "Dashboard updated with latest sync data")
+        |> SnapshotLoader.load_snapshot(
           socket.assigns.current_account_id,
           property_url,
-          current_snapshot_opts(socket),
+          SnapshotLoader.current_snapshot_opts(socket),
           force?: true
         )
 
@@ -390,109 +335,23 @@ defmodule GscAnalyticsWeb.DashboardLive do
     {:noreply, socket}
   end
 
+  # ============================================================================
+  # Async Task Handlers - Delegated to SnapshotLoader
+  # ============================================================================
+
   @impl true
   def handle_async({:dashboard_snapshot, ref}, {:ok, snapshot}, socket) do
-    if socket.assigns.latest_snapshot_ref == ref do
-      {:noreply,
-       socket
-       |> assign(:latest_snapshot_ref, nil)
-       |> apply_snapshot(snapshot)}
-    else
-      {:noreply, socket}
-    end
+    SnapshotLoader.handle_async_success(socket, ref, snapshot)
   end
 
   @impl true
   def handle_async({:dashboard_snapshot, ref}, {:exit, reason}, socket) do
-    if socket.assigns.latest_snapshot_ref == ref do
-      Logger.error("Dashboard snapshot task failed: #{inspect(reason)}")
-
-      {:noreply,
-       socket
-       |> assign(:snapshot_loading?, false)
-       |> assign(:latest_snapshot_ref, nil)
-       |> put_flash(:error, "Failed to load dashboard data. Please try again.")}
-    else
-      {:noreply, socket}
-    end
+    SnapshotLoader.handle_async_failure(socket, ref, reason)
   end
 
-  defp load_snapshot(socket, _account_id, nil, _opts, _opts_kw) do
-    socket
-    |> assign(:snapshot_loading?, false)
-    |> assign(:latest_snapshot_ref, nil)
-    |> apply_snapshot(Snapshot.empty())
-  end
-
-  defp load_snapshot(socket, account_id, property_url, opts, opts_kw) do
-    async_enabled? = Application.get_env(:gsc_analytics, :dashboard_async_snapshots?, true)
-    initial_load? = socket.assigns[:snapshot_initialized?] != true
-    force? = Keyword.get(opts_kw, :force?, false) || initial_load?
-
-    cond do
-      not connected?(socket) or force? or not async_enabled? ->
-        snapshot = load_dashboard_snapshot(account_id, property_url, opts)
-
-        socket
-        |> assign(:snapshot_loading?, false)
-        |> assign(:latest_snapshot_ref, nil)
-        |> apply_snapshot(snapshot)
-
-      socket.assigns.snapshot_loading? ->
-        socket
-
-      true ->
-        ref = make_ref()
-
-        socket
-        |> assign(:snapshot_loading?, true)
-        |> assign(:latest_snapshot_ref, ref)
-        |> start_async({:dashboard_snapshot, ref}, fn ->
-          load_dashboard_snapshot(account_id, property_url, opts)
-        end)
-    end
-  end
-
-  defp apply_snapshot(socket, snapshot) do
-    socket
-    |> assign(:urls, snapshot.urls)
-    |> assign(:page, snapshot.page)
-    |> assign(:total_pages, snapshot.total_pages)
-    |> assign(:total_count, snapshot.total_count)
-    |> assign(:stats, snapshot.stats)
-    |> assign(:site_trends, snapshot.site_trends)
-    |> assign(:site_trends_json, ChartDataPresenter.encode_time_series(snapshot.site_trends))
-    |> assign(:chart_label, snapshot.chart_label)
-    |> assign(:total_clicks, snapshot.period_totals.total_clicks)
-    |> assign(:total_impressions, snapshot.period_totals.total_impressions)
-    |> assign(:avg_ctr, snapshot.period_totals.avg_ctr)
-    |> assign(:avg_position, snapshot.period_totals.avg_position)
-    |> assign(:snapshot_loading?, false)
-    |> assign(:snapshot_initialized?, true)
-    |> assign_mom_indicators()
-    |> assign_display_labels()
-    |> assign_date_labels()
-  end
-
-  defp current_snapshot_opts(socket) do
-    %{
-      limit: socket.assigns.limit,
-      page: socket.assigns.page,
-      sort_by: socket.assigns.sort_by,
-      sort_direction: DashboardUtils.normalize_sort_direction(socket.assigns.sort_direction),
-      search: socket.assigns.search,
-      period_days: socket.assigns[:period_days] || 30,
-      chart_view: socket.assigns.chart_view,
-      filter_http_status: socket.assigns[:filter_http_status],
-      filter_position: socket.assigns[:filter_position],
-      filter_clicks: socket.assigns[:filter_clicks],
-      filter_ctr: socket.assigns[:filter_ctr],
-      filter_backlinks: socket.assigns[:filter_backlinks],
-      filter_redirect: socket.assigns[:filter_redirect],
-      filter_first_seen: socket.assigns[:filter_first_seen],
-      filter_page_type: socket.assigns[:filter_page_type]
-    }
-  end
+  # ============================================================================
+  # Private Helpers
+  # ============================================================================
 
   defp job_matches_socket?(socket, job) do
     property = socket.assigns.current_property
@@ -510,148 +369,12 @@ defmodule GscAnalyticsWeb.DashboardLive do
     end
   end
 
-  defp load_dashboard_snapshot(_account_id, nil, _opts), do: Snapshot.empty()
-
-  defp load_dashboard_snapshot(account_id, property_url, opts) do
-    result =
-      ContentInsights.list_urls(%{
-        limit: opts.limit,
-        page: opts.page,
-        sort_by: opts.sort_by,
-        sort_direction: opts.sort_direction,
-        search: opts.search,
-        period_days: opts.period_days,
-        account_id: account_id,
-        property_url: property_url,
-        filter_http_status: opts[:filter_http_status],
-        filter_position: opts[:filter_position],
-        filter_clicks: opts[:filter_clicks],
-        filter_ctr: opts[:filter_ctr],
-        filter_backlinks: opts[:filter_backlinks],
-        filter_redirect: opts[:filter_redirect],
-        filter_first_seen: opts[:filter_first_seen],
-        filter_page_type: opts[:filter_page_type]
-      })
-
-    stats = SummaryStats.fetch(%{account_id: account_id, property_url: property_url})
-    first_data_date = SiteTrends.first_data_date(account_id, property_url)
-
-    {site_trends, chart_label} =
-      SiteTrends.fetch(opts.chart_view, %{
-        account_id: account_id,
-        property_url: property_url,
-        period_days: opts.period_days,
-        first_data_date: first_data_date
-      })
-
-    period_totals =
-      SiteTrends.fetch_period_totals(%{
-        account_id: account_id,
-        property_url: property_url,
-        period_days: opts.period_days,
-        first_data_date: first_data_date
-      })
-
-    %Snapshot{
-      urls: result.urls,
-      page: result.page,
-      total_pages: result.total_pages,
-      total_count: result.total_count,
-      stats: stats,
-      site_trends: site_trends,
-      chart_label: chart_label,
-      period_totals: period_totals
-    }
-  end
-
-  defp chart_view("weekly"), do: "weekly"
-  defp chart_view("monthly"), do: "monthly"
-  defp chart_view(_), do: "daily"
-
-  defp push_dashboard_patch(socket, overrides) do
-    property_override = Map.get(overrides, :property_id)
-    sanitized_overrides = Map.delete(overrides, :property_id)
-
-    params =
-      socket.assigns
-      |> DashboardParams.build_dashboard_query(sanitized_overrides)
-
-    property_id = property_override || socket.assigns.current_property_id
-
-    push_patch(socket, to: PropertyRoutes.dashboard_path(property_id, params))
-  end
-
-  # Display label helpers - extract inline template computations to proper assigns
-
-  defp assign_display_labels(socket) do
-    period_label_text = DashboardParams.period_label(socket.assigns.period_days)
-
-    socket
-    |> assign(:period_label, period_label_text)
-    |> assign(:chart_view_label, chart_view_label(socket.assigns.chart_view))
-    |> assign(:sort_label, sort_label(socket.assigns.sort_by, period_label_text))
-    |> assign(:sort_direction_label, sort_direction_label(socket.assigns.sort_direction))
-  end
-
-  defp chart_view_label("weekly"), do: "Weekly trend"
-  defp chart_view_label("monthly"), do: "Monthly trend"
-  defp chart_view_label(_), do: "Daily trend"
-
-  defp sort_label("clicks", period_label), do: "Clicks (#{period_label})"
-  defp sort_label("impressions", period_label), do: "Impressions (#{period_label})"
-  defp sort_label("ctr", period_label), do: "CTR (#{period_label})"
-  defp sort_label("position", period_label), do: "Average Position (#{period_label})"
-  defp sort_label("period_clicks", period_label), do: sort_label("clicks", period_label)
-  defp sort_label("period_impressions", period_label), do: sort_label("impressions", period_label)
-  defp sort_label("lifetime_clicks", _period_label), do: "Total Clicks (All Time)"
-  defp sort_label("lifetime_avg_ctr", period_label), do: sort_label("ctr", period_label)
-  defp sort_label("lifetime_avg_position", period_label), do: sort_label("position", period_label)
-  defp sort_label(_, period_label), do: "Clicks (#{period_label})"
-
-  defp sort_direction_label("asc"), do: "ascending"
-  defp sort_direction_label("desc"), do: "descending"
-  defp sort_direction_label(_), do: "descending"
-
-  # Month-over-month indicator helpers
-  defp assign_mom_indicators(socket) do
-    mom_change = socket.assigns.stats.month_over_month_change || 0
-
-    socket
-    |> assign(:mom_change, mom_change)
-    |> assign(:mom_indicator_class, mom_indicator_class(mom_change))
-    |> assign(:mom_icon, mom_icon(mom_change))
-    |> assign(:mom_delta_display, mom_delta_display(mom_change))
-  end
-
-  defp mom_indicator_class(change) when change > 0,
-    do: "border-emerald-400/40 bg-emerald-500/10 text-emerald-200"
-
-  defp mom_indicator_class(change) when change < 0,
-    do: "border-rose-400/50 bg-rose-500/10 text-rose-200"
-
-  defp mom_indicator_class(_), do: "border-slate-200/40 bg-slate-200/10 text-slate-200"
-
-  defp mom_icon(change) when change > 0, do: "hero-arrow-trending-up"
-  defp mom_icon(change) when change < 0, do: "hero-arrow-trending-down"
-  defp mom_icon(_), do: "hero-arrows-right-left"
-
-  defp mom_delta_display(change) when change > 0, do: "+#{Float.round(change, 1)}%"
-  defp mom_delta_display(change) when change < 0, do: "#{Float.round(change, 1)}%"
-  defp mom_delta_display(_), do: "0%"
-
-  # Date label helpers
-  defp assign_date_labels(socket) do
-    stats = socket.assigns.stats
-
-    socket
-    |> assign(:earliest_all_time, format_earliest_date(stats.all_time[:earliest_date]))
-    |> assign(:latest_all_time, format_latest_date(stats.all_time[:latest_date]))
-    |> assign(:days_with_data, stats.all_time[:days_with_data])
-  end
-
-  defp format_earliest_date(nil), do: nil
-  defp format_earliest_date(date), do: Calendar.strftime(date, "%b %Y")
-
-  defp format_latest_date(nil), do: nil
-  defp format_latest_date(date), do: Calendar.strftime(date, "%b %d, %Y")
+  # Normalize sort direction to atom for internal use
+  # (DashboardParams returns strings for URL params, we need atoms for Ecto)
+  defp normalize_sort_direction(nil), do: :desc
+  defp normalize_sort_direction("asc"), do: :asc
+  defp normalize_sort_direction(:asc), do: :asc
+  defp normalize_sort_direction("desc"), do: :desc
+  defp normalize_sort_direction(:desc), do: :desc
+  defp normalize_sort_direction(_), do: :desc
 end

@@ -12,7 +12,7 @@ defmodule GscAnalyticsWeb.Live.DashboardSync do
 
   alias GscAnalytics.Repo
   alias GscAnalytics.DataSources.GSC.Support.SyncProgress
-  alias GscAnalytics.Schemas.{Performance, SyncDay, TimeSeries}
+  alias GscAnalytics.Schemas.SyncDay
 
   @doc """
   Build the sync form struct for the given number of days.
@@ -49,17 +49,10 @@ defmodule GscAnalyticsWeb.Live.DashboardSync do
   def configured_site(_), do: {:error, "Invalid property configuration."}
 
   @doc """
-  Empty sync info placeholder shown before we hydrate metrics from the DB.
+  Empty sync info placeholder used to populate failure metadata.
   """
   def empty_sync_info do
-    %{
-      last_sync: nil,
-      earliest_date: nil,
-      latest_date: nil,
-      total_records: 0,
-      days_available: 0,
-      last_failure: nil
-    }
+    %{last_failure: nil}
   end
 
   @doc """
@@ -147,7 +140,6 @@ defmodule GscAnalyticsWeb.Live.DashboardSync do
       metrics: normalize_metrics(job[:metrics]),
       summary: job[:summary],
       error: job[:error],
-      events: format_events(job.events || []),
       controls: %{
         can_pause?: status == :running,
         can_resume?: status == :paused,
@@ -176,41 +168,12 @@ defmodule GscAnalyticsWeb.Live.DashboardSync do
   def maybe_apply_control(_progress, _action), do: :ok
 
   @doc """
-  Fetch sync metadata for the given scope/account/property combo.
+  Fetch the most recent failure metadata for the given scope/account/property combo.
   """
   def load_sync_info(_scope, account_id, property_url)
       when is_integer(account_id) and is_binary(property_url) do
-    result =
-      from(ts in TimeSeries,
-        where: ts.account_id == ^account_id and ts.property_url == ^property_url,
-        select: %{
-          earliest_date: min(ts.date),
-          latest_date: max(ts.date),
-          total_records: count(ts.date)
-        }
-      )
-      |> Repo.one()
-
-    earliest_date = result && result.earliest_date
-    latest_date = result && result.latest_date
-
-    last_sync =
-      from(perf in Performance,
-        where: perf.account_id == ^account_id and perf.property_url == ^property_url,
-        select: max(perf.fetched_at)
-      )
-      |> Repo.one()
-
-    last_failure = last_failure(account_id, property_url)
-
-    %{
-      last_sync: last_sync,
-      earliest_date: earliest_date,
-      latest_date: latest_date,
-      total_records: result && result.total_records,
-      days_available: calculate_days_available(earliest_date, latest_date),
-      last_failure: last_failure
-    }
+    empty_sync_info()
+    |> Map.put(:last_failure, last_failure(account_id, property_url))
   end
 
   def load_sync_info(_scope, account_id, _property_url) when is_integer(account_id),
@@ -238,182 +201,6 @@ defmodule GscAnalyticsWeb.Live.DashboardSync do
         }
     end
   end
-
-  defp calculate_days_available(%Date{} = min, %Date{} = max), do: Date.diff(max, min) + 1
-  defp calculate_days_available(_min, _max), do: 0
-
-  @doc """
-  Format and truncate the most recent events emitted by SyncProgress.
-  """
-  def format_events(events) do
-    events
-    |> Enum.take(12)
-    |> Enum.map(&format_event/1)
-  end
-
-  defp format_event(event) do
-    %{
-      key: event_key(event),
-      type: event.type,
-      step: event.step,
-      date: event.date,
-      status: event.status,
-      urls: event.urls,
-      rows: event.rows,
-      query_batches: event.query_batches,
-      url_requests: event.url_requests,
-      api_calls: event.api_calls,
-      duration_ms: event.duration_ms,
-      message: event.message,
-      timestamp: event.timestamp,
-      summary: event.summary,
-      error: event.error,
-      label: event_label(event),
-      tone: event_tone(event)
-    }
-  end
-
-  defp event_key(event) do
-    [event.type, event.step, event.timestamp]
-    |> Enum.map(fn
-      nil -> "_"
-      %DateTime{} = dt -> DateTime.to_unix(dt, :millisecond)
-      other -> to_string(other)
-    end)
-    |> Enum.join("-")
-  end
-
-  defp event_label(%{type: :step_started, date: date, step: step}),
-    do: "Starting day ##{step}: #{format_date_safe(date)}"
-
-  defp event_label(%{
-         type: :step_completed,
-         status: :ok,
-         date: date,
-         rows: rows,
-         query_batches: query_batches,
-         urls: urls,
-         step: step
-       }) do
-    pieces =
-      [rows_phrase(rows) || "0 query rows", query_batch_phrase(query_batches), url_phrase(urls)]
-      |> Enum.reject(&is_nil/1)
-
-    summary = Enum.join(pieces, " · ")
-    "Finished day ##{step} (#{format_date_safe(date)}) – #{summary}"
-  end
-
-  defp event_label(%{
-         type: :step_completed,
-         status: :error,
-         date: date,
-         rows: rows,
-         query_batches: query_batches,
-         urls: urls,
-         step: step
-       }) do
-    details =
-      [rows_phrase(rows), query_batch_phrase(query_batches), url_phrase(urls)]
-      |> Enum.reject(&is_nil/1)
-      |> Enum.join(" · ")
-
-    if details == "" do
-      "Day ##{step} (#{format_date_safe(date)}) completed with errors"
-    else
-      "Day ##{step} (#{format_date_safe(date)}) completed with errors – #{details}"
-    end
-  end
-
-  defp event_label(%{type: :step_completed, status: :skipped, date: date, step: step}),
-    do: "Day ##{step} (#{format_date_safe(date)}) already synced – skipped"
-
-  defp event_label(%{type: :paused}), do: "Sync paused by user"
-  defp event_label(%{type: :resumed}), do: "Sync resumed"
-  defp event_label(%{type: :stopping}), do: "Cancellation requested"
-
-  defp event_label(%{type: :finished, summary: summary, error: error}) when is_map(summary) do
-    cond do
-      is_nil(error) and is_nil(summary[:error]) ->
-        days = summary[:days_processed] || 0
-        duration = summary[:duration_ms] |> format_duration()
-        "Sync finished – #{days} day(s) processed in #{duration}"
-
-      true ->
-        failure_date = summary[:failed_on] || summary[:halt_on]
-
-        base =
-          case failure_date do
-            %Date{} -> "Sync failed on #{format_date_safe(failure_date)}"
-            %DateTime{} -> "Sync failed on #{format_date_safe(failure_date)}"
-            _ -> "Sync failed"
-          end
-
-        message = truncate_error(error || summary[:error], 120)
-
-        metrics =
-          [
-            rows_phrase(summary[:total_rows]),
-            http_batch_phrase(summary[:total_query_http_batches]),
-            query_sub_request_phrase(summary[:total_query_sub_requests])
-          ]
-          |> Enum.reject(&is_nil_or_empty?/1)
-          |> Enum.join(" · ")
-
-        details =
-          [message, metrics]
-          |> Enum.reject(&is_nil_or_empty?/1)
-          |> Enum.join(" – ")
-
-        if details == "" do
-          base
-        else
-          "#{base} – #{details}"
-        end
-    end
-  end
-
-  defp event_label(%{type: :finished, error: error}) do
-    message = truncate_error(error, 120)
-    if message, do: "Sync failed – #{message}", else: "Sync failed"
-  end
-
-  defp event_label(%{type: :started}), do: "Sync job queued"
-  defp event_label(_), do: "Update received"
-
-  defp event_tone(%{type: :step_completed, status: :error}), do: :error
-  defp event_tone(%{type: :step_completed, status: :skipped}), do: :info
-  defp event_tone(%{type: :finished, error: error}) when not is_nil(error), do: :error
-  defp event_tone(%{type: :stopping}), do: :warning
-  defp event_tone(%{type: :paused}), do: :info
-  defp event_tone(%{type: :resumed}), do: :success
-  defp event_tone(%{type: :step_completed}), do: :success
-  defp event_tone(%{type: :step_started}), do: :info
-  defp event_tone(%{type: :finished, summary: summary}) when is_map(summary), do: :success
-  defp event_tone(_), do: :info
-
-  @doc """
-  Badge class for the event timeline.
-  """
-  def event_badge_label(%{type: :step_completed, status: :ok}), do: "Completed"
-  def event_badge_label(%{type: :step_completed, status: :error}), do: "Errors"
-  def event_badge_label(%{type: :step_completed, status: :skipped}), do: "Skipped"
-  def event_badge_label(%{type: :step_started}), do: "Running"
-  def event_badge_label(%{type: :paused}), do: "Paused"
-  def event_badge_label(%{type: :resumed}), do: "Resumed"
-  def event_badge_label(%{type: :stopping}), do: "Stopping"
-  def event_badge_label(%{type: :finished, error: error}) when not is_nil(error), do: "Failed"
-  def event_badge_label(%{type: :finished, summary: summary}) when is_map(summary), do: "Summary"
-  def event_badge_label(%{type: :started}), do: "Queued"
-  def event_badge_label(_), do: nil
-
-  def event_tag_class(:success), do: "badge badge-success badge-sm"
-  def event_tag_class(:error), do: "badge badge-error badge-sm"
-  def event_tag_class(_), do: "badge badge-info badge-sm"
-
-  def event_marker_class(:success), do: "bg-emerald-500"
-  def event_marker_class(:error), do: "bg-rose-500"
-  def event_marker_class(:info), do: "bg-sky-500"
-  def event_marker_class(_), do: "bg-slate-400"
 
   @doc """
   Badge + label tuple for the current sync status.
@@ -616,7 +403,6 @@ defmodule GscAnalyticsWeb.Live.DashboardSync do
 
   def http_batch_phrase(value), do: human_count(value, {"HTTP batch", "HTTP batches"})
   def url_phrase(value), do: human_count(value, {"URL", "URLs"})
-  def url_request_phrase(value), do: human_count(value, {"URL request", "URL requests"})
   def api_call_phrase(value), do: human_count(value, {"API call", "API calls"})
 
   def format_date_safe(nil), do: "–"

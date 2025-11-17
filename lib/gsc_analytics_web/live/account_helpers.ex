@@ -4,12 +4,27 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
   and property selections. Provides a consistent way to determine the active
   Google account (credential) and the active property beneath it, while keeping
   layout assigns in sync.
+
+  ## Architecture
+
+  This module is the main interface that delegates to specialized sub-modules:
+
+  - `AccountHelpers.PropertyLoader` - Fetching and caching properties from database/API
+  - `AccountHelpers.UIFormatters` - Display label formatting for dropdowns
+  - `AccountHelpers.CacheManager` - Property cache lifecycle management
+
+  ## Migration Notes
+
+  This module maintains backward compatibility. All public functions that existed
+  before the refactoring continue to work exactly as before, but now delegate to
+  the appropriate sub-modules.
   """
 
   use Phoenix.Component
 
   alias GscAnalytics.Accounts
   alias GscAnalytics.DataSources.GSC.Support.Authenticator
+  alias GscAnalyticsWeb.Live.AccountHelpers.{PropertyLoader, UIFormatters, CacheManager}
 
   @type socket :: Phoenix.LiveView.Socket.t()
 
@@ -73,7 +88,7 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
         |> assign(:accounts_by_id, accounts_by_id)
         |> assign(:account_options, account_options)
         |> assign(:oauth_tokens_by_account, oauth_tokens)
-        |> reload_property_state()
+        |> CacheManager.reload_property_state()
 
       requested_account_id = params |> Map.get("account_id") |> parse_account_param()
       requested_property_id = params |> Map.get("property_id") |> parse_property_param()
@@ -127,7 +142,7 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
       if Keyword.get(opts, :skip_reload, false) do
         socket
       else
-        reload_property_state(socket)
+        CacheManager.reload_property_state(socket)
       end
 
     account_id = resolve_account_id(socket, requested_id, nil, current_scope)
@@ -149,7 +164,7 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
       if Keyword.get(opts, :skip_reload, false) do
         socket
       else
-        reload_property_state(socket)
+        CacheManager.reload_property_state(socket)
       end
 
     account_id =
@@ -169,7 +184,7 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
   def reload_properties(socket) do
     socket =
       socket
-      |> reload_property_state()
+      |> CacheManager.reload_property_state()
 
     account_id = socket.assigns[:current_account_id]
     property_id = socket.assigns[:current_property_id]
@@ -196,7 +211,7 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
   def display_property_label(nil), do: nil
 
   def display_property_label(property_url) when is_binary(property_url) do
-    extract_domain(property_url)
+    UIFormatters.extract_domain(property_url)
   end
 
   @doc """
@@ -206,29 +221,7 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
   @spec reload_properties_from_cache(socket(), map()) :: socket()
   def reload_properties_from_cache(socket, preloaded_properties)
       when is_map(preloaded_properties) do
-    accounts_by_id = Map.get(socket.assigns, :accounts_by_id, %{})
-    accounts = Map.values(accounts_by_id)
-    scope = Map.get(socket.assigns, :current_scope)
-    existing_tokens = Map.get(socket.assigns, :oauth_tokens_by_account)
-
-    # Use preloaded properties instead of querying
-    {properties_by_account, oauth_tokens} =
-      load_properties_by_account_from_cache(
-        accounts,
-        scope,
-        preloaded_properties,
-        existing_tokens
-      )
-
-    property_lookup = build_property_lookup(properties_by_account)
-    property_options = build_property_options(properties_by_account, accounts_by_id)
-
-    socket =
-      socket
-      |> assign(:properties_by_account, properties_by_account)
-      |> assign(:property_lookup, property_lookup)
-      |> assign(:property_options_all, property_options)
-      |> assign(:oauth_tokens_by_account, oauth_tokens)
+    socket = CacheManager.reload_from_preloaded(socket, preloaded_properties)
 
     account_id = socket.assigns[:current_account_id]
     property_id = socket.assigns[:current_property_id]
@@ -241,7 +234,7 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
   end
 
   # ---------------------------------------------------------------------------
-  # Parsing helpers
+  # Parsing helpers (backward compatibility - delegate to QueryParams in future)
   # ---------------------------------------------------------------------------
 
   @spec parse_account_param(term()) :: integer() | nil
@@ -325,7 +318,7 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
       socket.assigns
       |> Map.get(:property_options_all)
       |> case do
-        nil -> build_property_options(properties_by_account, accounts_by_id)
+        nil -> UIFormatters.build_property_options(properties_by_account, accounts_by_id)
         options -> options
       end
 
@@ -350,253 +343,6 @@ defmodule GscAnalyticsWeb.Live.AccountHelpers do
       true ->
         Enum.find(properties, & &1.is_active) || List.first(properties)
     end
-  end
-
-  defp load_properties_by_account(accounts, scope, oauth_tokens_map) do
-    # Batch load ALL properties for ALL accounts in a single query
-    # This prevents N+1 queries (was calling list_properties once per account)
-    account_ids = Enum.map(accounts, & &1.id)
-    all_properties = batch_load_all_properties(account_ids)
-
-    # Reuse preloaded OAuth tokens when available to avoid duplicate queries
-    oauth_tokens = ensure_oauth_tokens(oauth_tokens_map, scope, accounts)
-
-    properties_by_account =
-      Enum.reduce(accounts, %{}, fn account, acc ->
-        # Get pre-loaded properties for this account
-        saved_properties = Map.get(all_properties, account.id, [])
-
-        # Only show properties that are accessible via current OAuth token
-        # This prevents showing stale properties from previous Google accounts
-        properties =
-          case Map.get(oauth_tokens, account.id) do
-            nil ->
-              # No OAuth token available - fall back to saved properties so historical
-              # data remains accessible even if access has been revoked.
-              saved_properties
-
-            _token ->
-              # OAuth token exists - get API-accessible properties
-              # Note: We pass saved_properties to avoid re-querying the database
-              case get_api_accessible_properties(scope, account.id, saved_properties) do
-                {:ok, api_property_urls} ->
-                  # Use pre-loaded properties, filtered by API access
-                  saved_properties
-                  |> Enum.filter(fn prop ->
-                    MapSet.member?(api_property_urls, prop.property_url)
-                  end)
-
-                {:error, _} ->
-                  # If OAuth API call fails, fall back to saved properties
-                  saved_properties
-              end
-          end
-
-        Map.put(acc, account.id, properties)
-      end)
-
-    {properties_by_account, oauth_tokens}
-  end
-
-  # Same as load_properties_by_account but uses preloaded properties instead of querying
-  defp load_properties_by_account_from_cache(
-         accounts,
-         scope,
-         all_properties,
-         oauth_tokens_map
-       ) do
-    oauth_tokens = ensure_oauth_tokens(oauth_tokens_map, scope, accounts)
-
-    properties_by_account =
-      Enum.reduce(accounts, %{}, fn account, acc ->
-        # Get pre-loaded properties for this account
-        saved_properties = Map.get(all_properties, account.id, [])
-
-        # Only show properties that are accessible via current OAuth token
-        properties =
-          case Map.get(oauth_tokens, account.id) do
-            nil ->
-              saved_properties
-
-            _token ->
-              case get_api_accessible_properties(scope, account.id, saved_properties) do
-                {:ok, api_property_urls} ->
-                  saved_properties
-                  |> Enum.filter(fn prop ->
-                    MapSet.member?(api_property_urls, prop.property_url)
-                  end)
-
-                {:error, _} ->
-                  saved_properties
-              end
-          end
-
-        Map.put(acc, account.id, properties)
-      end)
-
-    {properties_by_account, oauth_tokens}
-  end
-
-  defp ensure_oauth_tokens(nil, scope, accounts) do
-    account_ids = Enum.map(accounts, & &1.id)
-    oauth_tokens = fetch_oauth_tokens(scope, account_ids)
-    # Cache tokens in Authenticator to avoid individual DB lookups
-    Authenticator.cache_tokens(oauth_tokens)
-    oauth_tokens
-  end
-
-  defp ensure_oauth_tokens(tokens, _scope, _accounts) when is_map(tokens), do: tokens
-
-  defp fetch_oauth_tokens(_scope, []), do: %{}
-
-  defp fetch_oauth_tokens(scope, account_ids) do
-    oauth_tokens = GscAnalytics.Auth.batch_get_oauth_tokens(scope, account_ids)
-    # Cache tokens in Authenticator to avoid individual DB lookups
-    Authenticator.cache_tokens(oauth_tokens)
-    oauth_tokens
-  end
-
-  # Helper to get API-accessible property URLs without re-querying the database
-  defp get_api_accessible_properties(scope, account_id, saved_properties) do
-    alias GscAnalytics.DataSources.GSC.Core.Client, as: GSCClient
-
-    with :ok <- GscAnalytics.Auth.Scope.authorize_account(scope, account_id) do
-      saved_urls = MapSet.new(saved_properties, & &1.property_url)
-
-      # Get properties from GSC API
-      case GSCClient.list_sites(account_id) do
-        {:ok, sites} ->
-          # Build a set of API-available property URLs that are also saved
-          api_property_urls =
-            sites
-            |> Enum.map(& &1.site_url)
-            |> Enum.filter(&MapSet.member?(saved_urls, &1))
-            |> MapSet.new()
-
-          {:ok, api_property_urls}
-
-        {:error, :authenticator_not_started} ->
-          # Test mode: Assume all saved properties are API-accessible
-          {:ok, saved_urls}
-
-        {:error, error} ->
-          {:error, error}
-      end
-    end
-  end
-
-  defp batch_load_all_properties(account_ids) when is_list(account_ids) do
-    import Ecto.Query
-    alias GscAnalytics.Schemas.WorkspaceProperty
-    alias GscAnalytics.Repo
-
-    from(p in WorkspaceProperty,
-      where: p.workspace_id in ^account_ids,
-      where: p.is_active == true,
-      order_by: [desc: p.is_active, asc: p.display_name]
-    )
-    |> Repo.all()
-    |> Enum.group_by(& &1.workspace_id)
-  end
-
-  defp build_property_lookup(properties_by_account) do
-    Enum.reduce(properties_by_account, %{}, fn {account_id, properties}, acc ->
-      Enum.reduce(properties, acc, fn property, lookup ->
-        Map.put(lookup, property.id, %{account_id: account_id, property: property})
-      end)
-    end)
-  end
-
-  defp build_property_options(properties_by_account, accounts_by_id) do
-    properties_by_account
-    |> Enum.sort_by(fn {account_id, _props} ->
-      label = account_label(Map.get(accounts_by_id, account_id), account_id)
-      {String.downcase(label), account_id}
-    end)
-    |> Enum.flat_map(fn {_account_id, properties} ->
-      Enum.map(properties, fn property ->
-        property_label = property_label(property)
-        favicon_url = Map.get(property, :favicon_url)
-
-        %{
-          label: property_label,
-          id: property.id,
-          favicon_url: favicon_url
-        }
-      end)
-    end)
-  end
-
-  defp account_label(nil, account_id), do: "Workspace #{account_id}"
-
-  defp account_label(account, account_id) do
-    cond do
-      # Use OAuth email as first priority
-      Map.get(account, :oauth) && account.oauth.google_email ->
-        account.oauth.google_email
-
-      # Fall back to display_name if set
-      Map.get(account, :display_name) && String.trim(account.display_name) != "" ->
-        String.trim(account.display_name)
-
-      # Then try the configured name
-      Map.get(account, :name) && String.trim(account.name) != "" ->
-        String.trim(account.name)
-
-      true ->
-        "Workspace #{account_id}"
-    end
-  end
-
-  defp property_label(property) do
-    property_url = property_url_label(property)
-    extract_domain(property_url)
-  end
-
-  defp extract_domain("sc-domain:" <> domain), do: String.trim(domain)
-
-  defp extract_domain(url) when is_binary(url) do
-    case URI.parse(url) do
-      %URI{host: host} when is_binary(host) -> host
-      _ -> url
-    end
-  end
-
-  defp property_url_label(%{property_url: property_url}) when is_binary(property_url) do
-    String.trim(property_url)
-  end
-
-  defp property_url_label(_property), do: "Property"
-
-  defp reload_property_state(socket) do
-    accounts_by_id = Map.get(socket.assigns, :accounts_by_id, %{})
-    accounts = Map.values(accounts_by_id)
-    scope = Map.get(socket.assigns, :current_scope)
-    existing_tokens = Map.get(socket.assigns, :oauth_tokens_by_account)
-
-    # Check if properties were already loaded in this request lifecycle
-    # This prevents N+1 queries when reload_property_state is called multiple times
-    # during mount → handle_params → assign_current_account → assign_current_property
-    {properties_by_account, oauth_tokens} =
-      case Map.get(socket.assigns, :_properties_cache) do
-        nil ->
-          # First load - query database and cache the result
-          load_properties_by_account(accounts, scope, existing_tokens)
-
-        cached ->
-          # Reuse cached properties from earlier in this request
-          {cached, ensure_oauth_tokens(existing_tokens, scope, accounts)}
-      end
-
-    property_lookup = build_property_lookup(properties_by_account)
-    property_options = build_property_options(properties_by_account, accounts_by_id)
-
-    socket
-    |> assign(:properties_by_account, properties_by_account)
-    |> assign(:property_lookup, property_lookup)
-    |> assign(:property_options_all, property_options)
-    |> assign(:_properties_cache, properties_by_account)
-    |> assign(:oauth_tokens_by_account, oauth_tokens)
   end
 
   defp map_property_to_account(_socket, nil), do: :error

@@ -240,9 +240,8 @@ defmodule GscAnalyticsWeb.Components.DashboardControls do
 
     assigns =
       assigns
-      |> assign_new(:period_options, fn -> default_period_options() end)
-      |> assign_new(:chart_view_options, fn -> default_chart_view_options() end)
-      |> assign_new(:chart_view_value_keys, fn -> ["chart_view"] end)
+      |> assign(:period_options, assigns.period_options || default_period_options())
+      |> assign(:chart_view_options, assigns.chart_view_options || default_chart_view_options())
       |> assign(:chart_view_value_keys_normalized, value_keys)
 
     ~H"""
@@ -267,7 +266,7 @@ defmodule GscAnalyticsWeb.Components.DashboardControls do
         </label>
         <ul
           tabindex="0"
-          class="dropdown-content menu menu-compact rounded-box mt-3 w-52 bg-base-100 p-2 shadow-lg border border-base-300"
+          class="dropdown-content menu menu-compact rounded-box mt-3 w-52 bg-base-100 p-2 shadow-lg border border-base-300 z-50"
         >
           <li :for={option <- @period_options || []}>
             <button
@@ -294,7 +293,7 @@ defmodule GscAnalyticsWeb.Components.DashboardControls do
         </label>
         <ul
           tabindex="0"
-          class="dropdown-content menu menu-compact rounded-box mt-3 w-40 bg-base-100 p-2 shadow-lg border border-base-300"
+          class="dropdown-content menu menu-compact rounded-box mt-3 w-40 bg-base-100 p-2 shadow-lg border border-base-300 z-50"
         >
           <li :for={option <- @chart_view_options || []}>
             <% value_attrs =

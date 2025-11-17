@@ -451,7 +451,9 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence.Urls do
     now = AppDateTime.utc_now()
 
     totals =
-      Enum.reduce(rows, %{clicks: 0, impressions: 0, weighted_position: 0.0, urls: MapSet.new()},
+      Enum.reduce(
+        rows,
+        %{clicks: 0, impressions: 0, weighted_position: 0.0, urls: MapSet.new()},
         fn row, acc ->
           url = get_in(row, ["keys", Access.at(0)])
           clicks = row["clicks"] || 0
@@ -485,21 +487,23 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence.Urls do
         0.0
       end
 
-    Repo.insert_all(PropertyDailyMetric, [
-      %{
-        account_id: account_id,
-        property_url: property_url,
-        date: date,
-        clicks: clicks,
-        impressions: impressions,
-        position: avg_position,
-        ctr: avg_ctr,
-        urls_count: urls_count,
-        data_available: urls_count > 0,
-        inserted_at: now,
-        updated_at: now
-      }
-    ],
+    Repo.insert_all(
+      PropertyDailyMetric,
+      [
+        %{
+          account_id: account_id,
+          property_url: property_url,
+          date: date,
+          clicks: clicks,
+          impressions: impressions,
+          position: avg_position,
+          ctr: avg_ctr,
+          urls_count: urls_count,
+          data_available: urls_count > 0,
+          inserted_at: now,
+          updated_at: now
+        }
+      ],
       on_conflict:
         {:replace,
          [:clicks, :impressions, :ctr, :position, :urls_count, :data_available, :updated_at]},

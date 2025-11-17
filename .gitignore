@@ -53,3 +53,6 @@ client_secret_*.json
 .env
 .env.*
 !.env.example
+
+# Local Hex cache used when installing deps without touching $HOME
+.hex/

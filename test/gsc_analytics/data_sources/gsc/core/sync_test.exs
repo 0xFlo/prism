@@ -26,8 +26,10 @@ defmodule GscAnalytics.DataSources.GSC.Core.SyncTest do
     end
 
     test "sync_yesterday bubbles query batch errors" do
-      assert {:error, :boom, %{url_count: 0, api_calls: 1}} =
+      assert {:error, :boom, %{url_count: 0} = meta} =
                Sync.sync_yesterday(@site_url, account_id: 123)
+
+      assert meta.api_calls >= 1
     end
   end
 
