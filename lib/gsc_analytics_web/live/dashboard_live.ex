@@ -7,6 +7,7 @@ defmodule GscAnalyticsWeb.DashboardLive do
   alias GscAnalytics.Dashboard.Snapshot
   alias GscAnalytics.DataSources.GSC.Support.SyncProgress
   alias GscAnalyticsWeb.Live.AccountHelpers
+  alias GscAnalyticsWeb.Live.ChartHelpers
   alias GscAnalyticsWeb.Live.DashboardParams
   alias GscAnalyticsWeb.Live.PaginationHelpers
   alias GscAnalyticsWeb.Dashboard.Columns
@@ -14,7 +15,9 @@ defmodule GscAnalyticsWeb.DashboardLive do
   alias GscAnalyticsWeb.PropertyRoutes
 
   # Import component functions for template
-  import GscAnalyticsWeb.Components.DashboardComponents
+  import GscAnalyticsWeb.Components.DashboardControls
+  import GscAnalyticsWeb.Components.DashboardFilters
+  import GscAnalyticsWeb.Components.DashboardTables
 
   @impl true
   def mount(params, _session, socket) do
@@ -221,21 +224,7 @@ defmodule GscAnalyticsWeb.DashboardLive do
 
   @impl true
   def handle_event("toggle_series", %{"metric" => metric_str}, socket) do
-    metric = String.to_existing_atom(metric_str)
-    current_series = socket.assigns.visible_series
-
-    new_series =
-      if metric in current_series do
-        # Remove the series
-        List.delete(current_series, metric)
-      else
-        # Add the series
-        [metric | current_series]
-      end
-
-    # Enforce at least one series visible
-    new_series = if Enum.empty?(new_series), do: [metric], else: new_series
-
+    new_series = ChartHelpers.toggle_chart_series(metric_str, socket.assigns.visible_series)
     {:noreply, push_dashboard_patch(socket, %{series: DashboardParams.encode_series(new_series)})}
   end
 

@@ -1,7 +1,11 @@
 defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinatorTest do
   use ExUnit.Case, async: true
 
-  alias GscAnalytics.DataSources.GSC.Support.{QueryCoordinator, QueryPaginator}
+  alias GscAnalytics.DataSources.GSC.Support.{
+    QueryCoordinator,
+    QueryPaginator,
+    StreamingCallbacks
+  }
 
   setup do
     {:ok, coordinator} = start_coordinator()
@@ -73,6 +77,36 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinatorTest do
 
     assert {:halted, {:halt, :stop_now}} = QueryCoordinator.take_batch(coordinator, 1)
     assert {:halt, :stop_now, _results, _calls, _batches} = QueryCoordinator.finalize(coordinator)
+  end
+
+  test "streaming callbacks run control synchronously and writer asynchronously" do
+    test_pid = self()
+
+    callbacks = %StreamingCallbacks{
+      control: fn payload ->
+        send(test_pid, {:control, payload.row_count})
+        :continue
+      end,
+      writer: fn payload ->
+        send(test_pid, {:writer, payload.row_count})
+        Process.sleep(50)
+        {:ok, :done}
+      end
+    }
+
+    {:ok, coordinator} = start_coordinator(on_complete: callbacks)
+
+    entry = {:ok, ~D[2024-01-01], 0, %{body: %{"rows" => partial_rows(5_000)}}}
+
+    assert :ok =
+             QueryCoordinator.submit_results(coordinator, %{entries: [entry], http_batches: 1})
+
+    finalize_task = Task.async(fn -> QueryCoordinator.finalize(coordinator) end)
+
+    assert_receive {:control, 5_000}, 100
+    assert_receive {:writer, 5_000}, 200
+
+    assert {:ok, nil, _results, 1, 1} = Task.await(finalize_task)
   end
 
   test "requeue_batch respects queue limits", %{coordinator: _coordinator} do

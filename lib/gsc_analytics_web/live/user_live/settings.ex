@@ -5,6 +5,7 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
 
   alias GscAnalytics.{Accounts, Auth, Workspaces}
   alias GscAnalyticsWeb.Live.AccountHelpers
+  alias GscAnalytics.UserSettings.WorkspaceManager
 
   @impl true
   def render(assigns) do
@@ -110,7 +111,7 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
               Add Workspace
             </.link>
           </div>
-          <%= if Enum.any?(@accounts, &(account_requires_action?(&1))) do %>
+          <%= if Enum.any?(@accounts, &WorkspaceManager.account_requires_action?/1) do %>
             <div class="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">
               <p class="font-medium">Action required</p>
               <p class="mt-1">
@@ -383,10 +384,6 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
   def mount(params, _session, socket) do
     # Batch load properties ONCE at the top to avoid duplicate queries
     current_scope = socket.assigns.current_scope
-    workspace_ids = Accounts.account_ids_for_user(current_scope.user)
-    all_properties = batch_load_properties(workspace_ids)
-
-    # Initialize account helpers (which will load properties internally, but we'll optimize this)
     {socket, _account, _property} =
       AccountHelpers.init_account_and_property_assigns(socket, params)
 
@@ -394,15 +391,16 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
     email_changeset = Auth.change_user_email(user, %{}, validate_unique: false)
     password_changeset = Auth.change_user_password(user, %{}, hash_password: false)
 
+    {accounts, properties_cache} = WorkspaceManager.list_accounts(current_scope)
+
     socket =
       socket
       |> assign(:current_email, user.email)
       |> assign(:email_form, to_form(email_changeset))
       |> assign(:password_form, to_form(password_changeset))
       |> assign(:trigger_submit, false)
-      |> assign(:accounts, load_accounts(current_scope, all_properties))
-      # Reload AccountHelpers state with cached properties to avoid duplicate query
-      |> AccountHelpers.reload_properties_from_cache(all_properties)
+      |> assign(:accounts, accounts)
+      |> AccountHelpers.reload_properties_from_cache(properties_cache)
 
     {:ok, socket}
   end
@@ -530,7 +528,10 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply,
          socket
-         |> put_flash(:error, "Could not save property: #{changeset_error_message(changeset)}")
+         |> put_flash(
+           :error,
+           "Could not save property: #{WorkspaceManager.changeset_error_message(changeset)}"
+         )
          |> refresh_accounts()}
 
       {:error, :unauthorized_account} ->
@@ -548,7 +549,7 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
   def handle_event("disconnect_oauth", %{"workspace-id" => workspace_id_param}, socket) do
     current_scope = socket.assigns.current_scope
 
-    case parse_account_id(workspace_id_param) do
+    case WorkspaceManager.parse_account_id(workspace_id_param) do
       {:ok, workspace_id} ->
         case Auth.disconnect_oauth_account(current_scope, workspace_id) do
           {:ok, _} ->
@@ -587,7 +588,7 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
     current_scope = socket.assigns.current_scope
     user_id = current_scope.user.id
 
-    case parse_account_id(workspace_id_param) do
+    case WorkspaceManager.parse_account_id(workspace_id_param) do
       {:ok, workspace_id} ->
         case Workspaces.fetch_workspace(user_id, workspace_id) do
           {:ok, workspace} ->
@@ -626,7 +627,7 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
         %{"account_id" => account_id_param, "property_url" => property_url} = params,
         socket
       ) do
-    case parse_account_id(account_id_param) do
+    case WorkspaceManager.parse_account_id(account_id_param) do
       {:ok, account_id} ->
         # Support both new button-based and old form-based invocations
         display_name = Map.get(params, "display_name", "")
@@ -646,7 +647,10 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
           {:error, changeset} ->
             {:noreply,
              socket
-             |> put_flash(:error, "Could not add property: #{changeset_error_message(changeset)}")
+             |> put_flash(
+               :error,
+               "Could not add property: #{WorkspaceManager.changeset_error_message(changeset)}"
+             )
              |> refresh_accounts()}
         end
 
@@ -664,7 +668,7 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
         },
         socket
       ) do
-    case parse_account_id(account_id_param) do
+    case WorkspaceManager.parse_account_id(account_id_param) do
       {:ok, account_id} ->
         normalized_state = desired_state |> to_string() |> String.downcase()
         active? = normalized_state in ["true", "on", "1"]
@@ -698,7 +702,7 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
         %{"account_id" => account_id_param, "property_id" => property_id},
         socket
       ) do
-    case parse_account_id(account_id_param) do
+    case WorkspaceManager.parse_account_id(account_id_param) do
       {:ok, account_id} ->
         case Accounts.remove_property(account_id, property_id) do
           {:ok, _property} ->
@@ -731,7 +735,7 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
         },
         socket
       ) do
-    case parse_account_id(account_id_param) do
+    case WorkspaceManager.parse_account_id(account_id_param) do
       {:ok, account_id} ->
         normalized_state = desired_state |> to_string() |> String.downcase()
         active? = normalized_state in ["true", "on", "1"]
@@ -759,7 +763,7 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
                  socket
                  |> put_flash(
                    :error,
-                   "Could not add property: #{changeset_error_message(changeset)}"
+                   "Could not add property: #{WorkspaceManager.changeset_error_message(changeset)}"
                  )
                  |> refresh_accounts()}
             end
@@ -786,249 +790,12 @@ defmodule GscAnalyticsWeb.UserLive.Settings do
     end
   end
 
-  # Batch loading helpers to prevent N+1 queries
-
-  defp batch_load_oauth_tokens(workspace_ids) when is_list(workspace_ids) do
-    import Ecto.Query
-
-    alias GscAnalytics.Auth.OAuthToken
-    alias GscAnalytics.Repo
-
-    from(t in OAuthToken, where: t.account_id in ^workspace_ids)
-    |> Repo.all()
-    |> Enum.map(
-      &{&1.account_id,
-       %{
-         google_email: &1.google_email,
-         status: &1.status,
-         last_error: &1.last_error,
-         last_validated_at: &1.last_validated_at
-       }}
-    )
-    |> Map.new()
-  end
-
-  defp batch_load_properties(workspace_ids) when is_list(workspace_ids) do
-    import Ecto.Query
-
-    alias GscAnalytics.Schemas.WorkspaceProperty
-    alias GscAnalytics.Repo
-
-    from(p in WorkspaceProperty,
-      where: p.workspace_id in ^workspace_ids,
-      order_by: [desc: p.is_active, asc: p.display_name]
-    )
-    |> Repo.all()
-    |> Enum.group_by(& &1.workspace_id)
-  end
-
-  @spec load_accounts(Auth.Scope.t(), map()) :: [map()]
-  defp load_accounts(%Auth.Scope{} = current_scope, preloaded_properties)
-       when is_map(preloaded_properties) do
-    # Load workspaces from database instead of config
-    user_id = current_scope.user.id
-    workspaces = Workspaces.list_workspaces(user_id)
-
-    # Batch load all OAuth tokens in a single query
-    workspace_ids = Enum.map(workspaces, & &1.id)
-    oauth_tokens = batch_load_oauth_tokens(workspace_ids)
-
-    # Use preloaded properties (always a map from batch_load_properties)
-    all_properties = preloaded_properties
-
-    Enum.map(workspaces, fn account ->
-      oauth = Map.get(oauth_tokens, account.id)
-
-      # Get preloaded properties for this account to pass to list_property_options
-      saved_properties_for_account = Map.get(all_properties, account.id, [])
-
-      {property_options, property_options_error, oauth_error} =
-        if oauth do
-          case Accounts.list_property_options(
-                 current_scope,
-                 account.id,
-                 saved_properties_for_account
-               ) do
-            {:ok, options} ->
-              {ensure_included_property(options, account.default_property), nil, nil}
-
-            {:error, :oauth_token_invalid} ->
-              {[], nil, :oauth_token_invalid}
-
-            {:error, reason} ->
-              {[], translate_property_error(reason), nil}
-          end
-        else
-          {[], nil, nil}
-        end
-
-      property_label = property_display_label(account.default_property, property_options)
-
-      # Use preloaded properties from batch load
-      saved_properties = Map.get(all_properties, account.id, [])
-      active_properties = Enum.filter(saved_properties, & &1.is_active)
-      active_property = List.first(active_properties)
-
-      # Create a unified property list by merging API properties with saved properties
-      saved_by_url = Map.new(saved_properties, fn prop -> {prop.property_url, prop} end)
-
-      # Start with properties from API
-      api_properties =
-        property_options
-        |> Enum.map(fn opt ->
-          saved_prop = Map.get(saved_by_url, opt.value)
-
-          %{
-            property_url: opt.value,
-            label: opt.label,
-            permission_level: opt[:permission_level],
-            has_api_access: opt[:has_api_access],
-            is_saved: not is_nil(saved_prop),
-            is_active: if(saved_prop, do: saved_prop.is_active, else: false),
-            property_id: if(saved_prop, do: saved_prop.id, else: nil)
-          }
-        end)
-
-      # Get property URLs already in API response
-      api_property_urls = MapSet.new(api_properties, & &1.property_url)
-
-      # Add saved properties not in API response (happens when OAuth is invalid)
-      saved_only_properties =
-        saved_properties
-        |> Enum.reject(fn prop -> MapSet.member?(api_property_urls, prop.property_url) end)
-        |> Enum.map(fn prop ->
-          %{
-            property_url: prop.property_url,
-            label: prop.display_name || format_property_label(prop.property_url),
-            permission_level: nil,
-            has_api_access: false,
-            is_saved: true,
-            is_active: prop.is_active,
-            property_id: prop.id
-          }
-        end)
-
-      # Combine and sort
-      unified_properties =
-        (api_properties ++ saved_only_properties)
-        |> Enum.sort_by(fn prop ->
-          # Sort alphabetically by label for stable ordering (no jumping on toggle)
-          String.downcase(prop.label || prop.property_url)
-        end)
-
-      %{
-        id: account.id,
-        display_name: account.name,
-        oauth: oauth,
-        oauth_error: oauth_error,
-        default_property: account.default_property,
-        property_options: property_options,
-        property_options_error: property_options_error,
-        property_label: property_label,
-        property_required?: is_nil(account.default_property) && Enum.empty?(active_properties),
-        can_manage_property?: not is_nil(oauth),
-        property_form: to_form(%{"default_property" => account.default_property || ""}),
-        # Multi-property support
-        saved_properties: saved_properties,
-        active_property: active_property,
-        active_properties: active_properties,
-        # Unified property list for toggle UI
-        unified_properties: unified_properties
-      }
-    end)
-  end
-
   defp refresh_accounts(socket) do
-    # Batch load properties ONCE to avoid duplicate queries
     current_scope = socket.assigns.current_scope
-    workspace_ids = Accounts.account_ids_for_user(current_scope.user)
-    all_properties = batch_load_properties(workspace_ids)
+    {accounts, properties_cache} = WorkspaceManager.list_accounts(current_scope)
 
     socket
-    |> assign(:accounts, load_accounts(current_scope, all_properties))
-    |> AccountHelpers.reload_properties_from_cache(all_properties)
-  end
-
-  defp ensure_included_property(options, property) do
-    case property do
-      nil ->
-        options
-
-      value when is_binary(value) ->
-        trimmed = String.trim(value)
-
-        if trimmed == "" or Enum.any?(options, &(&1.value == trimmed)) do
-          options
-        else
-          [
-            %{value: trimmed, label: format_property_label(trimmed), permission_level: nil}
-            | options
-          ]
-        end
-
-      _ ->
-        options
-    end
-  end
-
-  defp property_display_label(nil, _options), do: nil
-
-  defp property_display_label(property, options) when is_binary(property) do
-    trimmed = String.trim(property)
-
-    options
-    |> Enum.find(&(to_string(&1.value) == trimmed))
-    |> case do
-      %{label: label} when is_binary(label) and label != "" ->
-        label
-
-      _ ->
-        format_property_label(trimmed)
-    end
-  end
-
-  defp property_display_label(_property, _options), do: nil
-
-  defp parse_account_id(account_id) when is_integer(account_id) and account_id > 0,
-    do: {:ok, account_id}
-
-  defp parse_account_id(account_id) when is_binary(account_id) do
-    case Integer.parse(account_id) do
-      {value, ""} when value > 0 -> {:ok, value}
-      _ -> {:error, :invalid_account_id}
-    end
-  end
-
-  defp parse_account_id(_), do: {:error, :invalid_account_id}
-
-  defp account_requires_action?(%{oauth: nil}), do: true
-  defp account_requires_action?(%{property_required?: true}), do: true
-  defp account_requires_action?(_), do: false
-
-  defp translate_property_error(:invalid_account_id),
-    do: "Pick a valid workspace before loading properties."
-
-  defp translate_property_error(:unauthorized_account),
-    do: "You are not allowed to manage that workspace."
-
-  defp format_property_label("sc-domain:" <> rest), do: "Domain: #{rest}"
-
-  defp format_property_label(property) when is_binary(property) do
-    case URI.parse(property) do
-      %URI{scheme: scheme, host: host, path: path} when is_binary(host) ->
-        base = "#{scheme}://#{host}"
-        if path in [nil, "", "/"], do: base, else: base <> path
-
-      _ ->
-        property
-    end
-  end
-
-  defp format_property_label(property), do: to_string(property)
-
-  defp changeset_error_message(%Ecto.Changeset{} = changeset) do
-    changeset.errors
-    |> Enum.map(fn {field, {message, _}} -> "#{field} #{message}" end)
-    |> Enum.join(", ")
+    |> assign(:accounts, accounts)
+    |> AccountHelpers.reload_properties_from_cache(properties_cache)
   end
 end

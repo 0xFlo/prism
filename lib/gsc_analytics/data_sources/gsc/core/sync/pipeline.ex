@@ -20,9 +20,12 @@ defmodule GscAnalytics.DataSources.GSC.Core.Sync.Pipeline do
   """
 
   alias GscAnalytics.DataSources.GSC.Core.Config
+  alias GscAnalytics.DataSources.GSC.Core.Persistence
   alias GscAnalytics.DataSources.GSC.Core.Sync.{QueryPhase, URLPhase}
   alias GscAnalytics.DataSources.GSC.Support.SyncProgress
   alias MapSet
+
+  require Logger
 
   @pause_poll_interval 500
 
@@ -35,14 +38,20 @@ defmodule GscAnalytics.DataSources.GSC.Core.Sync.Pipeline do
   def execute(state) do
     chunk_size = Config.query_scheduler_chunk_size()
 
-    state.dates
-    |> Enum.chunk_every(chunk_size, chunk_size, [])
-    |> Enum.reduce_while(state, fn chunk, acc ->
-      case process_chunk(chunk, acc) do
-        {:halt, new_state} -> {:halt, new_state}
-        {:cont, new_state} -> {:cont, new_state}
-      end
-    end)
+    final_state =
+      state.dates
+      |> Enum.chunk_every(chunk_size, chunk_size, [])
+      |> Enum.reduce_while(state, fn chunk, acc ->
+        case process_chunk(chunk, acc) do
+          {:halt, new_state} -> {:halt, new_state}
+          {:cont, new_state} -> {:cont, new_state}
+        end
+      end)
+
+    # Batch refresh all collected URLs at the end
+    refresh_all_lifetime_stats(final_state)
+
+    final_state
   end
 
   defp process_chunk([], state), do: {:cont, state}
@@ -198,6 +207,23 @@ defmodule GscAnalytics.DataSources.GSC.Core.Sync.Pipeline do
 
       _ ->
         :continue
+    end
+  end
+
+  defp refresh_all_lifetime_stats(state) do
+    # Collect all URLs from results that have the urls field
+    all_urls =
+      state.results
+      |> Map.values()
+      |> Enum.flat_map(fn
+        %{urls: urls} when is_list(urls) -> urls
+        _ -> []
+      end)
+      |> Enum.uniq()
+
+    if all_urls != [] do
+      Logger.info("Refreshing lifetime stats for #{length(all_urls)} unique URLs")
+      Persistence.refresh_lifetime_stats_incrementally(state.account_id, state.site_url, all_urls)
     end
   end
 end

@@ -11,7 +11,12 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
 
   require Logger
 
-  alias GscAnalytics.DataSources.GSC.Support.{DataHelpers, QueryPaginator}
+  alias GscAnalytics.DataSources.GSC.Support.{
+    DataHelpers,
+    QueryAccumulator,
+    QueryPaginator,
+    StreamingCallbacks
+  }
 
   @type batch_item :: {Date.t(), non_neg_integer()}
 
@@ -25,12 +30,16 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
   defstruct [
     :account_id,
     :site_url,
+    :mode,
     :queue,
     :results,
     :completed,
     :total_api_calls,
     :http_batch_calls,
-    :on_complete,
+    :callbacks,
+    :writer_supervisor,
+    :writer_refs,
+    :finalize_from,
     :max_queue_size,
     :max_in_flight,
     :in_flight,
@@ -89,6 +98,9 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
 
   @doc """
   Accepts results for one HTTP batch.
+
+  Changed to async (cast) to prevent workers from blocking on result submission.
+  This significantly improves concurrent performance.
   """
   @spec submit_results(GenServer.server(), %{
           entries: [batch_entry()],
@@ -96,7 +108,7 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
         }) ::
           :ok
   def submit_results(server, %{entries: _entries} = payload) do
-    GenServer.call(server, {:submit_results, payload}, :infinity)
+    GenServer.cast(server, {:submit_results, payload})
   end
 
   @doc """
@@ -153,7 +165,13 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
     account_id = Keyword.fetch!(opts, :account_id)
     site_url = Keyword.fetch!(opts, :site_url)
     dates = Keyword.get(opts, :dates, [])
-    on_complete = Keyword.get(opts, :on_complete)
+    callbacks =
+      opts
+      |> Keyword.get(:on_complete)
+      |> StreamingCallbacks.normalize()
+
+    mode = callbacks.mode
+    {writer_supervisor, writer_refs} = start_writer_supervisor(callbacks)
     max_queue_size = Keyword.get(opts, :max_queue_size, @default_queue_size)
     max_in_flight = Keyword.get(opts, :max_in_flight, @default_in_flight)
     telemetry_prefix = Keyword.get(opts, :telemetry_prefix, [:gsc_analytics, :coordinator])
@@ -167,7 +185,7 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
     else
       results =
         opts
-        |> Keyword.get_lazy(:results, fn -> build_initial_results(dates) end)
+        |> Keyword.get_lazy(:results, fn -> build_initial_results(dates, mode) end)
 
       {:ok,
        %__MODULE__{
@@ -178,7 +196,11 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
          completed: MapSet.new(),
          total_api_calls: :atomics.new(1, []),
          http_batch_calls: :atomics.new(1, []),
-         on_complete: on_complete,
+         mode: mode,
+         callbacks: callbacks,
+         writer_supervisor: writer_supervisor,
+         writer_refs: writer_refs,
+         finalize_from: nil,
          max_queue_size: max_queue_size,
          max_in_flight: max_in_flight,
          in_flight: MapSet.new(),
@@ -225,26 +247,6 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
   end
 
   @impl true
-  def handle_call({:submit_results, payload}, _from, state) do
-    entries = Map.get(payload, :entries, [])
-    http_batches = Map.get(payload, :http_batches, 0)
-
-    if entries == [] do
-      reply_with_metrics(:ok, increment_http_batches(state, http_batches))
-    else
-      :atomics.add(state.total_api_calls, 1, length(entries))
-      :atomics.add(state.http_batch_calls, 1, http_batches)
-
-      updated_state =
-        entries
-        |> Enum.reduce(state, &process_entry/2)
-        |> clear_in_flight(entries)
-
-      reply_with_metrics(:ok, updated_state)
-    end
-  end
-
-  @impl true
   def handle_call({:requeue_batch, batch_items}, _from, state) do
     cond do
       batch_items == [] ->
@@ -286,19 +288,68 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
   end
 
   @impl true
-  def handle_call(:finalize, _from, state) do
-    results = finalize_results(state.results)
-    total_api_calls = :atomics.get(state.total_api_calls, 1)
-    http_batch_calls = :atomics.get(state.http_batch_calls, 1)
+  def handle_call(:finalize, from, state) do
+    if pending_writers?(state) do
+      {:noreply, %{state | finalize_from: from}}
+    else
+      reply = finalize_reply_payload(state)
+      emit_metrics(state)
+      {:reply, reply, state}
+    end
+  end
 
-    reply =
-      case state.halt_reason do
-        nil -> {:ok, nil, results, total_api_calls, http_batch_calls}
-        {:halt, reason} -> {:halt, reason, results, total_api_calls, http_batch_calls}
-        {:error, reason} -> {:error, reason, results, total_api_calls, http_batch_calls}
+  @impl true
+  def handle_cast({:submit_results, payload}, state) do
+    entries = Map.get(payload, :entries, [])
+    http_batches = Map.get(payload, :http_batches, 0)
+
+    updated_state =
+      if entries == [] do
+        increment_http_batches(state, http_batches)
+      else
+        :atomics.add(state.total_api_calls, 1, length(entries))
+        :atomics.add(state.http_batch_calls, 1, http_batches)
+
+        entries
+        |> Enum.reduce(state, &process_entry/2)
+        |> clear_in_flight(entries)
       end
 
-    reply_with_metrics(reply, state)
+    {:noreply, updated_state}
+  end
+
+  @impl true
+  def handle_info({:writer_complete, pid, _date, result}, state) do
+    {meta, writer_refs} = Map.pop(state.writer_refs, pid)
+
+    if meta do
+      Process.demonitor(meta.monitor_ref, [:flush])
+    end
+
+    updated_state =
+      state
+      |> Map.put(:writer_refs, writer_refs)
+      |> handle_writer_result(result)
+      |> maybe_reply_finalize()
+
+    {:noreply, updated_state}
+  end
+
+  @impl true
+  def handle_info({:DOWN, ref, :process, pid, reason}, state) do
+    case Map.pop(state.writer_refs, pid) do
+      {nil, writer_refs} ->
+        {:noreply, %{state | writer_refs: writer_refs}}
+
+      {%{monitor_ref: ^ref} = _meta, writer_refs} ->
+        new_state =
+          state
+          |> Map.put(:writer_refs, writer_refs)
+          |> handle_writer_down(reason)
+          |> maybe_reply_finalize()
+
+        {:noreply, new_state}
+    end
   end
 
   # ===========================================================================
@@ -311,19 +362,40 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
     |> :queue.from_list()
   end
 
-  defp build_initial_results(dates) do
+  defp start_writer_supervisor(%StreamingCallbacks{mode: :streaming}) do
+    {:ok, supervisor} = Task.Supervisor.start_link()
+    {supervisor, %{}}
+  end
+
+  defp start_writer_supervisor(_callbacks), do: {nil, %{}}
+
+  defp build_initial_results(dates, mode) do
     Enum.reduce(dates, %{}, fn date, acc ->
-      Map.put(acc, date, new_result_entry())
+      Map.put(acc, date, new_result_entry(mode))
     end)
   end
 
-  defp new_result_entry do
+  defp new_result_entry(:legacy) do
     %{
       rows: [],
       row_chunks: [],
       api_calls: 0,
       partial?: false,
-      http_batches: 0
+      http_batches: 0,
+      row_count: 0,
+      accumulator: nil
+    }
+  end
+
+  defp new_result_entry(:streaming) do
+    %{
+      rows: [],
+      row_chunks: nil,
+      api_calls: 0,
+      partial?: false,
+      http_batches: 0,
+      row_count: 0,
+      accumulator: QueryAccumulator.new()
     }
   end
 
@@ -370,17 +442,35 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
     %{state | in_flight: in_flight}
   end
 
+  defp maybe_store_chunk(entry, _rows, :streaming), do: entry
+
+  defp maybe_store_chunk(%{row_chunks: nil} = entry, _rows, _mode), do: entry
+
+  defp maybe_store_chunk(%{row_chunks: chunks} = entry, rows, _mode) do
+    %{entry | row_chunks: [rows | chunks]}
+  end
+
+  defp maybe_accumulate(entry, _rows, mode) when mode in [:legacy, :none], do: entry
+
+  defp maybe_accumulate(%{accumulator: nil} = entry, _rows, _mode), do: entry
+
+  defp maybe_accumulate(%{accumulator: acc} = entry, rows, _mode) do
+    %{entry | accumulator: QueryAccumulator.ingest_chunk(acc, rows)}
+  end
+
   defp process_entry({:ok, date, start_row, part}, state) do
     rows = extract_rows(part)
     needs_next? = QueryPaginator.needs_next_page?(rows)
 
-    result_entry = Map.get(state.results, date, new_result_entry())
+    result_entry = Map.get(state.results, date, new_result_entry(state.mode))
 
     updated_entry =
       result_entry
-      |> Map.update!(:row_chunks, fn chunks -> [rows | chunks] end)
+      |> maybe_store_chunk(rows, state.mode)
+      |> maybe_accumulate(rows, state.mode)
       |> Map.update!(:api_calls, &(&1 + 1))
       |> Map.update!(:http_batches, &(&1 + 1))
+      |> Map.update!(:row_count, &(&1 + length(rows)))
 
     {queue, overflow?} =
       if needs_next? do
@@ -422,7 +512,7 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
   defp process_entry({:error, date, _start_row, reason}, state) do
     entry =
       state.results
-      |> Map.get(date, new_result_entry())
+      |> Map.get(date, new_result_entry(state.mode))
       |> Map.put(:partial?, true)
 
     %{
@@ -433,7 +523,37 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
   end
 
   defp handle_completion(state, date, entry) do
-    rows = DataHelpers.flatten_row_chunks(entry.row_chunks)
+    {payload, minimized_entry} = build_completion_payload(entry, date, state.mode)
+    control_payload = Map.drop(payload, [:accumulator])
+
+    case invoke_control(state.callbacks.control, control_payload) do
+      {:halt, reason} ->
+        {%{state | halt_reason: state.halt_reason || {:halt, reason}}, minimized_entry}
+
+      :continue ->
+        updated_state = maybe_start_writer(state, payload)
+        {updated_state, minimized_entry}
+    end
+  end
+
+  defp build_completion_payload(entry, date, :streaming) do
+    acc = entry.accumulator || QueryAccumulator.new()
+    row_count = entry.row_count
+
+    payload = %{
+      date: date,
+      accumulator: acc,
+      api_calls: entry.api_calls,
+      partial?: entry.partial?,
+      row_count: row_count,
+      http_batches: entry.http_batches
+    }
+
+    {payload, minimize_entry(entry, row_count, :streaming)}
+  end
+
+  defp build_completion_payload(entry, date, _mode) do
+    rows = DataHelpers.flatten_row_chunks(entry.row_chunks || [])
     row_count = length(rows)
 
     payload = %{
@@ -445,19 +565,37 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
       http_batches: entry.http_batches
     }
 
-    case safe_invoke_callback(state.on_complete, payload) do
-      {:halt, reason} ->
-        {%{state | halt_reason: state.halt_reason || {:halt, reason}},
-         minimize_entry(entry, row_count)}
-
-      :continue ->
-        {state, minimize_entry(entry, row_count)}
-    end
+    {payload, minimize_entry(entry, row_count, :legacy)}
   end
 
-  defp safe_invoke_callback(nil, _payload), do: :continue
+  defp minimize_entry(entry, row_count, :streaming) do
+    reset_acc =
+      case entry.accumulator do
+        nil -> QueryAccumulator.new()
+        acc -> QueryAccumulator.reset(acc)
+      end
 
-  defp safe_invoke_callback(callback, payload) when is_function(callback, 1) do
+    entry
+    |> Map.put(:rows, [])
+    |> Map.put(:row_chunks, nil)
+    |> Map.put(:accumulator, reset_acc)
+    |> Map.put(:row_count, row_count)
+  end
+
+  defp minimize_entry(entry, row_count, :legacy) do
+    entry
+    |> Map.put(:rows, [])
+    |> Map.put(:row_chunks, [])
+    |> Map.put(:row_count, row_count)
+  end
+
+  defp minimize_entry(entry, row_count, _mode) do
+    minimize_entry(entry, row_count, :legacy)
+  end
+
+  defp invoke_control(nil, _payload), do: :continue
+
+  defp invoke_control(callback, payload) when is_function(callback, 1) do
     try do
       case callback.(payload) do
         {:halt, reason} -> {:halt, reason}
@@ -466,34 +604,72 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
     rescue
       exception ->
         Logger.error(
-          "Query callback crashed for #{payload.date}: #{Exception.message(exception)}"
+          "Query control callback crashed for #{payload.date}: #{Exception.message(exception)}"
         )
 
         {:halt, {:callback_error, Exception.message(exception)}}
     end
   end
 
-  defp safe_invoke_callback(_, _payload), do: :continue
+  defp invoke_control(_, _payload), do: :continue
 
-  defp minimize_entry(entry, row_count) do
-    entry
-    |> Map.put(:rows, [])
-    |> Map.put(:row_chunks, [])
-    |> Map.put(:row_count, row_count)
+  defp maybe_start_writer(
+         %{callbacks: %StreamingCallbacks{mode: :streaming, writer: writer}} = state,
+         payload
+       )
+       when is_function(writer, 1) and not is_nil(state.writer_supervisor) do
+    parent = self()
+
+    {:ok, pid} =
+      Task.Supervisor.start_child(state.writer_supervisor, fn ->
+        result = safe_run_writer(writer, payload)
+        send(parent, {:writer_complete, self(), payload.date, result})
+      end)
+
+    ref = Process.monitor(pid)
+
+    %{
+      state
+      | writer_refs: Map.put(state.writer_refs, pid, %{monitor_ref: ref, date: payload.date})
+    }
   end
+
+  defp maybe_start_writer(state, _payload), do: state
+
+  defp safe_run_writer(writer, payload) when is_function(writer, 1) do
+    try do
+      case writer.(payload) do
+        {:halt, reason} -> {:halt, reason}
+        {:error, reason} -> {:error, reason}
+        {:ok, meta} -> {:ok, meta}
+        other -> {:ok, other}
+      end
+    rescue
+      exception ->
+        Logger.error(
+          "Query writer crashed for #{payload.date}: #{Exception.message(exception)}"
+        )
+
+        {:error, {:writer_error, Exception.message(exception)}}
+    end
+  end
+
+  defp safe_run_writer(_, _payload), do: :ok
 
   defp finalize_results(results) do
     Enum.into(results, %{}, fn {date, entry} ->
       rows =
         cond do
           entry.rows != [] -> entry.rows
-          true -> DataHelpers.flatten_row_chunks(Map.get(entry, :row_chunks, []))
+          is_list(entry.row_chunks) -> DataHelpers.flatten_row_chunks(entry.row_chunks)
+          true -> []
         end
 
       sanitized =
         entry
         |> Map.put(:rows, rows)
         |> Map.delete(:row_chunks)
+        |> Map.delete(:accumulator)
 
       {date, sanitized}
     end)
@@ -526,5 +702,54 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
 
     :telemetry.execute(prefix ++ [:queue_size], %{size: :queue.len(state.queue)}, metadata)
     :telemetry.execute(prefix ++ [:in_flight], %{count: MapSet.size(state.in_flight)}, metadata)
+  end
+
+  defp handle_writer_result(state, {:halt, reason}) do
+    %{state | halt_reason: state.halt_reason || {:halt, reason}}
+  end
+
+  defp handle_writer_result(state, {:error, reason}) do
+    %{state | halt_reason: state.halt_reason || {:error, reason}}
+  end
+
+  defp handle_writer_result(state, {:ok, _meta}), do: state
+  defp handle_writer_result(state, _), do: state
+
+  defp handle_writer_down(state, reason) when reason in [:normal, :shutdown, {:shutdown, :normal}],
+    do: state
+
+  defp handle_writer_down(state, reason) do
+    %{state | halt_reason: state.halt_reason || {:writer_exit, reason}}
+  end
+
+  defp pending_writers?(%{writer_refs: refs}) when is_map(refs) do
+    map_size(refs) > 0
+  end
+
+  defp pending_writers?(_state), do: false
+
+  defp maybe_reply_finalize(%{finalize_from: nil} = state), do: state
+
+  defp maybe_reply_finalize(%{finalize_from: from} = state) do
+    if pending_writers?(state) do
+      state
+    else
+      reply = finalize_reply_payload(state)
+      emit_metrics(state)
+      GenServer.reply(from, reply)
+      %{state | finalize_from: nil}
+    end
+  end
+
+  defp finalize_reply_payload(state) do
+    results = finalize_results(state.results)
+    total_api_calls = :atomics.get(state.total_api_calls, 1)
+    http_batch_calls = :atomics.get(state.http_batch_calls, 1)
+
+    case state.halt_reason do
+      nil -> {:ok, nil, results, total_api_calls, http_batch_calls}
+      {:halt, reason} -> {:halt, reason, results, total_api_calls, http_batch_calls}
+      {:error, reason} -> {:error, reason, results, total_api_calls, http_batch_calls}
+    end
   end
 end

@@ -11,12 +11,14 @@ defmodule GscAnalyticsWeb.HomepageLive do
   """
   use GscAnalyticsWeb, :live_view
 
+  alias GscAnalyticsWeb.Live.ChartHelpers
   alias GscAnalyticsWeb.Live.HomepageDemoData
   alias GscAnalyticsWeb.Presenters.ChartDataPresenter
   alias GscAnalyticsWeb.PropertyContext
 
   # Import component functions for template
-  import GscAnalyticsWeb.Components.DashboardComponents
+  import GscAnalyticsWeb.Components.DashboardControls
+  import GscAnalyticsWeb.Components.DashboardTables
   import GscAnalyticsWeb.ChartComponents
 
   @impl true
@@ -68,19 +70,7 @@ defmodule GscAnalyticsWeb.HomepageLive do
   @impl true
   def handle_event("toggle_series", %{"metric" => metric_str}, socket) do
     # Allow toggling chart series on demo
-    metric = String.to_existing_atom(metric_str)
-    current_series = socket.assigns.visible_series
-
-    new_series =
-      if metric in current_series do
-        List.delete(current_series, metric)
-      else
-        [metric | current_series]
-      end
-
-    # Enforce at least one series visible
-    new_series = if Enum.empty?(new_series), do: [metric], else: new_series
-
+    new_series = ChartHelpers.toggle_chart_series(metric_str, socket.assigns.visible_series)
     {:noreply, assign(socket, :visible_series, new_series)}
   end
 

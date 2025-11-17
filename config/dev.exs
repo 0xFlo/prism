@@ -8,9 +8,9 @@ config :gsc_analytics, GscAnalytics.Repo,
   database: "gsc_analytics_dev",
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,
-  pool_size: 20,
-  queue_target: 100,
-  queue_interval: 1000,
+  pool_size: 40,
+  queue_target: 50,
+  queue_interval: 500,
   # Disable query logging in development (set to :info to re-enable)
   log: false
 

@@ -1,6 +1,29 @@
 defmodule GscAnalyticsWeb.ChartComponents do
   @moduledoc """
   Reusable canvas-based chart components for GSC analytics visualization.
+
+  ## Data Encoding Strategy
+
+  This component accepts both raw data and pre-encoded JSON for time series and events.
+  The pre-encoded JSON attributes (`time_series_json`, `events_json`) take precedence
+  when provided. Use `ChartDataPresenter` to encode data consistently.
+
+  ## Recommended Usage
+
+      # In LiveView - use ChartDataPresenter for encoding
+      alias GscAnalyticsWeb.Presenters.ChartDataPresenter
+
+      socket
+      |> assign(:time_series, data)
+      |> assign(:time_series_json, ChartDataPresenter.encode_time_series(data))
+
+      # In template
+      <.performance_chart
+        id="myChart"
+        time_series={@time_series}
+        time_series_json={@time_series_json}
+        visible_series={@visible_series}
+      />
   """
   use Phoenix.Component
 
@@ -8,10 +31,22 @@ defmodule GscAnalyticsWeb.ChartComponents do
   Renders a multi-series line chart for clicks, impressions, and CTR.
 
   ## Attributes
+
     * `id` - Unique ID for the chart canvas (required)
-    * `time_series` - List of time series data with clicks, impressions, ctr, position (required)
+    * `time_series` - List of time series data with clicks, impressions, ctr, position (required).
+      Used for empty check. Can be empty list `[]` if you know data exists.
+    * `time_series_json` - Pre-encoded JSON string of time series data.
+      When provided, this is used directly (no encoding overhead). Prefer this approach.
+    * `events` - List of event objects with date and label (default: [])
+    * `events_json` - Pre-encoded JSON string of events. When provided, takes precedence.
     * `x_label` - Label for x-axis (default: "Date")
-    * `visible_series` - List of atoms indicating which series to show (default: [:clicks, :impressions])
+    * `visible_series` - List of metric atoms to show (default: [:clicks, :impressions])
+    * `wrapper_class` - CSS classes for wrapper div (default: "relative h-96")
+
+  ## Performance Note
+
+  Pre-encoding data using `ChartDataPresenter` is recommended as it avoids
+  re-encoding on every render and provides consistent JSON serialization.
   """
   attr :id, :string, required: true
   attr :time_series, :list, required: true
@@ -24,14 +59,14 @@ defmodule GscAnalyticsWeb.ChartComponents do
 
   def performance_chart(assigns) do
     ~H"""
-    <%= if length(@time_series) > 0 do %>
+    <%= if has_data?(@time_series, @time_series_json) do %>
       <div
         id={"#{@id}-wrapper"}
         phx-hook="PerformanceChart"
         data-chart-id={@id}
         data-x-label={@x_label}
-        data-time-series={encoded_time_series(@time_series, @time_series_json)}
-        data-events={encoded_events(@events, @events_json)}
+        data-time-series={resolve_time_series_json(@time_series, @time_series_json)}
+        data-events={resolve_events_json(@events, @events_json)}
         data-visible-series={encode_visible_series(@visible_series)}
         class={@wrapper_class}
       >
@@ -61,9 +96,20 @@ defmodule GscAnalyticsWeb.ChartComponents do
     """
   end
 
-  defp encoded_time_series(_series, json) when is_binary(json), do: json
+  # Check if data exists - prefer JSON string check when available
+  defp has_data?(_time_series, time_series_json) when is_binary(time_series_json) do
+    # JSON check: not empty array
+    time_series_json != "[]" and time_series_json != ""
+  end
 
-  defp encoded_time_series(series, _json) do
+  defp has_data?(time_series, _json), do: length(time_series) > 0
+
+  # Resolve time series JSON - prefer pre-encoded when available
+  defp resolve_time_series_json(_series, json) when is_binary(json) and json != "", do: json
+
+  defp resolve_time_series_json(series, _json) do
+    # Fallback encoding for backwards compatibility
+    # Prefer using ChartDataPresenter.encode_time_series/1 in the LiveView instead
     series
     |> Enum.map(fn ts ->
       base = %{
@@ -83,8 +129,9 @@ defmodule GscAnalyticsWeb.ChartComponents do
     |> JSON.encode!()
   end
 
-  defp encoded_events(_events, json) when is_binary(json), do: json
-  defp encoded_events(events, _json), do: JSON.encode!(events)
+  # Resolve events JSON - prefer pre-encoded when available
+  defp resolve_events_json(_events, json) when is_binary(json) and json != "", do: json
+  defp resolve_events_json(events, _json), do: JSON.encode!(events)
 
   defp encode_visible_series(series) when is_list(series) do
     series

@@ -150,6 +150,25 @@ class ChartJsPerformanceChart {
     }
   }
 
+  /**
+   * Build event marker plugin options with theme-aware colors
+   * @param {Array} events - Array of event objects with date and label
+   * @param {Object} theme - Theme colors from getThemeColors()
+   * @returns {Object} Event marker plugin configuration
+   */
+  buildEventMarkerOptions(events, theme) {
+    return {
+      events: events,
+      lineColor: theme.isDark ? "#fb923c" : "#f97316",
+      badgeBackground: theme.isDark ? "rgba(251, 146, 60, 0.92)" : "rgba(249, 115, 22, 0.92)",
+      badgeBorder: theme.isDark ? "rgba(194, 65, 12, 0.4)" : "rgba(124, 45, 18, 0.35)",
+      badgeText: "#0f172a",
+      font: `10px ${this.fontFamily}`,
+      lineWidth: 1,
+      lineDash: [4, 4]
+    }
+  }
+
   mount() {
     if (!this.canvas) {
       if (this.el.dataset.chartId) {
@@ -266,16 +285,7 @@ class ChartJsPerformanceChart {
           intersect: false,
         },
         plugins: {
-          eventMarkers: {
-            events: events,
-            lineColor: theme.isDark ? "#fb923c" : "#f97316",
-            badgeBackground: theme.isDark ? "rgba(251, 146, 60, 0.92)" : "rgba(249, 115, 22, 0.92)",
-            badgeBorder: theme.isDark ? "rgba(194, 65, 12, 0.4)" : "rgba(124, 45, 18, 0.35)",
-            badgeText: "#0f172a",
-            font: "10px 'Inter', system-ui, sans-serif",
-            lineWidth: 1,
-            lineDash: [4, 4]
-          },
+          eventMarkers: this.buildEventMarkerOptions(events, theme),
           legend: {
             display: false, // Hide legend - metric cards serve as the legend
           },
@@ -553,18 +563,7 @@ class ChartJsPerformanceChart {
 
     // Update plugin options with events and theme colors
     const theme = this.getThemeColors()
-
-    this.chart.options.plugins.eventMarkers = {
-      events: events,
-      lineColor: theme.isDark ? "#fb923c" : "#f97316",
-      badgeBackground: theme.isDark ? "rgba(251, 146, 60, 0.92)" : "rgba(249, 115, 22, 0.92)",
-      badgeBorder: theme.isDark ? "rgba(194, 65, 12, 0.4)" : "rgba(124, 45, 18, 0.35)",
-      badgeText: "#0f172a",
-      font: "10px 'Inter', system-ui, sans-serif",
-      lineWidth: 1,
-      lineDash: [4, 4]
-    }
-
+    this.chart.options.plugins.eventMarkers = this.buildEventMarkerOptions(events, theme)
     this.chart.update('none') // Update without animation
   }
 
@@ -587,17 +586,7 @@ class ChartJsPerformanceChart {
     // Update event markers with latest events and theme
     const events = this.readEvents()
     const theme = this.getThemeColors()
-
-    this.chart.options.plugins.eventMarkers = {
-      events: events,
-      lineColor: theme.isDark ? "#fb923c" : "#f97316",
-      badgeBackground: theme.isDark ? "rgba(251, 146, 60, 0.92)" : "rgba(249, 115, 22, 0.92)",
-      badgeBorder: theme.isDark ? "rgba(194, 65, 12, 0.4)" : "rgba(124, 45, 18, 0.35)",
-      badgeText: "#0f172a",
-      font: "10px 'Inter', system-ui, sans-serif",
-      lineWidth: 1,
-      lineDash: [4, 4]
-    }
+    this.chart.options.plugins.eventMarkers = this.buildEventMarkerOptions(events, theme)
 
     // Ensure canvas dimensions are correct before update
     this.chart.resize()

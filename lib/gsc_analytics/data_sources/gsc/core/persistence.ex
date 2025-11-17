@@ -20,6 +20,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
   alias GscAnalytics.DateTime, as: AppDateTime
   alias GscAnalytics.Schemas.SyncDay
   alias GscAnalytics.DataSources.GSC.Core.Config
+  alias GscAnalytics.DataSources.GSC.Support.QueryAccumulator
 
   # ============================================================================
   # SyncDay Management
@@ -108,8 +109,12 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
   Process and store GSC response data for URLs.
   Returns the count of URLs processed.
   """
-  def process_url_response(account_id, site_url, date, %{"rows" => rows})
+  # Function header with default
+  def process_url_response(account_id, site_url, date, data, opts \\ [])
+
+  def process_url_response(account_id, site_url, date, %{"rows" => rows}, opts)
       when is_list(rows) do
+    defer_refresh? = Keyword.get(opts, :defer_refresh, false)
     url_count = length(rows)
 
     # Prepare all time series records for bulk insert
@@ -154,17 +159,26 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
 
     Logger.info("Stored #{total_inserted} URLs for #{site_url} on #{date}")
 
-    # Refresh materialized view for these URLs only
+    # Extract URLs for refresh and HTTP checks
     urls_to_refresh = Enum.map(rows, fn row -> get_in(row, ["keys", Access.at(0)]) end)
-    refresh_lifetime_stats_incrementally(account_id, site_url, urls_to_refresh)
+
+    # Only refresh immediately if not deferring
+    unless defer_refresh? do
+      refresh_lifetime_stats_incrementally(account_id, site_url, urls_to_refresh)
+    end
 
     # Enqueue automatic HTTP status checks for new URLs
     enqueue_http_status_checks(account_id, site_url, urls_to_refresh)
 
-    url_count
+    # Return both count and URLs when deferring for later batch refresh
+    if defer_refresh? do
+      {url_count, urls_to_refresh}
+    else
+      url_count
+    end
   end
 
-  def process_url_response(_account_id, _site_url, date, _data) do
+  def process_url_response(_account_id, _site_url, date, _data, _opts) do
     Logger.warning("Unexpected GSC response format for #{date}")
     0
   end
@@ -177,6 +191,37 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence do
   Process and store query data for URLs.
   Returns the count of query-URL pairs processed.
   """
+  def process_query_response(account_id, site_url, date, %QueryAccumulator{} = accumulator) do
+    now = AppDateTime.utc_now()
+    batch_size = Config.query_batch_size()
+
+    accumulator
+    |> QueryAccumulator.entries()
+    |> Enum.chunk_every(batch_size)
+    |> Enum.each(fn chunk ->
+      rows =
+        Enum.map(chunk, fn {url, queries} ->
+          %{
+            account_id: account_id,
+            property_url: site_url,
+            url: url,
+            date: date,
+            top_queries: queries,
+            inserted_at: now
+          }
+        end)
+
+      Repo.insert_all(
+        GscAnalytics.Schemas.TimeSeries,
+        rows,
+        on_conflict: {:replace, [:top_queries]},
+        conflict_target: [:account_id, :property_url, :url, :date]
+      )
+    end)
+
+    QueryAccumulator.row_count(accumulator)
+  end
+
   def process_query_response(account_id, site_url, date, query_rows) do
     # Group queries by URL and take top 20 per URL
     queries_by_url =

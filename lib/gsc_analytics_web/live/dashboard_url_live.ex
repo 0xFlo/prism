@@ -5,13 +5,15 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
   alias GscAnalytics.DataSources.SERP.Core.Persistence, as: SerpPersistence
   alias GscAnalytics.Workers.SerpCheckWorker
   alias GscAnalyticsWeb.Live.AccountHelpers
+  alias GscAnalyticsWeb.Live.ChartHelpers
   alias GscAnalyticsWeb.Live.DashboardParams
   alias GscAnalyticsWeb.Presenters.ChartDataPresenter
   alias GscAnalyticsWeb.Presenters.DashboardUrlHelpers, as: UrlHelpers
   alias GscAnalyticsWeb.PropertyRoutes
 
   import GscAnalyticsWeb.Dashboard.HTMLHelpers
-  import GscAnalyticsWeb.Components.DashboardComponents
+  import GscAnalyticsWeb.Components.DashboardControls
+  import GscAnalyticsWeb.Components.DashboardTables
 
   @impl true
   def mount(params, _session, socket) do
@@ -198,21 +200,9 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
 
   @impl true
   def handle_event("toggle_series", %{"metric" => metric_str}, socket) do
-    metric = String.to_existing_atom(metric_str)
-    current_series = socket.assigns.visible_series
-
-    new_series =
-      if metric in current_series do
-        List.delete(current_series, metric)
-      else
-        [metric | current_series]
-      end
-
-    new_series = if Enum.empty?(new_series), do: [metric], else: new_series
+    new_series = ChartHelpers.toggle_chart_series(metric_str, socket.assigns.visible_series)
     encoded_series = DashboardParams.encode_series(new_series)
-
     updated_socket = assign(socket, :visible_series, new_series)
-
     {:noreply, push_url_patch(updated_socket, %{series: encoded_series})}
   end
 

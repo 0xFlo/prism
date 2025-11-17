@@ -12,8 +12,7 @@ defmodule GscAnalyticsWeb.DashboardCrawlerLive do
   import GscAnalyticsWeb.Dashboard.HTMLHelpers,
     only: [format_number: 1, format_datetime: 1]
 
-  import GscAnalyticsWeb.Components.DashboardComponents,
-    only: [property_selector: 1]
+  import GscAnalyticsWeb.Components.DashboardControls, only: [property_selector: 1]
 
   import GscAnalyticsWeb.Dashboard.Formatters
 

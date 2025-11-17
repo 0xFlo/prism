@@ -102,7 +102,8 @@ defmodule GscAnalytics.DataSources.GSC.Core.Config do
   @doc """
   Default number of concurrent requests in a batch.
   Balances API rate limits with performance.
-  Increased from 8 to 50 to better utilize Google Batch API (supports up to 100).
+  Increased to 50 to reduce HTTP round-trips while maintaining good throughput.
+  With 10 workers, this gives 500 concurrent requests for heavy workloads.
   """
   def default_batch_size do
     get_config(:default_batch_size, 50)
@@ -128,35 +129,37 @@ defmodule GscAnalytics.DataSources.GSC.Core.Config do
   @doc """
   Batch size for time series bulk inserts.
   Prevents hitting PostgreSQL parameter limits (65,535 total parameters).
-  With 10 fields per record, 1000 URLs = 10,000 parameters (safe margin).
-  Increased from 500 to 1000 to reduce database round trips.
+  With 10 fields per record, 2000 URLs = 20,000 parameters (safe margin).
+  Increased to 2000 to reduce database round trips.
   """
   def time_series_batch_size do
-    get_config(:time_series_batch_size, 1000)
+    get_config(:time_series_batch_size, 2000)
   end
 
   @doc """
   Batch size for lifetime stats refresh operations.
-  Increased from 500 to 2000 to reduce transaction overhead.
+  Increased to 5000 to reduce transaction overhead.
   Larger batches significantly improve throughput when deferred to end of sync.
   """
   def lifetime_stats_batch_size do
-    get_config(:lifetime_stats_batch_size, 2000)
+    get_config(:lifetime_stats_batch_size, 5000)
   end
 
   @doc """
   Batch size for query processing operations.
   Used when updating time_series records with query data.
+  Increased to 5000 to reduce database round trips and improve throughput.
   """
   def query_batch_size do
-    get_config(:query_batch_size, 1000)
+    get_config(:query_batch_size, 5000)
   end
 
   @doc """
   Maximum concurrent URL fetches in batch operations.
+  Increased to 10 for better parallelism with heavy workloads.
   """
   def max_concurrency do
-    get_config(:max_concurrency, 3)
+    get_config(:max_concurrency, 10)
   end
 
   @doc """
@@ -169,12 +172,12 @@ defmodule GscAnalytics.DataSources.GSC.Core.Config do
   @doc """
   Maximum number of in-flight batches pending result processing.
 
-  IMPORTANT: Must be >= batch_size * max_concurrency to avoid backpressure.
-  With batch_size=50 and max_concurrency=3, this needs to be at least 150.
-  Setting to 200 for buffer.
+  IMPORTANT: Must be >= batch_size * max_concurrency * 2 to avoid backpressure.
+  With batch_size=50 and max_concurrency=10, minimum is 500, but we use 800
+  to ensure workers never wait for in-flight slots. Higher value = better parallelism.
   """
   def max_in_flight do
-    get_config(:max_in_flight, 200)
+    get_config(:max_in_flight, 800)
   end
 
   # ============================================================================

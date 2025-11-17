@@ -131,9 +131,9 @@ if config_env() == :prod do
   config :gsc_analytics, GscAnalytics.Repo,
     # ssl: true,
     url: database_url,
-    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "20"),
-    queue_target: String.to_integer(System.get_env("DB_QUEUE_TARGET") || "100"),
-    queue_interval: String.to_integer(System.get_env("DB_QUEUE_INTERVAL") || "1000"),
+    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "40"),
+    queue_target: String.to_integer(System.get_env("DB_QUEUE_TARGET") || "50"),
+    queue_interval: String.to_integer(System.get_env("DB_QUEUE_INTERVAL") || "500"),
     # For machines with several cores, consider starting multiple pools of `pool_size`
     # pool_count: 4,
     socket_options: maybe_ipv6

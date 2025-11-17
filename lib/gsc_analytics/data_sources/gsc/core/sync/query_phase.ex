@@ -26,7 +26,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.Sync.QueryPhase do
 
   alias GscAnalytics.DataSources.GSC.Core.{Config, Persistence}
   alias GscAnalytics.DataSources.GSC.Core.Sync.{ProgressTracker, State}
-  alias GscAnalytics.DataSources.GSC.Support.QueryPaginator
+  alias GscAnalytics.DataSources.GSC.Support.{QueryPaginator, StreamingCallbacks}
 
   @doc """
   Fetch and store queries for the given `dates` based on `url_results`.
@@ -79,31 +79,37 @@ defmodule GscAnalytics.DataSources.GSC.Core.Sync.QueryPhase do
   end
 
   defp create_callback(state) do
-    fn %{date: date, rows: rows, api_calls: api_calls} = payload ->
-      http_batches = Map.get(payload, :http_batches, api_calls)
+    %StreamingCallbacks{
+      control: fn _payload -> :continue end,
+      writer: fn %{date: date, accumulator: accumulator, api_calls: api_calls} = payload ->
+        query_count =
+          Persistence.process_query_response(
+            state.account_id,
+            state.site_url,
+            date,
+            accumulator
+          )
 
-      query_count =
-        Persistence.process_query_response(state.account_id, state.site_url, date, rows)
+        Persistence.mark_day_complete(
+          state.account_id,
+          state.site_url,
+          date,
+          query_count: query_count
+        )
 
-      Persistence.mark_day_complete(
-        state.account_id,
-        state.site_url,
-        date,
-        query_count: query_count
-      )
+        State.store_query_count(state, date, query_count)
 
-      State.store_query_count(state, date, query_count)
+        ProgressTracker.report_queries_complete(
+          state,
+          date,
+          query_count,
+          api_calls,
+          Map.get(payload, :http_batches, api_calls)
+        )
 
-      ProgressTracker.report_queries_complete(
-        state,
-        date,
-        query_count,
-        api_calls,
-        http_batches
-      )
-
-      :continue
-    end
+        {:ok, %{query_count: query_count}}
+      end
+    }
   end
 
   defp handle_error(reason, dates, partial_results, api_calls, state) do
