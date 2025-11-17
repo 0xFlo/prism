@@ -8,7 +8,7 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregator do
 
   import Ecto.Query
   alias GscAnalytics.Repo
-  alias GscAnalytics.Schemas.TimeSeries
+  alias GscAnalytics.Schemas.{PropertyDailyMetric, TimeSeries}
   alias GscAnalytics.Analytics.TimeSeriesData
   alias GscAnalytics.Analytics.PeriodConfig
 
@@ -64,8 +64,8 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregator do
     start_time = System.monotonic_time()
 
     result =
-      TimeSeries
-      |> where([ts], ts.date >= ^start_date and ts.data_available == true)
+      PropertyDailyMetric
+      |> where([metric], metric.date >= ^start_date and metric.data_available == true)
       |> maybe_filter_account_and_property(account_id, property_url)
       |> apply_period_aggregation(period_type)
       |> Repo.all()
@@ -625,17 +625,16 @@ defmodule GscAnalytics.Analytics.TimeSeriesAggregator do
     account_id = Map.get(opts, :account_id)
     property_url = Map.get(opts, :property_url)
 
-    TimeSeries
-    |> where([ts], ts.date >= ^start_date and ts.data_available == true)
+    PropertyDailyMetric
+    |> where([metric], metric.date >= ^start_date and metric.data_available == true)
     |> maybe_filter_account_and_property(account_id, property_url)
-    |> group_by([ts], ts.date)
-    |> order_by([ts], asc: ts.date)
-    |> select([ts], %{
-      date: ts.date,
-      clicks: sum(ts.clicks),
-      impressions: sum(ts.impressions),
-      ctr: fragment("CAST(SUM(?) AS FLOAT) / NULLIF(SUM(?), 0)", ts.clicks, ts.impressions),
-      position: avg(ts.position)
+    |> order_by([metric], asc: metric.date)
+    |> select([metric], %{
+      date: metric.date,
+      clicks: metric.clicks,
+      impressions: metric.impressions,
+      ctr: metric.ctr,
+      position: metric.position
     })
     |> Repo.all()
   end

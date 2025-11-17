@@ -3,13 +3,13 @@ defmodule GscAnalytics.Analytics.SiteTrendsTest do
 
   alias GscAnalytics.Analytics.SiteTrends
   alias GscAnalytics.Repo
-  alias GscAnalytics.Schemas.TimeSeries
+  alias GscAnalytics.Schemas.PropertyDailyMetric
 
   @account_id 1
   @property_url "sc-domain:example.com"
 
   setup do
-    Repo.delete_all(TimeSeries)
+    Repo.delete_all(PropertyDailyMetric)
     :ok
   end
 
@@ -17,7 +17,7 @@ defmodule GscAnalytics.Analytics.SiteTrendsTest do
     today = Date.utc_today()
 
     Enum.each(0..4, fn offset ->
-      insert_time_series(
+      insert_daily_metric(
         @account_id,
         Date.add(today, -offset),
         10 + offset,
@@ -27,7 +27,7 @@ defmodule GscAnalytics.Analytics.SiteTrendsTest do
     end)
 
     # Noise from another account should be ignored
-    insert_time_series(2, today, 99, 200, 1.5, "sc-domain:othersite.com")
+    insert_daily_metric(2, today, 99, 200, 1.5, "sc-domain:othersite.com")
 
     {series, label} =
       SiteTrends.fetch("daily", %{account_id: @account_id, property_url: @property_url})
@@ -41,7 +41,7 @@ defmodule GscAnalytics.Analytics.SiteTrendsTest do
     today = Date.utc_today()
 
     Enum.each(0..20, fn offset ->
-      insert_time_series(@account_id, Date.add(today, -offset), 5, 50, 4.0)
+      insert_daily_metric(@account_id, Date.add(today, -offset), 5, 50, 4.0)
     end)
 
     {series, label} =
@@ -58,8 +58,8 @@ defmodule GscAnalytics.Analytics.SiteTrendsTest do
     current_month = Date.beginning_of_month(today)
     previous_month = Date.beginning_of_month(Date.add(current_month, -1))
 
-    insert_time_series(@account_id, current_month, 30, 300, 2.5)
-    insert_time_series(@account_id, previous_month, 25, 250, 3.0)
+    insert_daily_metric(@account_id, current_month, 30, 300, 2.5)
+    insert_daily_metric(@account_id, previous_month, 25, 250, 3.0)
 
     {series, label} =
       SiteTrends.fetch("monthly", %{account_id: @account_id, property_url: @property_url})
@@ -69,7 +69,7 @@ defmodule GscAnalytics.Analytics.SiteTrendsTest do
     assert Enum.all?(series, fn %{date: date} -> date.day == 1 end)
   end
 
-  defp insert_time_series(
+  defp insert_daily_metric(
          account_id,
          date,
          clicks,
@@ -79,18 +79,18 @@ defmodule GscAnalytics.Analytics.SiteTrendsTest do
        ) do
     ctr = if impressions > 0, do: clicks / impressions, else: 0.0
 
-    %TimeSeries{
+    %PropertyDailyMetric{}
+    |> PropertyDailyMetric.changeset(%{
       account_id: account_id,
       property_url: property_url,
-      url: "https://example.com/#{account_id}/#{Date.to_iso8601(date)}",
       date: date,
-      period_type: :daily,
       clicks: clicks,
       impressions: impressions,
       ctr: ctr,
       position: position,
+      urls_count: 1,
       data_available: true
-    }
+    })
     |> Repo.insert!()
   end
 end

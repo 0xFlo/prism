@@ -8,6 +8,7 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence.Urls do
   alias GscAnalytics.DataSources.GSC.Core.Persistence.Helpers
   alias GscAnalytics.DateTime, as: AppDateTime
   alias GscAnalytics.Repo
+  alias GscAnalytics.Schemas.PropertyDailyMetric
 
   @doc """
   Process and store GSC response data for URLs.
@@ -56,6 +57,8 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence.Urls do
       end)
 
     Logger.info("Stored #{total_inserted} URLs for #{site_url} on #{date}")
+
+    upsert_property_daily_metrics(account_id, site_url, date, rows)
 
     urls_to_refresh = Enum.map(rows, fn row -> get_in(row, ["keys", Access.at(0)]) end)
 
@@ -442,5 +445,65 @@ defmodule GscAnalytics.DataSources.GSC.Core.Persistence.Urls do
       |> MapSet.new()
 
     Enum.filter(urls, fn url -> MapSet.member?(url_status_map, url) end)
+  end
+
+  defp upsert_property_daily_metrics(account_id, property_url, date, rows) do
+    now = AppDateTime.utc_now()
+
+    totals =
+      Enum.reduce(rows, %{clicks: 0, impressions: 0, weighted_position: 0.0, urls: MapSet.new()},
+        fn row, acc ->
+          url = get_in(row, ["keys", Access.at(0)])
+          clicks = row["clicks"] || 0
+          impressions = row["impressions"] || 0
+          position = Helpers.ensure_float(row["position"] || 0.0)
+
+          %{
+            clicks: acc.clicks + clicks,
+            impressions: acc.impressions + impressions,
+            weighted_position: acc.weighted_position + position * impressions,
+            urls: MapSet.put(acc.urls, url)
+          }
+        end
+      )
+
+    impressions = totals.impressions
+    clicks = totals.clicks
+    urls_count = MapSet.size(totals.urls)
+
+    avg_position =
+      if impressions > 0 do
+        totals.weighted_position / impressions
+      else
+        0.0
+      end
+
+    avg_ctr =
+      if impressions > 0 do
+        clicks / impressions
+      else
+        0.0
+      end
+
+    Repo.insert_all(PropertyDailyMetric, [
+      %{
+        account_id: account_id,
+        property_url: property_url,
+        date: date,
+        clicks: clicks,
+        impressions: impressions,
+        position: avg_position,
+        ctr: avg_ctr,
+        urls_count: urls_count,
+        data_available: urls_count > 0,
+        inserted_at: now,
+        updated_at: now
+      }
+    ],
+      on_conflict:
+        {:replace,
+         [:clicks, :impressions, :ctr, :position, :urls_count, :data_available, :updated_at]},
+      conflict_target: [:account_id, :property_url, :date]
+    )
   end
 end

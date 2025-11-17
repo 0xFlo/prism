@@ -10,7 +10,7 @@ defmodule GscAnalytics.Analytics.SummaryStats do
 
   alias GscAnalytics.Accounts
   alias GscAnalytics.Repo
-  alias GscAnalytics.Schemas.TimeSeries
+  alias GscAnalytics.Schemas.PropertyDailyMetric
 
   @doc """
   Fetch summary statistics for the requested account.
@@ -42,33 +42,52 @@ defmodule GscAnalytics.Analytics.SummaryStats do
   end
 
   defp aggregate_period(account_id, property_url, start_date, end_date) do
-    result =
-      TimeSeries
+    totals =
+      PropertyDailyMetric
       |> where(
-        [ts],
-        ts.account_id == ^account_id and ts.property_url == ^property_url and
-          ts.date >= ^start_date and ts.date <= ^end_date and
-          ts.data_available == true
+        [metric],
+        metric.account_id == ^account_id and
+          metric.property_url == ^property_url and
+          metric.date >= ^start_date and
+          metric.date <= ^end_date and
+          metric.data_available == true
       )
-      |> select([ts], %{
-        total_urls: fragment("COUNT(DISTINCT ?)", ts.url),
-        total_clicks: sum(ts.clicks),
-        total_impressions: sum(ts.impressions),
+      |> select([metric], %{
+        total_clicks: sum(metric.clicks),
+        total_impressions: sum(metric.impressions),
         avg_position:
           fragment(
             "SUM(? * ?) / NULLIF(SUM(?), 0)",
-            ts.position,
-            ts.impressions,
-            ts.impressions
+            metric.position,
+            metric.impressions,
+            metric.impressions
           ),
         avg_ctr:
           fragment(
             "SUM(?)::float / NULLIF(SUM(?), 0) * 100",
-            ts.clicks,
-            ts.impressions
+            metric.clicks,
+            metric.impressions
           )
       })
       |> Repo.one()
+
+    total_urls =
+      from(ls in "url_lifetime_stats",
+        where:
+          ls.account_id == ^account_id and ls.property_url == ^property_url and
+            ls.first_seen_date <= ^end_date and ls.last_seen_date >= ^start_date,
+        select: count(ls.url)
+      )
+      |> Repo.one()
+
+    result =
+      (totals || %{
+         total_clicks: 0,
+         total_impressions: 0,
+         avg_position: 0.0,
+         avg_ctr: 0.0
+       })
+      |> Map.put(:total_urls, total_urls || 0)
       |> format_stats()
 
     Map.put(result, :period_label, format_period_label(start_date, end_date))

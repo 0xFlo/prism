@@ -1,5 +1,6 @@
 defmodule GscAnalyticsWeb.DashboardLive do
   use GscAnalyticsWeb, :live_view
+  require Logger
 
   alias GscAnalytics.ContentInsights
   alias GscAnalytics.Analytics.{SiteTrends, SummaryStats}
@@ -55,7 +56,11 @@ defmodule GscAnalyticsWeb.DashboardLive do
      |> assign_new(:total_clicks, fn -> 0 end)
      |> assign_new(:total_impressions, fn -> 0 end)
      |> assign_new(:avg_ctr, fn -> 0.0 end)
-     |> assign_new(:avg_position, fn -> 0.0 end)}
+     |> assign_new(:avg_position, fn -> 0.0 end)
+     |> assign_new(:site_trends_json, fn -> "[]" end)
+     |> assign_new(:snapshot_loading?, fn -> false end)
+     |> assign_new(:latest_snapshot_ref, fn -> nil end)
+     |> assign_new(:snapshot_initialized?, fn -> false end)}
   end
 
   @impl true
@@ -114,68 +119,58 @@ defmodule GscAnalyticsWeb.DashboardLive do
         end
       end
 
-    snapshot =
-      load_dashboard_snapshot(account_id, property_url, %{
-        limit: limit,
-        page: page,
-        sort_by: sort_by,
-        sort_direction: sort_direction,
-        search: search,
-        period_days: period_days,
-        chart_view: chart_view,
-        filter_http_status: filter_http_status,
-        filter_position: filter_position,
-        filter_clicks: filter_clicks,
-        filter_ctr: filter_ctr,
-        filter_backlinks: filter_backlinks,
-        filter_redirect: filter_redirect,
-        filter_first_seen: filter_first_seen,
-        filter_page_type: filter_page_type
-      })
+    snapshot_opts = %{
+      limit: limit,
+      page: page,
+      sort_by: sort_by,
+      sort_direction: sort_direction,
+      search: search,
+      period_days: period_days,
+      chart_view: chart_view,
+      filter_http_status: filter_http_status,
+      filter_position: filter_position,
+      filter_clicks: filter_clicks,
+      filter_ctr: filter_ctr,
+      filter_backlinks: filter_backlinks,
+      filter_redirect: filter_redirect,
+      filter_first_seen: filter_first_seen,
+      filter_page_type: filter_page_type
+    }
+
+    base_socket =
+      socket
+      |> assign(:current_path, current_path)
+      |> assign(:visible_series, visible_series)
+      |> assign(:chart_view, chart_view)
+      |> assign(:sort_by, sort_by)
+      |> assign(:sort_direction, Atom.to_string(sort_direction))
+      |> assign(:limit, limit)
+      |> assign(:view_mode, view_mode)
+      |> assign(:search, search)
+      |> assign(:period_days, period_days)
+      |> assign(:property_label, property_label)
+      |> assign(:property_favicon_url, property_favicon_url)
+      |> assign(
+        :page_title,
+        if(property_label,
+          do: "GSC Dashboard – #{property_label}",
+          else: "GSC Analytics Dashboard"
+        )
+      )
+      |> assign(:filter_http_status, filter_http_status)
+      |> assign(:filter_position, filter_position)
+      |> assign(:filter_clicks, filter_clicks)
+      |> assign(:filter_ctr, filter_ctr)
+      |> assign(:filter_backlinks, filter_backlinks)
+      |> assign(:filter_redirect, filter_redirect)
+      |> assign(:filter_first_seen, filter_first_seen)
+      |> assign(:filter_page_type, filter_page_type)
+      |> assign_display_labels()
+
+    force_snapshot? = not connected?(socket)
 
     {:noreply,
-     socket
-     |> assign(:current_path, current_path)
-     |> assign(:urls, snapshot.urls)
-     |> assign(:page, snapshot.page)
-     |> assign(:total_pages, snapshot.total_pages)
-     |> assign(:total_count, snapshot.total_count)
-     |> assign(:stats, snapshot.stats)
-     |> assign(:site_trends, snapshot.site_trends)
-     |> assign(:site_trends_json, ChartDataPresenter.encode_time_series(snapshot.site_trends))
-     |> assign(:chart_label, snapshot.chart_label)
-     |> assign(:visible_series, visible_series)
-     |> assign(:chart_view, chart_view)
-     |> assign(:sort_by, sort_by)
-     |> assign(:sort_direction, Atom.to_string(sort_direction))
-     |> assign(:limit, limit)
-     |> assign(:view_mode, view_mode)
-     |> assign(:search, search)
-     |> assign(:period_days, period_days)
-     |> assign(:property_label, property_label)
-     |> assign(:property_favicon_url, property_favicon_url)
-     |> assign(:total_clicks, snapshot.period_totals.total_clicks)
-     |> assign(:total_impressions, snapshot.period_totals.total_impressions)
-     |> assign(:avg_ctr, snapshot.period_totals.avg_ctr)
-     |> assign(:avg_position, snapshot.period_totals.avg_position)
-     |> assign(
-       :page_title,
-       if(property_label,
-         do: "GSC Dashboard – #{property_label}",
-         else: "GSC Analytics Dashboard"
-       )
-     )
-     |> assign(:filter_http_status, filter_http_status)
-     |> assign(:filter_position, filter_position)
-     |> assign(:filter_clicks, filter_clicks)
-     |> assign(:filter_ctr, filter_ctr)
-     |> assign(:filter_backlinks, filter_backlinks)
-     |> assign(:filter_redirect, filter_redirect)
-     |> assign(:filter_first_seen, filter_first_seen)
-     |> assign(:filter_page_type, filter_page_type)
-     |> assign_display_labels()
-     |> assign_mom_indicators()
-     |> assign_date_labels()}
+     load_snapshot(base_socket, account_id, property_url, snapshot_opts, force?: force_snapshot?)}
   end
 
   @impl true
@@ -340,52 +335,179 @@ defmodule GscAnalyticsWeb.DashboardLive do
   end
 
   @impl true
-  def handle_info({:sync_progress, %{type: :started}}, socket) do
-    # Mark sync as running to show indicator
-    {:noreply, assign(socket, :sync_running, true)}
+  def handle_info({:sync_progress, %{type: :started, job: job}}, socket) do
+    if job_matches_socket?(socket, job) do
+      {:noreply, assign(socket, :sync_running, true)}
+    else
+      {:noreply, socket}
+    end
   end
 
   @impl true
-  def handle_info({:sync_progress, %{type: :finished, job: _job}}, socket) do
-    # Sync completed - refresh all dashboard data
-    account_id = socket.assigns.current_account_id
-    property = socket.assigns.current_property
-    property_url = property && property.property_url
-    sort_direction = DashboardUtils.normalize_sort_direction(socket.assigns.sort_direction)
+  def handle_info({:sync_progress, %{type: :step_completed, job: job}}, socket) do
+    if job_matches_socket?(socket, job) do
+      property_url = socket.assigns.current_property && socket.assigns.current_property.property_url
 
-    snapshot =
-      load_dashboard_snapshot(account_id, property_url, %{
-        limit: socket.assigns.limit,
-        page: socket.assigns.page,
-        sort_by: socket.assigns.sort_by,
-        sort_direction: sort_direction,
-        search: socket.assigns.search,
-        period_days: socket.assigns[:period_days] || 30,
-        chart_view: socket.assigns.chart_view
-      })
+      {:noreply,
+       load_snapshot(
+         socket,
+         socket.assigns.current_account_id,
+         property_url,
+         current_snapshot_opts(socket),
+         force?: false
+       )}
+    else
+      {:noreply, socket}
+    end
+  end
 
-    {:noreply,
-     socket
-     |> assign(:sync_running, false)
-     |> assign(:urls, snapshot.urls)
-     |> assign(:page, snapshot.page)
-     |> assign(:total_pages, snapshot.total_pages)
-     |> assign(:total_count, snapshot.total_count)
-     |> assign(:stats, snapshot.stats)
-     |> assign(:site_trends, snapshot.site_trends)
-     |> assign(:site_trends_json, ChartDataPresenter.encode_time_series(snapshot.site_trends))
-     |> assign(:chart_label, snapshot.chart_label)
-     |> assign(:total_clicks, snapshot.period_totals.total_clicks)
-     |> assign(:total_impressions, snapshot.period_totals.total_impressions)
-     |> assign(:avg_ctr, snapshot.period_totals.avg_ctr)
-     |> assign(:avg_position, snapshot.period_totals.avg_position)
-     |> put_flash(:info, "Dashboard updated with latest sync data ✨")}
+  @impl true
+  def handle_info({:sync_progress, %{type: :finished, job: job}}, socket) do
+    socket = assign(socket, :sync_running, false)
+
+    if job_matches_socket?(socket, job) do
+      property_url = socket.assigns.current_property && socket.assigns.current_property.property_url
+
+      socket =
+        socket
+        |> put_flash(:info, "Dashboard updated with latest sync data ✨")
+        |> load_snapshot(
+          socket.assigns.current_account_id,
+          property_url,
+          current_snapshot_opts(socket),
+          force?: true
+        )
+
+      {:noreply, socket}
+    else
+      {:noreply, socket}
+    end
   end
 
   @impl true
   def handle_info({:sync_progress, _event}, socket) do
     # Ignore other sync progress events (step updates, etc.)
     {:noreply, socket}
+  end
+
+  @impl true
+  def handle_async({:dashboard_snapshot, ref}, {:ok, snapshot}, socket) do
+    if socket.assigns.latest_snapshot_ref == ref do
+      {:noreply,
+       socket
+       |> assign(:latest_snapshot_ref, nil)
+       |> apply_snapshot(snapshot)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_async({:dashboard_snapshot, ref}, {:exit, reason}, socket) do
+    if socket.assigns.latest_snapshot_ref == ref do
+      Logger.error("Dashboard snapshot task failed: #{inspect(reason)}")
+
+      {:noreply,
+       socket
+       |> assign(:snapshot_loading?, false)
+       |> assign(:latest_snapshot_ref, nil)
+       |> put_flash(:error, "Failed to load dashboard data. Please try again.")}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  defp load_snapshot(socket, _account_id, nil, _opts, _opts_kw) do
+    socket
+    |> assign(:snapshot_loading?, false)
+    |> assign(:latest_snapshot_ref, nil)
+    |> apply_snapshot(Snapshot.empty())
+  end
+
+  defp load_snapshot(socket, account_id, property_url, opts, opts_kw) do
+    async_enabled? = Application.get_env(:gsc_analytics, :dashboard_async_snapshots?, true)
+    initial_load? = socket.assigns[:snapshot_initialized?] != true
+    force? = Keyword.get(opts_kw, :force?, false) || initial_load?
+
+    cond do
+      not connected?(socket) or force? or not async_enabled? ->
+        snapshot = load_dashboard_snapshot(account_id, property_url, opts)
+
+        socket
+        |> assign(:snapshot_loading?, false)
+        |> assign(:latest_snapshot_ref, nil)
+        |> apply_snapshot(snapshot)
+
+      socket.assigns.snapshot_loading? ->
+        socket
+
+      true ->
+        ref = make_ref()
+
+        socket
+        |> assign(:snapshot_loading?, true)
+        |> assign(:latest_snapshot_ref, ref)
+        |> start_async({:dashboard_snapshot, ref}, fn ->
+          load_dashboard_snapshot(account_id, property_url, opts)
+        end)
+    end
+  end
+
+  defp apply_snapshot(socket, snapshot) do
+    socket
+    |> assign(:urls, snapshot.urls)
+    |> assign(:page, snapshot.page)
+    |> assign(:total_pages, snapshot.total_pages)
+    |> assign(:total_count, snapshot.total_count)
+    |> assign(:stats, snapshot.stats)
+    |> assign(:site_trends, snapshot.site_trends)
+    |> assign(:site_trends_json, ChartDataPresenter.encode_time_series(snapshot.site_trends))
+    |> assign(:chart_label, snapshot.chart_label)
+    |> assign(:total_clicks, snapshot.period_totals.total_clicks)
+    |> assign(:total_impressions, snapshot.period_totals.total_impressions)
+    |> assign(:avg_ctr, snapshot.period_totals.avg_ctr)
+    |> assign(:avg_position, snapshot.period_totals.avg_position)
+    |> assign(:snapshot_loading?, false)
+    |> assign(:snapshot_initialized?, true)
+    |> assign_mom_indicators()
+    |> assign_display_labels()
+    |> assign_date_labels()
+  end
+
+  defp current_snapshot_opts(socket) do
+    %{
+      limit: socket.assigns.limit,
+      page: socket.assigns.page,
+      sort_by: socket.assigns.sort_by,
+      sort_direction: DashboardUtils.normalize_sort_direction(socket.assigns.sort_direction),
+      search: socket.assigns.search,
+      period_days: socket.assigns[:period_days] || 30,
+      chart_view: socket.assigns.chart_view,
+      filter_http_status: socket.assigns[:filter_http_status],
+      filter_position: socket.assigns[:filter_position],
+      filter_clicks: socket.assigns[:filter_clicks],
+      filter_ctr: socket.assigns[:filter_ctr],
+      filter_backlinks: socket.assigns[:filter_backlinks],
+      filter_redirect: socket.assigns[:filter_redirect],
+      filter_first_seen: socket.assigns[:filter_first_seen],
+      filter_page_type: socket.assigns[:filter_page_type]
+    }
+  end
+
+  defp job_matches_socket?(socket, job) do
+    property = socket.assigns.current_property
+
+    case {property, job} do
+      {nil, _} ->
+        false
+
+      {_, %{metadata: metadata}} when is_map(metadata) ->
+        metadata[:account_id] == socket.assigns.current_account_id and
+          metadata[:site_url] == property.property_url
+
+      _ ->
+        false
+    end
   end
 
   defp load_dashboard_snapshot(_account_id, nil, _opts), do: Snapshot.empty()

@@ -3,13 +3,13 @@ defmodule GscAnalytics.Analytics.SummaryStatsTest do
 
   alias GscAnalytics.Analytics.SummaryStats
   alias GscAnalytics.Repo
-  alias GscAnalytics.Schemas.TimeSeries
+  alias GscAnalytics.Schemas.PropertyDailyMetric
 
   @account_id 1
   @property_url "sc-domain:example.com"
 
   setup do
-    Repo.delete_all(TimeSeries)
+    Repo.delete_all(PropertyDailyMetric)
     Repo.delete_all("url_lifetime_stats")
     :ok
   end
@@ -32,36 +32,28 @@ defmodule GscAnalytics.Analytics.SummaryStatsTest do
       days_with_data: 150
     )
 
-    insert_time_series(@account_id, "https://example.com/a", current_month_start,
-      clicks: 100,
-      impressions: 1_000,
-      position: 2.5
-    )
+    insert_daily_metric(@account_id, current_month_start, %{
+      clicks: 150,
+      impressions: 1_400,
+      position: 2.93,
+      urls_count: 2
+    })
 
-    insert_time_series(@account_id, "https://example.com/b", current_month_start,
-      clicks: 50,
-      impressions: 400,
-      position: 4.0
-    )
-
-    insert_time_series(@account_id, "https://example.com/a", last_month_start,
-      clicks: 80,
-      impressions: 800,
-      position: 3.0
-    )
-
-    insert_time_series(@account_id, "https://example.com/b", last_month_start,
-      clicks: 40,
-      impressions: 300,
-      position: 4.5
-    )
+    insert_daily_metric(@account_id, last_month_start, %{
+      clicks: 120,
+      impressions: 1_100,
+      position: 3.41,
+      urls_count: 2
+    })
 
     # Second account noise should not affect results
-    insert_time_series(2, "https://example.com/other", current_month_start,
+    insert_daily_metric(2, current_month_start, %{
       clicks: 999,
       impressions: 9_999,
-      position: 1.0
-    )
+      position: 1.0,
+      urls_count: 5,
+      property_url: "sc-domain:othersite.com"
+    })
 
     result =
       SummaryStats.fetch(%{
@@ -90,19 +82,21 @@ defmodule GscAnalytics.Analytics.SummaryStatsTest do
     assert result.month_over_month_change == 25.0
   end
 
-  defp insert_time_series(account_id, url, date, attrs) do
-    %TimeSeries{}
-    |> TimeSeries.changeset(%{
+  defp insert_daily_metric(account_id, date, attrs) do
+    clicks = Map.fetch!(attrs, :clicks)
+    impressions = Map.fetch!(attrs, :impressions)
+
+    %PropertyDailyMetric{}
+    |> PropertyDailyMetric.changeset(%{
       account_id: account_id,
-      property_url: @property_url,
-      url: url,
+      property_url: Map.get(attrs, :property_url, @property_url),
       date: date,
-      period_type: :daily,
-      clicks: attrs[:clicks],
-      impressions: attrs[:impressions],
-      ctr: ctr_from(attrs[:clicks], attrs[:impressions], attrs[:ctr]),
-      position: attrs[:position],
-      data_available: true
+      clicks: clicks,
+      impressions: impressions,
+      ctr: ctr_from(clicks, impressions, Map.get(attrs, :ctr)),
+      position: Map.get(attrs, :position, 0.0),
+      urls_count: Map.get(attrs, :urls_count, 1),
+      data_available: Map.get(attrs, :urls_count, 1) > 0
     })
     |> Repo.insert!()
   end

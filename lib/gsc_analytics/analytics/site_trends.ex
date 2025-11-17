@@ -12,7 +12,7 @@ defmodule GscAnalytics.Analytics.SiteTrends do
   alias GscAnalytics.Accounts
   alias GscAnalytics.Analytics.TimeSeriesAggregator
   alias GscAnalytics.Repo
-  alias GscAnalytics.Schemas.TimeSeries
+  alias GscAnalytics.Schemas.{PropertyDailyMetric, TimeSeries}
 
   @doc """
   Fetch aggregated site trends for the requested view mode.
@@ -152,6 +152,25 @@ defmodule GscAnalytics.Analytics.SiteTrends do
   end
 
   defp fallback_first_data_date(account_id, property_url) do
+    PropertyDailyMetric
+    |> where(
+      [metric],
+      metric.account_id == ^account_id and
+        metric.property_url == ^property_url and
+        metric.data_available == true
+    )
+    |> select([metric], min(metric.date))
+    |> Repo.one()
+    |> case do
+      nil ->
+        fetch_first_time_series_date(account_id, property_url)
+
+      date ->
+        date
+    end
+  end
+
+  defp fetch_first_time_series_date(account_id, property_url) do
     TimeSeries
     |> where(
       [ts],
@@ -228,19 +247,30 @@ defmodule GscAnalytics.Analytics.SiteTrends do
   end
 
   defp aggregate_period_totals(account_id, property_url, start_date) do
-    TimeSeries
+    PropertyDailyMetric
     |> where(
-      [ts],
-      ts.date >= ^start_date and
-        ts.account_id == ^account_id and
-        ts.property_url == ^property_url and
-        ts.data_available == true
+      [metric],
+      metric.date >= ^start_date and
+        metric.account_id == ^account_id and
+        metric.property_url == ^property_url and
+        metric.data_available == true
     )
-    |> select([ts], %{
-      total_clicks: sum(ts.clicks),
-      total_impressions: sum(ts.impressions),
-      avg_ctr: fragment("CAST(SUM(?) AS FLOAT) / NULLIF(SUM(?), 0)", ts.clicks, ts.impressions),
-      avg_position: avg(ts.position)
+    |> select([metric], %{
+      total_clicks: sum(metric.clicks),
+      total_impressions: sum(metric.impressions),
+      avg_ctr:
+        fragment(
+          "CAST(SUM(?) AS FLOAT) / NULLIF(SUM(?), 0)",
+          metric.clicks,
+          metric.impressions
+        ),
+      avg_position:
+        fragment(
+          "SUM(? * ?) / NULLIF(SUM(?), 0)",
+          metric.position,
+          metric.impressions,
+          metric.impressions
+        )
     })
     |> Repo.one()
     |> format_period_totals()
