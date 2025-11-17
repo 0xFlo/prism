@@ -414,6 +414,18 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
     }
   end
 
+  defp new_result_entry(:none) do
+    %{
+      rows: [],
+      row_chunks: [],
+      api_calls: 0,
+      partial?: false,
+      http_batches: 0,
+      row_count: 0,
+      accumulator: nil
+    }
+  end
+
   defp new_result_entry(:streaming) do
     %{
       rows: [],
