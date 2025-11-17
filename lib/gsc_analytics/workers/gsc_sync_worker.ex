@@ -64,9 +64,17 @@ defmodule GscAnalytics.Workers.GscSyncWorker do
   require Logger
 
   alias GscAnalytics.Config.AutoSync
+  alias GscAnalytics.Accounts
+  alias GscAnalytics.Workers.GscPropertySyncWorker
 
   @doc """
-  Performs the sync job for all enabled workspaces.
+  Orchestrates sync jobs by enqueuing individual property sync workers.
+
+  Instead of syncing all properties sequentially in one job, this worker
+  enqueues separate jobs for each active property. This allows for:
+  - Controlled concurrency via Oban queue limits
+  - Individual retries per property
+  - Better observability and scaling
 
   ## Args
 
@@ -74,7 +82,7 @@ defmodule GscAnalytics.Workers.GscSyncWorker do
 
   ## Returns
 
-  - `:ok` on success (even if some workspaces fail - failures are logged)
+  - `:ok` on success (jobs enqueued successfully)
   - `{:error, reason}` on catastrophic failure
   """
   @impl Oban.Worker
@@ -82,7 +90,7 @@ defmodule GscAnalytics.Workers.GscSyncWorker do
     start_time = System.monotonic_time(:millisecond)
     sync_days = AutoSync.sync_days()
 
-    Logger.info("Starting automatic GSC sync for all enabled workspaces (#{sync_days} days)")
+    Logger.info("Starting automatic GSC sync orchestrator (#{sync_days} days)")
 
     # Emit start telemetry
     :telemetry.execute(
@@ -91,53 +99,59 @@ defmodule GscAnalytics.Workers.GscSyncWorker do
       %{sync_days: sync_days}
     )
 
-    # Get the auto-sync module (behaviour-based for testing)
-    auto_sync =
-      Application.get_env(
-        :gsc_analytics,
-        :auto_sync_module,
-        GscAnalytics.DataSources.GSC.Core.Sync
-      )
+    # Fetch all active properties across all enabled workspaces
+    properties = Accounts.list_all_active_properties()
 
-    # Perform the sync
-    result = auto_sync.sync_all_workspaces(sync_days)
+    Logger.info("Enqueueing sync jobs for #{length(properties)} active properties")
+
+    # Enqueue individual property sync jobs
+    {successes, failures} =
+      properties
+      |> Enum.map(fn property ->
+        job =
+          GscPropertySyncWorker.new(%{
+            workspace_id: property.workspace_id,
+            property_url: property.property_url,
+            days: sync_days
+          })
+
+        case Oban.insert(job) do
+          {:ok, _job} -> {:ok, property}
+          {:error, reason} -> {:error, property, reason}
+        end
+      end)
+      |> Enum.split_with(fn
+        {:ok, _} -> true
+        _ -> false
+      end)
 
     duration_ms = System.monotonic_time(:millisecond) - start_time
 
-    case result do
-      {:ok, summary} ->
-        # Emit success telemetry
-        :telemetry.execute(
-          [:gsc_analytics, :auto_sync, :complete],
-          %{
-            duration_ms: duration_ms,
-            total_workspaces: summary.total_workspaces,
-            successes: length(summary.successes),
-            failures: length(summary.failures)
-          },
-          %{sync_days: sync_days}
-        )
+    # Emit completion telemetry
+    :telemetry.execute(
+      [:gsc_analytics, :auto_sync, :complete],
+      %{
+        duration_ms: duration_ms,
+        total_properties: length(properties),
+        jobs_enqueued: length(successes),
+        enqueue_failures: length(failures)
+      },
+      %{sync_days: sync_days}
+    )
 
-        Logger.info(
-          "Auto-sync completed: #{summary.total_workspaces} workspaces, " <>
-            "#{length(summary.successes)} succeeded, #{length(summary.failures)} failed " <>
-            "in #{duration_ms}ms"
-        )
-
-        :ok
-
-      {:error, reason} = error ->
-        # Emit failure telemetry
-        :telemetry.execute(
-          [:gsc_analytics, :auto_sync, :failure],
-          %{duration_ms: duration_ms},
-          %{error: reason, sync_days: sync_days}
-        )
-
-        Logger.error("Auto-sync failed after #{duration_ms}ms: #{inspect(reason)}")
-
-        error
+    if failures != [] do
+      Logger.warning(
+        "Auto-sync orchestrator: #{length(failures)} jobs failed to enqueue: " <>
+          inspect(Enum.map(failures, fn {:error, p, r} -> {p.property_url, r} end))
+      )
     end
+
+    Logger.info(
+      "Auto-sync orchestrator completed: #{length(successes)} jobs enqueued, " <>
+        "#{length(failures)} failed to enqueue in #{duration_ms}ms"
+    )
+
+    :ok
   end
 
   @doc """

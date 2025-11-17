@@ -218,8 +218,8 @@ defmodule GscAnalyticsWeb.Live.DashboardSync do
 
   defp last_failure(account_id, property_url) do
     from(sd in SyncDay,
-      where: sd.account_id == ^account_id and sd.property_url == ^property_url,
-      where: sd.status in ["failed", "halted"],
+      where: sd.account_id == ^account_id and sd.site_url == ^property_url,
+      where: sd.status in [:failed],
       order_by: [desc: sd.updated_at],
       limit: 1
     )

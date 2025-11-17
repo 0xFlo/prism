@@ -146,12 +146,54 @@ defmodule GscAnalytics.DataSources.GSC.Core.Config do
   end
 
   @doc """
+  Timeout for lifetime stats refresh queries (milliseconds).
+  These queries aggregate large slices of gsc_time_series so we give them more time.
+  """
+  def lifetime_stats_timeout do
+    get_config(:lifetime_stats_timeout, 60_000)
+  end
+
+  @doc """
   Batch size for query processing operations.
   Used when updating time_series records with query data.
   Increased to 5000 to reduce database round trips and improve throughput.
   """
   def query_batch_size do
     get_config(:query_batch_size, 5000)
+  end
+
+  @doc """
+  Chunk size for query write operations.
+  Smaller than query_batch_size to avoid Postgrex timeouts during heavy upserts.
+  Default of 1000 rows per insert keeps operations under the 60s timeout.
+  """
+  def query_write_chunk_size do
+    get_config(:query_write_chunk_size, 1000)
+  end
+
+  @doc """
+  Timeout for query write operations in milliseconds.
+  Longer than default Repo timeout (15s) to accommodate bulk upserts.
+  """
+  def query_write_timeout do
+    get_config(:query_write_timeout, 60_000)
+  end
+
+  @doc """
+  Maximum number of pending query writer jobs allowed before applying backpressure.
+  Prevents pagination workers from filling memory while waiting for DB slots.
+  """
+  def query_writer_pending_limit do
+    get_config(:query_writer_pending_limit, 12)
+  end
+
+  @doc """
+  Maximum number of concurrent query writer tasks.
+  Limits DB connection pool usage during concurrent sync operations.
+  With a pool of 40 connections, 3 writers leaves headroom for other operations.
+  """
+  def query_writer_max_concurrency do
+    get_config(:query_writer_max_concurrency, 3)
   end
 
   @doc """

@@ -11,6 +11,7 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
 
   require Logger
 
+  alias GscAnalytics.DataSources.GSC.Core.Config
   alias GscAnalytics.DataSources.GSC.Support.{
     DataHelpers,
     QueryAccumulator,
@@ -39,6 +40,9 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
     :callbacks,
     :writer_supervisor,
     :writer_refs,
+    :pending_writes,
+    :writer_pending_limit,
+    :writer_max_concurrency,
     :finalize_from,
     :max_queue_size,
     :max_in_flight,
@@ -171,7 +175,6 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
       |> StreamingCallbacks.normalize()
 
     mode = callbacks.mode
-    {writer_supervisor, writer_refs} = start_writer_supervisor(callbacks)
     max_queue_size = Keyword.get(opts, :max_queue_size, @default_queue_size)
     max_in_flight = Keyword.get(opts, :max_in_flight, @default_in_flight)
     telemetry_prefix = Keyword.get(opts, :telemetry_prefix, [:gsc_analytics, :coordinator])
@@ -187,6 +190,10 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
         opts
         |> Keyword.get_lazy(:results, fn -> build_initial_results(dates, mode) end)
 
+      {writer_supervisor, writer_refs, pending_writes} = start_writer_supervisor(callbacks)
+      writer_pending_limit = writer_pending_limit(callbacks.mode)
+      writer_max_concurrency = writer_max_concurrency(callbacks.mode)
+
       {:ok,
        %__MODULE__{
          account_id: account_id,
@@ -200,6 +207,9 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
          callbacks: callbacks,
          writer_supervisor: writer_supervisor,
          writer_refs: writer_refs,
+         pending_writes: pending_writes,
+         writer_pending_limit: writer_pending_limit,
+         writer_max_concurrency: writer_max_concurrency,
          finalize_from: nil,
          max_queue_size: max_queue_size,
          max_in_flight: max_in_flight,
@@ -219,6 +229,9 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
     cond do
       state.halt_reason != nil ->
         reply_with_metrics({:halted, state.halt_reason}, state)
+
+      pending_writer_backlog?(state) ->
+        reply_with_metrics({:backpressure, :writer_backlog}, state)
 
       MapSet.size(state.in_flight) >= state.max_in_flight ->
         reply_with_metrics({:backpressure, :max_in_flight}, state)
@@ -330,6 +343,7 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
       state
       |> Map.put(:writer_refs, writer_refs)
       |> handle_writer_result(result)
+      |> maybe_start_pending_writer()
       |> maybe_reply_finalize()
 
     {:noreply, updated_state}
@@ -346,6 +360,7 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
           state
           |> Map.put(:writer_refs, writer_refs)
           |> handle_writer_down(reason)
+          |> maybe_start_pending_writer()
           |> maybe_reply_finalize()
 
         {:noreply, new_state}
@@ -364,10 +379,22 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
 
   defp start_writer_supervisor(%StreamingCallbacks{mode: :streaming}) do
     {:ok, supervisor} = Task.Supervisor.start_link()
-    {supervisor, %{}}
+    {supervisor, %{}, :queue.new()}
   end
 
-  defp start_writer_supervisor(_callbacks), do: {nil, %{}}
+  defp start_writer_supervisor(_callbacks), do: {nil, %{}, :queue.new()}
+
+  defp writer_pending_limit(:streaming), do: Config.query_writer_pending_limit()
+  defp writer_pending_limit(_mode), do: 0
+
+  defp writer_max_concurrency(:streaming), do: Config.query_writer_max_concurrency()
+  defp writer_max_concurrency(_mode), do: 0
+
+  defp pending_writer_backlog?(%{writer_pending_limit: limit}) when limit <= 0, do: false
+
+  defp pending_writer_backlog?(state) do
+    :queue.len(state.pending_writes) >= state.writer_pending_limit
+  end
 
   defp build_initial_results(dates, mode) do
     Enum.reduce(dates, %{}, fn date, acc ->
@@ -618,7 +645,20 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
          payload
        )
        when is_function(writer, 1) and not is_nil(state.writer_supervisor) do
+    if state.writer_max_concurrency > 0 and
+         map_size(state.writer_refs) >= state.writer_max_concurrency do
+      # Queue the payload for later processing when a writer slot frees up
+      %{state | pending_writes: :queue.in(payload, state.pending_writes)}
+    else
+      spawn_writer(state, payload)
+    end
+  end
+
+  defp maybe_start_writer(state, _payload), do: state
+
+  defp spawn_writer(state, payload) do
     parent = self()
+    writer = state.callbacks.writer
 
     {:ok, pid} =
       Task.Supervisor.start_child(state.writer_supervisor, fn ->
@@ -634,7 +674,17 @@ defmodule GscAnalytics.DataSources.GSC.Support.QueryCoordinator do
     }
   end
 
-  defp maybe_start_writer(state, _payload), do: state
+  defp maybe_start_pending_writer(state) do
+    case :queue.out(state.pending_writes) do
+      {:empty, _} ->
+        state
+
+      {{:value, payload}, remaining} ->
+        state
+        |> Map.put(:pending_writes, remaining)
+        |> spawn_writer(payload)
+    end
+  end
 
   defp safe_run_writer(writer, payload) when is_function(writer, 1) do
     try do

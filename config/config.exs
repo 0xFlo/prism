@@ -108,8 +108,10 @@ config :gsc_analytics, Oban,
   ],
   queues: [
     default: 10,
-    # GSC sync runs one job at a time to avoid rate limits
+    # GSC sync orchestrator (enqueues property jobs)
     gsc_sync: 1,
+    # Per-property GSC sync (3 concurrent for controlled parallelism)
+    gsc_property_sync: 3,
     # SERP position checks (3 concurrent)
     serp_check: 3,
     # HTTP status checks (10 concurrent for high throughput)

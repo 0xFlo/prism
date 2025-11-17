@@ -192,6 +192,21 @@ defmodule GscAnalytics.Accounts do
   end
 
   @doc """
+  List all active properties across all enabled workspaces.
+  Used for per-property job queueing in auto-sync.
+  """
+  @spec list_all_active_properties() :: [WorkspaceProperty.t()]
+  def list_all_active_properties do
+    from(p in WorkspaceProperty,
+      join: w in GscAnalytics.Schemas.Workspace,
+      on: p.workspace_id == w.id,
+      where: p.is_active == true and w.enabled == true,
+      order_by: [asc: w.id, desc: p.updated_at]
+    )
+    |> Repo.all()
+  end
+
+  @doc """
   Add a new property to a workspace.
   Properties are activated by default unless explicitly set to inactive.
   Returns {:ok, property} or {:error, changeset}.
