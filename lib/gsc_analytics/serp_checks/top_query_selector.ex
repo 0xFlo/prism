@@ -102,22 +102,26 @@ defmodule GscAnalytics.SerpChecks.TopQuerySelector do
 
   defp to_int(nil), do: 0
   defp to_int(value) when is_integer(value), do: value
+
   defp to_int(value) when is_binary(value) do
     case Integer.parse(value) do
       {int, _} -> int
       :error -> 0
     end
   end
+
   defp to_int(_), do: 0
 
   defp to_float(nil), do: 0.0
   defp to_float(value) when is_float(value), do: value
   defp to_float(value) when is_integer(value), do: value / 1.0
+
   defp to_float(value) when is_binary(value) do
     case Float.parse(value) do
       {flt, _} -> flt
       :error -> 0.0
     end
   end
+
   defp to_float(_), do: 0.0
 end

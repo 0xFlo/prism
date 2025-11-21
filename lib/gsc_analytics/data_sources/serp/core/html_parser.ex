@@ -1,43 +1,30 @@
 defmodule GscAnalytics.DataSources.SERP.Core.HTMLParser do
   @moduledoc """
-  Parses markdown/HTML content from Google SERP to extract ranking positions.
+  Parses ScrapFly SERP HTML to extract ranking positions, competitors, and
+  content-type metadata for downstream analytics.
 
-  ScrapFly returns content in markdown format which contains clean links to
-  organic search results. This parser extracts URLs from markdown link syntax
-  and finds the position of the target URL.
-
-  ## Examples
-
-      iex> response = %{"result" => %{"content" => "markdown content..."}}
-      iex> HTMLParser.parse_serp_response(response, "https://example.com")
-      %{
-        position: 3,
-        competitors: [...],
-        serp_features: [],
-        parsed_at: ~U[2025-10-04 15:30:00Z]
-      }
-
+  Google frequently tweaks markup, so this parser combines CSS selectors and
+  regex fallbacks to stay resilient.
   """
 
+  alias GscAnalytics.DataSources.SERP.Core.AIOverviewExtractor
+
   require Logger
+  alias Floki
+
+  @forum_domains [
+    "stackexchange.com",
+    "stackoverflow.com",
+    "stackovernet.com",
+    "serverfault.com",
+    "superuser.com",
+    "quora.com"
+  ]
+  @default_content_type "website"
 
   @doc """
-  Parse ScrapFly response (without LLM extraction) to find target URL position.
-
-  ## Parameters
-
-  - `scrapfly_response`: Map with `%{"result" => %{"content" => "<html>..."}}`
-  - `target_url`: The URL to find in search results (e.g., "https://example.com")
-
-  ## Returns
-
-  Map with:
-  - `:position` - Integer position (1-100) or `nil` if not found
-  - `:competitors` - List of competing URLs (currently empty, can be enhanced)
-  - `:serp_features` - List of detected SERP features (currently empty)
-  - `:parsed_at` - UTC timestamp of parsing
-  - `:error` - String error message (only present on failure)
-
+  Parse ScrapFly response (without LLM extraction) to find target URL position
+  and capture the top competitors.
   """
   def parse_serp_response(scrapfly_response, target_url) do
     html_content = get_in(scrapfly_response, ["result", "content"])
@@ -48,22 +35,33 @@ defmodule GscAnalytics.DataSources.SERP.Core.HTMLParser do
           position: nil,
           competitors: [],
           serp_features: [],
+          ai_overview_present: false,
+          ai_overview_text: nil,
+          ai_overview_citations: [],
+          content_types_present: [],
           parsed_at: DateTime.utc_now(),
           error: "No HTML content in ScrapFly response"
         }
 
       html when is_binary(html) ->
-        position = find_url_position(html, normalize_url(target_url))
+        normalized_target = normalize_url(target_url)
+        competitors = extract_competitors(html)
+
+        position =
+          position_from_competitors(competitors, normalized_target) ||
+            find_url_position(html, normalized_target)
+
         serp_features = detect_serp_features(html)
-        ai_overview = GscAnalytics.DataSources.SERP.Core.AIOverviewExtractor.extract(html)
+        ai_overview = AIOverviewExtractor.extract(html)
 
         %{
           position: position,
-          competitors: [],
+          competitors: competitors,
           serp_features: serp_features,
           ai_overview_present: ai_overview.present,
           ai_overview_text: ai_overview.text,
           ai_overview_citations: ai_overview.citations,
+          content_types_present: content_types_from_competitors(competitors),
           parsed_at: DateTime.utc_now()
         }
     end
@@ -73,19 +71,31 @@ defmodule GscAnalytics.DataSources.SERP.Core.HTMLParser do
 
   @doc false
   def normalize_url(url) do
-    # Remove protocol and trailing slash for fuzzy matching
     url
+    |> to_string()
     |> String.replace(~r{^https?://}, "")
     |> String.replace(~r{/$}, "")
     |> String.downcase()
   end
 
+  defp position_from_competitors([], _normalized_target), do: nil
+
+  defp position_from_competitors(competitors, normalized_target) do
+    competitors
+    |> Enum.find(fn competitor ->
+      case Map.get(competitor, :url) do
+        nil -> false
+        url -> String.contains?(normalize_url(url), normalized_target)
+      end
+    end)
+    |> case do
+      %{position: position} -> position
+      _ -> nil
+    end
+  end
+
   @doc false
   def find_url_position(html, normalized_target) do
-    # Extract organic search result links
-    # Google uses <div class="..."> with nested <a> tags
-    # Pattern: <a href="/url?q=ACTUAL_URL&..." or <a href="ACTUAL_URL"...>
-
     case extract_organic_results(html) do
       [] ->
         Logger.debug("No organic results found in HTML",
@@ -108,18 +118,11 @@ defmodule GscAnalytics.DataSources.SERP.Core.HTMLParser do
 
   @doc false
   def extract_organic_results(content) do
-    # Google SERP structure (as of 2025):
-    # Organic results are contained in <div class="yuRUbf"> elements
-    # Each yuRUbf contains the title link <a href="...">
-    # This is more reliable than extracting all links and filtering
-
-    # Try extracting from yuRUbf containers first (most reliable)
     yuRUbf_urls = extract_from_yuRUbf_containers(content)
 
     if length(yuRUbf_urls) > 0 do
       yuRUbf_urls
     else
-      # Fallback to generic extraction for non-Google HTML or old formats
       content
       |> extract_urls_from_content()
       |> filter_organic_results()
@@ -128,31 +131,23 @@ defmodule GscAnalytics.DataSources.SERP.Core.HTMLParser do
   end
 
   defp extract_from_yuRUbf_containers(html) do
-    # Pattern: <div class="yuRUbf"> ... <a href="URL"> ... </a> ... </div>
-    # This is Google's container for organic result titles
     ~r/<div[^>]*class="[^"]*yuRUbf[^"]*"[^>]*>.*?<a[^>]*href="([^"]+)"[^>]*>/is
     |> Regex.scan(html, capture: :all_but_first)
     |> Enum.map(fn [url] ->
-      # Decode HTML entities
       url
       |> String.replace("&amp;", "&")
       |> String.replace("&quot;", "\"")
       |> String.replace("&#39;", "'")
     end)
     |> Enum.reject(fn url ->
-      # Filter out Google internal links that might slip through
-      String.contains?(url, "google.com/") or
-        String.starts_with?(url, "/")
+      String.contains?(url, "google.com/") or String.starts_with?(url, "/")
     end)
     |> Enum.uniq()
   end
 
   defp extract_urls_from_content(content) do
-    # Try markdown links first: [text](url)
     markdown_urls = extract_markdown_links(content)
 
-    # Only use markdown if we found actual HTTP(S) URLs
-    # This filters out JavaScript patterns like [init](id) or [d](b)
     has_real_urls =
       Enum.any?(markdown_urls, fn url ->
         String.starts_with?(url, "http://") or String.starts_with?(url, "https://")
@@ -161,20 +156,17 @@ defmodule GscAnalytics.DataSources.SERP.Core.HTMLParser do
     if has_real_urls do
       markdown_urls
     else
-      # Fallback to HTML href extraction
       extract_urls_from_html(content)
     end
   end
 
   defp extract_markdown_links(content) do
-    # Match markdown link syntax: [text](url)
     ~r/\[([^\]]+)\]\(([^)]+)\)/
     |> Regex.scan(content, capture: :all_but_first)
     |> Enum.map(fn [_text, url] -> url end)
   end
 
   defp extract_urls_from_html(html) do
-    # Match href="..." or href='/...' attributes
     ~r/href=["']([^"']+)["']/
     |> Regex.scan(html, capture: :all_but_first)
     |> Enum.map(fn [url] -> url end)
@@ -189,7 +181,6 @@ defmodule GscAnalytics.DataSources.SERP.Core.HTMLParser do
   end
 
   defp is_organic_result?(url) do
-    # Exclude Google internal links, ads, and navigation
     not (String.starts_with?(url, "#") or
            String.starts_with?(url, "/search") or
            String.starts_with?(url, "/preferences") or
@@ -202,8 +193,7 @@ defmodule GscAnalytics.DataSources.SERP.Core.HTMLParser do
          String.starts_with?(url, "/url?q="))
   end
 
-  defp decode_google_redirect_url(url) do
-    # Google often wraps URLs like: /url?q=https://example.com&sa=...
+  defp decode_google_redirect_url(url) when is_binary(url) do
     case String.starts_with?(url, "/url?q=") do
       true ->
         url
@@ -217,11 +207,134 @@ defmodule GscAnalytics.DataSources.SERP.Core.HTMLParser do
     end
   end
 
+  defp decode_google_redirect_url(_), do: nil
+
+  @doc """
+  Extracts the normalized domain (without protocol or leading www) from a URL.
+  """
+  @spec extract_domain(String.t() | nil) :: String.t()
+  def extract_domain(url) when is_binary(url) do
+    url
+    |> URI.parse()
+    |> case do
+      %URI{host: host} when is_binary(host) ->
+        host
+        |> String.downcase()
+        |> String.replace(~r/^www\./, "")
+
+      _ ->
+        ""
+    end
+  end
+
+  def extract_domain(_), do: ""
+
+  @doc """
+  Classifies a SERP result by content type.
+  """
+  @spec classify_content_type(String.t() | nil, String.t() | nil) :: String.t()
+  def classify_content_type(url, title) do
+    domain = extract_domain(url)
+    lower_domain = String.downcase(domain || "")
+    lower_title = String.downcase(title || "")
+
+    cond do
+      lower_domain == "" and lower_title == "" ->
+        @default_content_type
+
+      String.contains?(lower_domain, "reddit.com") ->
+        "reddit"
+
+      String.contains?(lower_domain, "youtube.com") or String.contains?(lower_domain, "youtu.be") ->
+        "youtube"
+
+      forum_domain?(lower_domain) ->
+        "forum"
+
+      String.contains?(lower_title, "people also ask") ->
+        "paa"
+
+      true ->
+        @default_content_type
+    end
+  end
+
+  @doc """
+  Extracts top 10 competitors from SERP HTML.
+  """
+  @spec extract_competitors(String.t()) :: [map()]
+  def extract_competitors(html) when is_binary(html) do
+    case Floki.parse_document(html) do
+      {:ok, document} ->
+        document
+        |> Floki.find("div.yuRUbf")
+        |> Enum.take(10)
+        |> Enum.with_index(1)
+        |> Enum.map(&build_competitor_map/1)
+        |> Enum.reject(&is_nil/1)
+
+      {:error, reason} ->
+        Logger.debug("Failed to parse SERP HTML", reason: inspect(reason))
+        []
+    end
+  end
+
+  def extract_competitors(_), do: []
+
+  defp build_competitor_map({element, position}) do
+    url =
+      element
+      |> Floki.find("a")
+      |> Floki.attribute("href")
+      |> List.first()
+      |> decode_google_redirect_url()
+
+    cond do
+      is_nil(url) or url == "" ->
+        nil
+
+      true ->
+        title =
+          element
+          |> Floki.find("h3")
+          |> Floki.text()
+          |> normalize_whitespace()
+
+        %{
+          position: position,
+          url: url,
+          title: title,
+          domain: extract_domain(url),
+          content_type: classify_content_type(url, title)
+        }
+    end
+  end
+
+  defp forum_domain?(domain) when is_binary(domain) do
+    Enum.any?(@forum_domains, &String.contains?(domain, &1))
+  end
+
+  defp forum_domain?(_), do: false
+
+  defp content_types_from_competitors(competitors) do
+    competitors
+    |> Enum.map(& &1.content_type)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
+  end
+
+  defp normalize_whitespace(text) when is_binary(text) do
+    text
+    |> String.replace(~r/\s+/, " ")
+    |> String.trim()
+  end
+
+  defp normalize_whitespace(_), do: ""
+
   @doc false
   def detect_serp_features(html) do
     features = []
 
-    # Check for AI Overview
     features =
       if has_ai_overview?(html) do
         ["ai_overview" | features]
@@ -229,7 +342,6 @@ defmodule GscAnalytics.DataSources.SERP.Core.HTMLParser do
         features
       end
 
-    # Check for People Also Ask
     features =
       if has_people_also_ask?(html) do
         ["people_also_ask" | features]
@@ -237,7 +349,6 @@ defmodule GscAnalytics.DataSources.SERP.Core.HTMLParser do
         features
       end
 
-    # Check for Featured Snippet
     features =
       if has_featured_snippet?(html) do
         ["featured_snippet" | features]
@@ -245,7 +356,6 @@ defmodule GscAnalytics.DataSources.SERP.Core.HTMLParser do
         features
       end
 
-    # Check for Video results
     features =
       if has_video_results?(html) do
         ["videos" | features]
@@ -253,7 +363,6 @@ defmodule GscAnalytics.DataSources.SERP.Core.HTMLParser do
         features
       end
 
-    # Check for Image pack
     features =
       if has_image_pack?(html) do
         ["images" | features]
@@ -265,33 +374,28 @@ defmodule GscAnalytics.DataSources.SERP.Core.HTMLParser do
   end
 
   defp has_ai_overview?(html) do
-    # AI Overview appears as <h1>AI Overview</h1> or similar
     String.contains?(html, ">AI Overview<") or
       String.contains?(html, "data-kpid=\"sge_") or
       Regex.match?(~r/<h[1-3][^>]*>AI Overview<\/h[1-3]>/i, html)
   end
 
   defp has_people_also_ask?(html) do
-    # People Also Ask section
     String.contains?(html, "People also ask") or
       String.contains?(html, "related-question")
   end
 
   defp has_featured_snippet?(html) do
-    # Featured snippets have specific data attributes
     String.contains?(html, "data-attrid=\"FeaturedSnippet\"") or
       Regex.match?(~r/class="[^"]*kp-header[^"]*"/i, html)
   end
 
   defp has_video_results?(html) do
-    # Video carousels or video results
     String.contains?(html, "video-voyager") or
       String.contains?(html, "video_result") or
       Regex.match?(~r/data-hveid="[^"]*video/i, html)
   end
 
   defp has_image_pack?(html) do
-    # Image pack carousel
     String.contains?(html, "image_result") or
       String.contains?(html, "islir")
   end

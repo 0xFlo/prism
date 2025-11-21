@@ -230,4 +230,32 @@ defmodule GscAnalytics.Schemas.SerpSnapshotTest do
       assert %Ecto.Query{} = query
     end
   end
+
+  describe "data helpers" do
+    test "migrate_competitors normalizes entries" do
+      competitors = [%{"url" => "https://Example.com/path", "position" => "2", "title" => " Title "}]
+
+      [normalized] = SerpSnapshot.migrate_competitors(competitors)
+      assert normalized["domain"] == "example.com"
+      assert normalized["position"] == 2
+      assert normalized["schema_version"] == SerpSnapshot.competitor_schema_version()
+    end
+
+    test "content_types_from_competitors deduplicates values" do
+      competitors = [
+        %{"content_type" => "Reddit"},
+        %{content_type: "reddit"},
+        %{content_type: "forum"}
+      ]
+
+      assert SerpSnapshot.content_types_from_competitors(competitors) == ["reddit", "forum"]
+    end
+
+    test "scrapfly_citation_stats detects brand mentions" do
+      citations = [%{"domain" => "scrapfly.io", "position" => 3}]
+      assert SerpSnapshot.scrapfly_citation_stats(citations) == {true, 3}
+
+      assert SerpSnapshot.scrapfly_citation_stats(nil) == {false, nil}
+    end
+  end
 end

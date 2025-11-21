@@ -18,7 +18,11 @@ defmodule GscAnalytics.Schemas.SerpCheckRun do
     field :account_id, :integer
     field :property_url, :string
     field :url, :string
-    field :status, Ecto.Enum, values: [:pending, :running, :complete, :partial, :failed], default: :pending
+
+    field :status, Ecto.Enum,
+      values: [:pending, :running, :complete, :partial, :failed],
+      default: :pending
+
     field :keyword_count, :integer, default: 0
     field :succeeded_count, :integer, default: 0
     field :failed_count, :integer, default: 0

@@ -4,7 +4,6 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
   alias GscAnalytics.ContentInsights
   alias GscAnalytics.DataSources.SERP.Core.Persistence, as: SerpPersistence
   alias GscAnalytics.SerpChecks
-  alias GscAnalytics.Workers.SerpCheckWorker
   alias GscAnalyticsWeb.Live.AccountHelpers
   alias GscAnalyticsWeb.Live.ChartHelpers
   alias GscAnalyticsWeb.Live.DashboardParams
@@ -16,6 +15,10 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
   import GscAnalyticsWeb.Dashboard.HTMLHelpers
   import GscAnalyticsWeb.Components.DashboardControls
   import GscAnalyticsWeb.Components.DashboardTables
+
+  @serp_keyword_limit Application.compile_env(:gsc_analytics, :serp_bulk_keyword_limit, 7)
+  @serp_credit_cost Application.compile_env(:gsc_analytics, :serp_scrapfly_credit_cost, 36)
+  @serp_timeout_ms 120_000
 
   @impl true
   def mount(params, _session, socket) do
@@ -234,7 +237,6 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
       if socket.assigns.serp_run_topic == topic do
         socket
         |> assign(:serp_run, run)
-        |> assign(:serp_modal_open?, socket.assigns.serp_modal_open? || run.status == :running)
         |> maybe_reset_timeout(run)
       else
         socket
@@ -271,7 +273,6 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
           {:ok, run} ->
             socket =
               socket
-              |> assign(:serp_modal_open?, true)
               |> assign(:serp_timeout_reached?, false)
               |> assign(:serp_run, run)
               |> subscribe_to_run(run)
@@ -294,18 +295,14 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
             {:noreply, put_flash(socket, :error, "Invalid URL – please refresh and try again.")}
 
           {:error, :unauthorized_account} ->
-            {:noreply, put_flash(socket, :error, "You are not authorized to run checks for this workspace.")}
+            {:noreply,
+             put_flash(socket, :error, "You are not authorized to run checks for this workspace.")}
 
           {:error, reason} ->
             {:noreply,
              put_flash(socket, :error, "Failed to start bulk SERP checks: #{inspect(reason)}")}
         end
     end
-  end
-
-  @impl true
-  def handle_event("dismiss_serp_modal", _params, socket) do
-    {:noreply, assign(socket, :serp_modal_open?, false)}
   end
 
   defp build_url_params(socket, overrides, assign_overrides) do
@@ -346,7 +343,6 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
     |> maybe_unsubscribe_run()
     |> assign(:serp_run, nil)
     |> assign(:serp_run_topic, nil)
-    |> assign(:serp_modal_open?, false)
     |> assign(:serp_timeout_reached?, false)
   end
 
@@ -354,7 +350,6 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
     socket
     |> subscribe_to_run(run)
     |> assign(:serp_run, run)
-    |> assign(:serp_modal_open?, socket.assigns.serp_modal_open? || run.status == :running)
     |> assign(:serp_timeout_reached?, false)
     |> schedule_serp_timeout(run)
   end
@@ -378,7 +373,8 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
     assign(socket, :serp_run_topic, topic)
   end
 
-  defp maybe_unsubscribe_run(%{assigns: %{serp_run_topic: topic}} = socket) when is_binary(topic) do
+  defp maybe_unsubscribe_run(%{assigns: %{serp_run_topic: topic}} = socket)
+       when is_binary(topic) do
     PubSub.unsubscribe(GscAnalytics.PubSub, topic)
     assign(socket, :serp_run_topic, nil)
   end
@@ -486,11 +482,7 @@ defmodule GscAnalyticsWeb.DashboardUrlLive do
     |> assign_new(:serp_snapshot, fn -> nil end)
     |> assign_new(:serp_run, fn -> nil end)
     |> assign_new(:serp_run_topic, fn -> nil end)
-    |> assign_new(:serp_modal_open?, fn -> false end)
     |> assign_new(:serp_timeout_ref, fn -> nil end)
     |> assign_new(:serp_timeout_reached?, fn -> false end)
   end
 end
-  @serp_keyword_limit Application.compile_env(:gsc_analytics, :serp_bulk_keyword_limit, 7)
-  @serp_credit_cost Application.compile_env(:gsc_analytics, :serp_scrapfly_credit_cost, 36)
-  @serp_timeout_ms 120_000

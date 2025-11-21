@@ -245,13 +245,45 @@
                     <div>
                       <p class="text-sm font-semibold text-slate-900">Bulk SERP history</p>
                       <p class="text-xs text-slate-500">
-                        Last run {format_datetime(@serp_run.started_at)}
+                        <%= if serp_run_active?(@serp_run) do %>
+                          {@serp_run.succeeded_count + @serp_run.failed_count} / {@serp_run.keyword_count} keywords processed
+                        <% else %>
+                          Last run {format_datetime(@serp_run.started_at)}
+                        <% end %>
                       </p>
                     </div>
                     <span class={"badge badge-sm #{serp_run_status_class(@serp_run)}"}>
                       {serp_run_status_label(@serp_run)}
                     </span>
                   </div>
+
+                  <%= if serp_run_active?(@serp_run) do %>
+                    <div>
+                      <div class="h-2 w-full rounded-full bg-slate-200">
+                        <% completed =
+                          (@serp_run.keyword_count > 0 &&
+                             Float.round(
+                               (@serp_run.succeeded_count + @serp_run.failed_count) /
+                                 @serp_run.keyword_count *
+                                 100.0,
+                               1
+                             )) || 0 %>
+                        <div
+                          class="h-2 rounded-full bg-emerald-400 transition-all"
+                          style={"width: #{completed}%"}
+                        />
+                      </div>
+                      <p class="mt-1.5 text-[11px] text-slate-500">
+                        {completed}% complete
+                      </p>
+                    </div>
+
+                    <%= if @serp_timeout_reached? do %>
+                      <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                        Checks are taking longer than usual. We'll keep trying and refresh this list as results arrive.
+                      </div>
+                    <% end %>
+                  <% end %>
 
                   <dl class="grid gap-3 text-xs text-slate-600 sm:grid-cols-2">
                     <div>
@@ -311,11 +343,16 @@
                       {format_datetime(@serp_snapshot.checked_at)}
                     </span>
                   </div>
+                  <p class="mt-1 text-[11px] uppercase tracking-wide text-amber-600">
+                    Legacy single-keyword snapshot (will be replaced by the new landscape panels).
+                  </p>
                   <div class="mt-2 space-y-1 text-xs text-slate-600">
                     <p>
                       Position:
                       <%= if @serp_snapshot.position do %>
-                        <span class="font-semibold text-emerald-600">#{@serp_snapshot.position}</span>
+                        <span class="font-semibold text-emerald-600">
+                          #{@serp_snapshot.position}
+                        </span>
                       <% else %>
                         <span class="text-slate-400">Not ranked</span>
                       <% end %>

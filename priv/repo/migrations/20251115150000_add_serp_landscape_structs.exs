@@ -24,6 +24,7 @@ defmodule GscAnalytics.Repo.Migrations.AddSerpLandscapeStructs do
 
     create table(:serp_check_run_keywords, primary_key: false) do
       add :id, :binary_id, primary_key: true
+
       add :serp_check_run_id,
           references(:serp_check_runs, type: :binary_id, on_delete: :delete_all),
           null: false

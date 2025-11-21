@@ -247,7 +247,8 @@ defmodule GscAnalytics.QueryParamsTest do
     test "handles very large integers gracefully" do
       # Very large integer strings parse successfully - they're valid integers
       # Page accepts them (no upper bound)
-      assert QueryParams.normalize_page("999999999999999999999999") == 999_999_999_999_999_999_999_999
+      assert QueryParams.normalize_page("999999999999999999999999") ==
+               999_999_999_999_999_999_999_999
 
       # Limit clamps to max
       assert QueryParams.normalize_limit("999999999999999999999999") == 1000

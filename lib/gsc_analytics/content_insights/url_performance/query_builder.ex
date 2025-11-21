@@ -56,7 +56,9 @@ defmodule GscAnalytics.ContentInsights.UrlPerformance.QueryBuilder do
   @spec build_base_query(integer(), String.t(), integer(), String.t() | nil) :: Ecto.Query.t()
   def build_base_query(account_id, property_url, period_days, search_pattern) do
     backlink_query = build_backlink_subquery(account_id, property_url, search_pattern)
-    period_query = build_period_metrics_query(account_id, property_url, period_days, search_pattern)
+
+    period_query =
+      build_period_metrics_query(account_id, property_url, period_days, search_pattern)
 
     base_query =
       from(ls in "url_lifetime_stats")
@@ -170,7 +172,8 @@ defmodule GscAnalytics.ContentInsights.UrlPerformance.QueryBuilder do
 
   # Build sort clause using the map-based lookup
   defp build_sort_clause(column, direction, use_lifetime) do
-    {period_col, lifetime_col} = Map.get(@sort_columns, column, {:period_clicks, :lifetime_clicks})
+    {period_col, lifetime_col} =
+      Map.get(@sort_columns, column, {:period_clicks, :lifetime_clicks})
 
     if use_lifetime do
       case lifetime_col do
@@ -182,15 +185,32 @@ defmodule GscAnalytics.ContentInsights.UrlPerformance.QueryBuilder do
       end
     else
       case period_col do
-        :period_clicks -> [{direction, dynamic([ls, pm], coalesce(pm.period_clicks, 0))}]
-        :period_impressions -> [{direction, dynamic([ls, pm], coalesce(pm.period_impressions, 0))}]
-        :period_ctr -> [{direction, dynamic([ls, pm], coalesce(pm.period_ctr, 0.0))}]
-        :period_position -> [{direction, dynamic([ls, pm], coalesce(pm.period_position, 0.0))}]
-        :lifetime_clicks -> [{direction, dynamic([ls], ls.lifetime_clicks)}]
-        :lifetime_impressions -> [{direction, dynamic([ls], ls.lifetime_impressions)}]
-        :avg_ctr -> [{direction, dynamic([ls], ls.avg_ctr)}]
-        :avg_position -> [{direction, dynamic([ls], ls.avg_position)}]
-        _ -> [{direction, dynamic([ls, pm], coalesce(pm.period_clicks, 0))}]
+        :period_clicks ->
+          [{direction, dynamic([ls, pm], coalesce(pm.period_clicks, 0))}]
+
+        :period_impressions ->
+          [{direction, dynamic([ls, pm], coalesce(pm.period_impressions, 0))}]
+
+        :period_ctr ->
+          [{direction, dynamic([ls, pm], coalesce(pm.period_ctr, 0.0))}]
+
+        :period_position ->
+          [{direction, dynamic([ls, pm], coalesce(pm.period_position, 0.0))}]
+
+        :lifetime_clicks ->
+          [{direction, dynamic([ls], ls.lifetime_clicks)}]
+
+        :lifetime_impressions ->
+          [{direction, dynamic([ls], ls.lifetime_impressions)}]
+
+        :avg_ctr ->
+          [{direction, dynamic([ls], ls.avg_ctr)}]
+
+        :avg_position ->
+          [{direction, dynamic([ls], ls.avg_position)}]
+
+        _ ->
+          [{direction, dynamic([ls, pm], coalesce(pm.period_clicks, 0))}]
       end
     end
   end

@@ -65,7 +65,9 @@ defmodule GscAnalytics.SerpChecks do
 
       full_run = preload_keywords(run)
 
-      PubSub.broadcast(@pubsub, topic(run.id),
+      PubSub.broadcast(
+        @pubsub,
+        topic(run.id),
         {:serp_check_progress, %{event: :run_started, run: full_run}}
       )
 
@@ -78,7 +80,10 @@ defmodule GscAnalytics.SerpChecks do
   """
   def latest_run(account_id, property_url, url) do
     SerpCheckRun
-    |> where([r], r.account_id == ^account_id and r.property_url == ^property_url and r.url == ^url)
+    |> where(
+      [r],
+      r.account_id == ^account_id and r.property_url == ^property_url and r.url == ^url
+    )
     |> order_by([r], desc: r.inserted_at)
     |> limit(1)
     |> Repo.one()
@@ -92,7 +97,14 @@ defmodule GscAnalytics.SerpChecks do
   Update per-keyword status as a worker starts processing it.
   """
   def mark_keyword_running(run_keyword_id) do
-    update_keyword(run_keyword_id, %{status: :running, completed_at: nil, error: nil})
+    case update_keyword(run_keyword_id, %{status: :running, completed_at: nil, error: nil}) do
+      {:ok, keyword} ->
+        broadcast_run(keyword.serp_check_run_id)
+        {:ok, keyword}
+
+      error ->
+        error
+    end
   end
 
   @doc """
@@ -109,7 +121,11 @@ defmodule GscAnalytics.SerpChecks do
   Called when a SERP check fails permanently.
   """
   def mark_keyword_failed(run_keyword_id, error_msg) do
-    case update_keyword(run_keyword_id, %{status: :failed, completed_at: DateTime.utc_now(), error: error_msg}) do
+    case update_keyword(run_keyword_id, %{
+           status: :failed,
+           completed_at: DateTime.utc_now(),
+           error: error_msg
+         }) do
       {:ok, keyword} -> finalize_run(keyword.serp_check_run_id, :failed, %{error: error_msg})
       error -> error
     end
@@ -120,7 +136,11 @@ defmodule GscAnalytics.SerpChecks do
   """
   def broadcast_run(run_id) do
     if run = Repo.get(SerpCheckRun, run_id) |> preload_keywords() do
-      PubSub.broadcast(@pubsub, topic(run.id), {:serp_check_progress, %{event: :run_updated, run: run}})
+      PubSub.broadcast(
+        @pubsub,
+        topic(run.id),
+        {:serp_check_progress, %{event: :run_updated, run: run}}
+      )
     end
   end
 
@@ -143,7 +163,9 @@ defmodule GscAnalytics.SerpChecks do
 
       run = Repo.get!(SerpCheckRun, run_id) |> preload_keywords()
 
-      PubSub.broadcast(@pubsub, topic(run.id),
+      PubSub.broadcast(
+        @pubsub,
+        topic(run.id),
         {:serp_check_progress, %{event: :run_updated, run: run}}
       )
 
@@ -156,14 +178,18 @@ defmodule GscAnalytics.SerpChecks do
 
     succeeded =
       Repo.aggregate(
-        from(k in SerpCheckRunKeyword, where: k.serp_check_run_id == ^run_id and k.status == :success),
+        from(k in SerpCheckRunKeyword,
+          where: k.serp_check_run_id == ^run_id and k.status == :success
+        ),
         :count,
         :id
       )
 
     failed =
       Repo.aggregate(
-        from(k in SerpCheckRunKeyword, where: k.serp_check_run_id == ^run_id and k.status == :failed),
+        from(k in SerpCheckRunKeyword,
+          where: k.serp_check_run_id == ^run_id and k.status == :failed
+        ),
         :count,
         :id
       )
@@ -190,8 +216,7 @@ defmodule GscAnalytics.SerpChecks do
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
   defp update_keyword(run_keyword_id, attrs) do
-    run_keyword_id
-    |> Repo.get!(SerpCheckRunKeyword)
+    Repo.get!(SerpCheckRunKeyword, run_keyword_id)
     |> SerpCheckRunKeyword.changeset(attrs)
     |> Repo.update()
   rescue
@@ -213,15 +238,18 @@ defmodule GscAnalytics.SerpChecks do
       estimated_cost = keyword_count * @scrapfly_credit_cost
 
       Multi.new()
-      |> Multi.insert(:run, SerpCheckRun.changeset(%SerpCheckRun{}, %{
-        account_id: account_id,
-        property_url: property_url,
-        url: url,
-        keyword_count: keyword_count,
-        estimated_cost: estimated_cost,
-        status: :running,
-        started_at: DateTime.utc_now()
-      }))
+      |> Multi.insert(
+        :run,
+        SerpCheckRun.changeset(%SerpCheckRun{}, %{
+          account_id: account_id,
+          property_url: property_url,
+          url: url,
+          keyword_count: keyword_count,
+          estimated_cost: estimated_cost,
+          status: :running,
+          started_at: DateTime.utc_now()
+        })
+      )
       |> Multi.run(:keyword_rows, fn _repo, %{run: run} ->
         entries =
           Enum.map(keywords, fn keyword ->
@@ -249,14 +277,18 @@ defmodule GscAnalytics.SerpChecks do
   defp enqueue_jobs(run, keyword_rows, geo) do
     job_changesets =
       Enum.map(keyword_rows, fn keyword ->
+        keyword_value = Map.get(keyword, :keyword) || Map.get(keyword, "keyword")
+        geo_value = Map.get(keyword, :geo) || Map.get(keyword, "geo") || geo
+        keyword_row_id = Map.get(keyword, :id) || Map.get(keyword, "id")
+
         SerpCheckWorker.new(%{
           "account_id" => run.account_id,
           "property_url" => run.property_url,
           "url" => run.url,
-          "keyword" => keyword.keyword,
-          "geo" => keyword.geo || geo,
+          "keyword" => keyword_value,
+          "geo" => geo_value,
           "run_id" => run.id,
-          "run_keyword_id" => keyword.id
+          "run_keyword_id" => keyword_row_id
         })
       end)
 

@@ -46,6 +46,7 @@ defmodule GscAnalytics.Workers.SerpCheckWorker do
   import Ecto.Changeset
   alias GscAnalytics.DataSources.SERP.Core.{Client, HTMLParser, Persistence}
   alias GscAnalytics.DataSources.SERP.Support.RateLimiter
+  alias GscAnalytics.Schemas.SerpSnapshot
   alias GscAnalytics.SerpChecks
 
   require Logger
@@ -99,7 +100,14 @@ defmodule GscAnalytics.Workers.SerpCheckWorker do
          # ScrapFly SERP API cost: 31 credits (base only, no LLM)
          :ok <- track_api_cost(account_id, 31),
          parsed <- HTMLParser.parse_serp_response(scrapfly_response, url),
-         snapshot_attrs <- build_snapshot_attrs(args, parsed, scrapfly_response),
+         snapshot_attrs <-
+           build_snapshot_attrs(
+             args,
+             parsed,
+             scrapfly_response,
+             content_types_present: derive_content_types(parsed),
+             scrapfly_stats: SerpSnapshot.scrapfly_citation_stats(parsed[:ai_overview_citations])
+           ),
          {:ok, snapshot} <- Persistence.save_snapshot(snapshot_attrs) do
       Logger.info("SERP check completed",
         account_id: account_id,
@@ -135,7 +143,23 @@ defmodule GscAnalytics.Workers.SerpCheckWorker do
     :ok
   end
 
-  defp build_snapshot_attrs(args, parsed, raw_response) do
+  defp derive_content_types(parsed) do
+    case Map.get(parsed, :content_types_present) do
+      list when is_list(list) and list != [] ->
+        list
+
+      _ ->
+        parsed
+        |> Map.get(:competitors, [])
+        |> SerpSnapshot.content_types_from_competitors()
+    end
+  end
+
+  defp build_snapshot_attrs(args, parsed, raw_response, opts \\ []) do
+    content_types_present = Keyword.get(opts, :content_types_present, [])
+    {scrapfly_mentioned?, scrapfly_position} =
+      Keyword.get(opts, :scrapfly_stats, {false, nil})
+
     %{
       account_id: args["account_id"],
       property_url: args["property_url"],
@@ -147,7 +171,10 @@ defmodule GscAnalytics.Workers.SerpCheckWorker do
       ai_overview_present: parsed[:ai_overview_present] || false,
       ai_overview_text: parsed[:ai_overview_text],
       ai_overview_citations: parsed[:ai_overview_citations] || [],
-       serp_check_run_id: args["run_id"],
+      content_types_present: content_types_present,
+      scrapfly_mentioned_in_ao: scrapfly_mentioned?,
+      scrapfly_citation_position: scrapfly_position,
+      serp_check_run_id: args["run_id"],
       raw_response: raw_response,
       geo: args["geo"] || "us",
       checked_at: DateTime.utc_now(),
@@ -169,7 +196,11 @@ defmodule GscAnalytics.Workers.SerpCheckWorker do
 
   defp maybe_mark_failure(_job, nil, _reason), do: :ok
 
-  defp maybe_mark_failure(%Oban.Job{attempt: attempt, max_attempts: max_attempts}, run_keyword_id, reason) do
+  defp maybe_mark_failure(
+         %Oban.Job{attempt: attempt, max_attempts: max_attempts},
+         run_keyword_id,
+         reason
+       ) do
     if attempt >= max_attempts do
       SerpChecks.mark_keyword_failed(run_keyword_id, inspect(reason))
     end
