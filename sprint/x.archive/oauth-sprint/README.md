@@ -7,12 +7,14 @@ This sprint implements OAuth2 authentication for Account 2 (Alba Analytics) to a
 ## Background
 
 **Current State:**
+
 - Account 1 (Scrapfly) uses service account JSON credentials (working)
 - Account 2 (Alba) has service account but clients haven't granted access
 - Dashboard is currently unprotected (SECURITY ISSUE)
 - No way to connect existing Google accounts with GSC access
 
 **Desired State:**
+
 - Two-layer security: Dashboard login + API authorization
 - Account 1 continues with service account (no changes)
 - Account 2 uses OAuth to connect i@alba.cc
@@ -22,16 +24,20 @@ This sprint implements OAuth2 authentication for Account 2 (Alba Analytics) to a
 ## Sprint Tickets
 
 ### Critical Path (Blocker)
+
 - **[ticket-001]** Add Req HTTP Client Dependency (30 min)
   - Must complete first - blocks all other work
 
 ### Core Implementation
+
 - **[ticket-002]** Update Auth Context for OAuth + Current Scope (1 hr)
+
   - OAuth token CRUD operations
   - Token refresh with Req
   - Current scope parameter passing
 
 - **[ticket-003]** Implement GoogleAuth OAuth Flow Module (2 hrs)
+
   - Authorization URL generation
   - Callback handling with CSRF protection
   - Token exchange and storage
@@ -42,7 +48,9 @@ This sprint implements OAuth2 authentication for Account 2 (Alba Analytics) to a
   - Maintain JWT backward compatibility
 
 ### User Interface
+
 - **[ticket-005]** Account Settings LiveView UI (1 hr)
+
   - Display account auth status
   - Connect/disconnect Google accounts
   - Proper scope handling
@@ -53,6 +61,7 @@ This sprint implements OAuth2 authentication for Account 2 (Alba Analytics) to a
   - Consolidate live_sessions
 
 ### Quality
+
 - **[ticket-007]** Test Suite for Dual Authentication (1.5 hrs)
   - Unit tests for OAuth functions
   - Integration tests for both auth modes
@@ -113,6 +122,7 @@ mix ecto.migrate
 ## Testing Plan
 
 ### Manual Testing Flow
+
 1. Register user account at `/users/register`
 2. Confirm email via `/dev/mailbox`
 3. Login at `/users/log-in`
@@ -124,6 +134,7 @@ mix ecto.migrate
 9. Test disconnect
 
 ### Automated Tests
+
 - Auth context OAuth functions
 - Authenticator dual-mode branches
 - State token security
@@ -132,13 +143,13 @@ mix ecto.migrate
 
 ## Risk Mitigation
 
-| Risk | Mitigation |
-|------|------------|
+| Risk                          | Mitigation                            |
+| ----------------------------- | ------------------------------------- |
 | Breaking service account auth | Extensive testing, feature flag ready |
-| OAuth token leakage | Encryption at rest, HTTPS only |
-| CSRF attacks | State token with user verification |
-| Expired tokens | Automatic refresh logic |
-| Missing credentials | Graceful error handling |
+| OAuth token leakage           | Encryption at rest, HTTPS only        |
+| CSRF attacks                  | State token with user verification    |
+| Expired tokens                | Automatic refresh logic               |
+| Missing credentials           | Graceful error handling               |
 
 ## Success Criteria
 
@@ -163,11 +174,13 @@ Each ticket can be rolled back independently except ticket-001 (Req dependency).
 ## Dependencies
 
 External:
+
 - Google OAuth2 API availability
 - Google Cloud Console access
 - i@alba.cc account permissions
 
 Internal:
+
 - Existing auth system (phx.gen.auth)
 - Vault encryption
 - PostgreSQL database
@@ -185,4 +198,4 @@ Total estimate: 8 hours of focused work
 - [Google OAuth2 Documentation](https://developers.google.com/identity/protocols/oauth2)
 - [Phoenix Authentication Guide](https://hexdocs.pm/phoenix/authentication.html)
 - [Req HTTP Client](https://hexdocs.pm/req/Req.html)
-- Project OAuth Setup: `200-290 Client work/210 SEO Tooling/OAUTH-SETUP.md`
+- Project OAuth Setup: `100-190 Projects & Planning/210 SEO Tooling/OAUTH-SETUP.md`
